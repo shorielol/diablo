@@ -156,6 +156,27 @@ def read_file(path: str) -> str:
         return f"Error reading {target}: {e}"
 
 
+def _parent_must_exist(target: str) -> Optional[str]:
+    """
+    Refuse to invent a folder the user never asked for.
+
+    Both write tools used to call makedirs(exist_ok=True), which is convenient
+    right up until the model mishears a folder name. qwen3:4b turned
+    "diablo-stress" into "diablo's-stress" and Diablo silently created it, wrote
+    the file inside, and reported success — leaving a folder on the Desktop that
+    nobody had asked for and the real target untouched.
+
+    A missing parent is far more often a mistake than an intention, and
+    make_folder exists for when it is not.
+    """
+    parent = os.path.dirname(target)
+    if parent and not os.path.isdir(parent):
+        return (f"Error: the folder '{os.path.basename(parent)}' does not exist, so "
+                f"I have not created it. Check the name with list_files, or call "
+                f"make_folder first if it really is new.")
+    return None
+
+
 def write_file(path: str, content: str) -> str:
     target = _resolve(path)
     existed = os.path.exists(target)
@@ -163,8 +184,10 @@ def write_file(path: str, content: str) -> str:
         confirm = CONTEXT.get("confirm")
         if confirm and not confirm(f"overwrite {os.path.basename(target)}"):
             return "Cancelled by the user. The existing file was left alone."
+    problem = _parent_must_exist(target)
+    if problem:
+        return problem
     try:
-        os.makedirs(os.path.dirname(target), exist_ok=True)
         with open(target, "w") as f:
             f.write(content)
         return f"{'Overwrote' if existed else 'Wrote'} {target} ({len(content)} chars)."
@@ -174,8 +197,10 @@ def write_file(path: str, content: str) -> str:
 
 def append_file(path: str, content: str) -> str:
     target = _resolve(path)
+    problem = _parent_must_exist(target)
+    if problem:
+        return problem
     try:
-        os.makedirs(os.path.dirname(target), exist_ok=True)
         with open(target, "a") as f:
             f.write(content)
         return f"Appended {len(content)} chars to {target}."
@@ -401,6 +426,36 @@ def explain_screen(question: str = "", target: str = "") -> str:
         return f"Error understanding the screen: {type(e).__name__}: {e}"
 
 
+
+def point_at(description: str, target: str = "") -> str:
+    """Put a marker on screen over the thing the user is looking for."""
+    try:
+        module = _skill("pointing")
+        if module is None:
+            return "Error: screen pointing is unavailable."
+        return _clip(module.point_at(description, target))
+    except Exception as e:
+        return f"Error pointing at the screen: {type(e).__name__}: {e}"
+
+
+def find_on_screen(description: str, target: str = "") -> str:
+    """Where something is, without drawing anything."""
+    try:
+        module = _skill("pointing")
+        if module is None:
+            return "Error: screen pointing is unavailable."
+        hits = module.locate(description, target)
+        if not hits:
+            return f"Nothing matching '{description}' is visible on screen."
+        lines = []
+        for hit in hits[:4]:
+            lines.append(f"{hit['text'][:50]!r} — {module.describe_location(hit)} "
+                         f"of the {hit['app']} window (match {hit['score']:.0%})")
+        return _clip("\n".join(lines))
+    except Exception as e:
+        return f"Error searching the screen: {type(e).__name__}: {e}"
+
+
 def list_windows() -> str:
     """What is open, frontmost first. Cheap — no capture, no OCR."""
     try:
@@ -579,7 +634,13 @@ def ask_user(question: str) -> str:
     if not answer:
         return ("No answer came back. Assume the most reasonable option, say "
                 "which assumption you made, and finish the job.")
-    return f"The user said: {answer}"
+    # Directive, not passive. "The user said: draft-b" reads to a 4B as the end
+    # of the turn — observed repeatedly: it asks, gets the answer, and stops
+    # without ever making the change it asked permission to make. Telling it the
+    # job is still outstanding is what gets it over the line.
+    return (f"The user said: {answer}\n\n"
+            f"That answers your question. The original task is NOT done yet — "
+            f"carry it out now using that answer, then report what you did.")
 
 
 def list_capabilities() -> str:
@@ -666,6 +727,33 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
           "python script code excel xlsx spreadsheet formula data calculate docx "
           "analyse total sum add average count maths math number numbers revenue "
           "cost profit percentage compute work multiply subtract divide"),
+    _tool("point_at", point_at,
+          "Put a marker on the user's screen over a thing they are looking for, and "
+          "say where it is. Use this whenever he asks where something is, how to "
+          "find something, or how to do something in an app that is on screen — "
+          "showing beats describing. Only text that is visible can be pointed at.",
+          {"description": {"type": "string",
+                           "description": "The thing to point at, as the user "
+                                          "named it. For example 'the search box' "
+                                          "or 'the Continue button'."},
+           "target": {"type": "string",
+                      "description": "The app or window to look in, name only, "
+                                     "such as 'Notes' or 'chrome'. Leave empty "
+                                     "for whatever is in front. Never put the "
+                                     "thing you are looking for in here."}},
+          ["description"],
+          "point show where find highlight mark locate look which button menu "
+          "screen click press tab option setting"),
+    _tool("find_on_screen", find_on_screen,
+          "Find where something is on screen without drawing a marker. Returns the "
+          "matches and roughly where each one sits in the window.",
+          {"description": {"type": "string",
+                           "description": "The thing to find, as the user named it."},
+           "target": {"type": "string",
+                      "description": "The app or window to look in, name only. "
+                                     "Leave empty for the frontmost window."}},
+          ["description"],
+          "find locate where search screen visible"),
     _tool("open_app", open_app, "Open a Mac application by name.", {"name": _S},
           ["name"], "open launch app application start"),
     _tool("open_url", open_url, "Open a website in the browser.", {"url": _S},

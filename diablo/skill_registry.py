@@ -1,4 +1,5 @@
 import os
+import importlib
 import importlib.util
 import sys
 
@@ -17,9 +18,12 @@ class SkillRegistry:
                 module_path = os.path.join(SKILLS_DIR, filename)
                 
                 try:
-                    spec = importlib.util.spec_from_file_location(skill_name, module_path)
-                    module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(module)
+                    # Import through the package, not from the file path.
+                    # spec_from_file_location built a brand new module object
+                    # every time, so a skill already imported as skills.x got a
+                    # second, independent copy here with its own globals and its
+                    # own configuration. Thirty skills, thirty extra copies.
+                    module = importlib.import_module(f"skills.{skill_name}")
                     self.skills[skill_name] = module
                     print(f"    ✓ Skill Indexed: {skill_name}")
                 except Exception as e:

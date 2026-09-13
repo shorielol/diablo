@@ -156,8 +156,10 @@ with open(CONFIG, "w") as f:
 
 os.environ["DIABLO_MCP_CONFIG"] = CONFIG
 os.environ["DIABLO_HOME"] = SANDBOX
-sys.path.insert(0, HERE)
-import mcp_client  # noqa: E402
+# DIABLO_HOME is pointed at the sandbox above, so the package has to be found
+# from the real install rather than from that variable.
+sys.path.insert(0, os.path.expanduser("~/.diablo"))
+from skills import mcp_client  # noqa: E402
 
 print("\nConfig loading")
 servers = mcp_client.registry.load()

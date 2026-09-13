@@ -15,10 +15,10 @@ import shutil
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import agent_core  # noqa: E402
-import agent_tools  # noqa: E402
-import local_brain  # noqa: E402
+sys.path.insert(0, os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo")))
+from skills import agent_core  # noqa: E402
+from skills import agent_tools  # noqa: E402
+from skills import local_brain  # noqa: E402
 
 SCRATCH = os.path.join(os.path.expanduser("~"), "Desktop", "diablo-live-check")
 results = []

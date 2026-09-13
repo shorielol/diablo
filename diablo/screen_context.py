@@ -37,9 +37,14 @@ import tempfile
 import time
 from typing import Any, Dict, List, Optional
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The package parent, so `from skills import x` resolves whether this module
+# is imported as part of the package or run directly as a script. Importing
+# bare `x` here instead created a SECOND copy of each module with its own
+# globals, which is why patching local_brain.OLLAMA_HOST in one place had no
+# effect in the other. One module, one instance.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import local_brain  # noqa: E402
+from skills import local_brain  # noqa: E402
 
 VISION_MODEL = os.getenv("DIABLO_VISION_MODEL", "qwen2.5vl:7b")
 MAX_OCR_CHARS = 6000
@@ -95,6 +100,12 @@ def list_windows(min_width: int = 200, min_height: int = 120) -> List[Dict[str, 
             "id": int(entry.get("kCGWindowNumber", 0)),
             "app": owner,
             "title": entry.get("kCGWindowName") or "",
+            # The origin, in screen points, top-left. Kept because it is what
+            # turns a normalised OCR box into a place on the desktop you can
+            # actually point at. Negative x is normal: it means a display to
+            # the left of the primary one.
+            "x": float(bounds.get("X", 0)),
+            "y": float(bounds.get("Y", 0)),
             "width": width,
             "height": height,
             "sensitive": owner.lower() in SENSITIVE_APPS,

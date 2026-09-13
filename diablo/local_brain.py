@@ -14,6 +14,7 @@ Measured on this machine (M3 Pro, 2026-09-10):
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -37,6 +38,22 @@ REQUEST_TIMEOUT = int(os.getenv("DIABLO_LLM_TIMEOUT", "180"))
 # LOW_MEMORY releases it after every single command instead.
 LOW_MEMORY = os.getenv("DIABLO_LOW_MEMORY", "0") not in ("0", "", "false", "False")
 KEEP_ALIVE = os.getenv("DIABLO_KEEP_ALIVE", "0s" if LOW_MEMORY else "10m")
+
+# The context window. Left unset, Ollama uses the model's own default, and for
+# qwen3 that is 262,144 tokens — a window Diablo never fills and which costs
+# real memory in KV cache to keep open. 4096 holds the system prompt, the tool
+# schemas and a dozen turns with room to spare.
+NUM_CTX = int(os.getenv("DIABLO_NUM_CTX", "4096"))
+
+# How much the model may say in one turn. Everything here is read aloud, so a
+# long answer is a long wait with a speaker talking at you.
+NUM_PREDICT = int(os.getenv("DIABLO_NUM_PREDICT", "512"))
+
+# Thinking is off by default and has to be asked for. The hybrid qwen3 models
+# spend hundreds of tokens inside <think> before answering, which on a voice
+# interface is dead air. Measured on qwen3:4b with thinking on: 9.97s and no
+# tool call at all.
+THINK_DEFAULT = os.getenv("DIABLO_THINK", "0") not in ("0", "", "false", "False")
 
 
 class BrainOffline(Exception):
@@ -79,9 +96,10 @@ def chat(
     tools: Optional[List[dict]] = None,
     model: Optional[str] = None,
     fmt: Optional[dict] = None,
-    think: bool = False,
+    think: Optional[bool] = None,
     temperature: float = 0.2,
-    num_predict: int = 1024,
+    num_predict: Optional[int] = None,
+    num_ctx: Optional[int] = None,
     timeout: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
@@ -94,8 +112,12 @@ def chat(
         "model": model or CHAT_MODEL,
         "messages": messages,
         "stream": False,
-        "think": think,
-        "options": {"temperature": temperature, "num_predict": num_predict},
+        "think": THINK_DEFAULT if think is None else think,
+        "options": {
+            "temperature": temperature,
+            "num_predict": NUM_PREDICT if num_predict is None else num_predict,
+            "num_ctx": NUM_CTX if num_ctx is None else num_ctx,
+        },
         "keep_alive": KEEP_ALIVE,
     }
     if tools:
@@ -114,6 +136,103 @@ def chat(
         raise BrainOffline(body["error"])
     return body.get("message", {"role": "assistant", "content": ""})
 
+
+
+# ─── Streaming ───────────────────────────────────────────────────────────────
+
+# A sentence ends at one of these followed by whitespace. Speech has to be cut
+# somewhere, and a sentence is the only boundary where a text-to-speech engine
+# produces natural prosody — cutting on a fixed token count gives you a voice
+# that stops mid-breath.
+_SENTENCE_END = re.compile(r'(?<=[.!?])\s+|(?<=[.!?])$')
+
+
+def chat_stream(
+    messages: List[Dict[str, Any]],
+    model: Optional[str] = None,
+    think: Optional[bool] = None,
+    temperature: float = 0.2,
+    num_predict: Optional[int] = None,
+    num_ctx: Optional[int] = None,
+    timeout: Optional[int] = None,
+):
+    """
+    Yield the answer in pieces as the model produces it.
+
+    Exists for one reason: time to first token is a fraction of time to last
+    token, and on a voice interface that gap is silence the user is sitting
+    through. Measured on this machine, a 40-token reply arrives entirely in
+    about 1.5s but the first token lands in roughly 0.3s. Speaking from the
+    first sentence turns a 1.5s wait into a 0.4s one.
+
+    Tool calls are deliberately not streamed. A partial tool call is not
+    useful — you cannot run half of one — so anything with tools goes through
+    chat() and waits.
+    """
+    payload: Dict[str, Any] = {
+        "model": model or CHAT_MODEL,
+        "messages": messages,
+        "stream": True,
+        "think": THINK_DEFAULT if think is None else think,
+        "options": {
+            "temperature": temperature,
+            "num_predict": NUM_PREDICT if num_predict is None else num_predict,
+            "num_ctx": NUM_CTX if num_ctx is None else num_ctx,
+        },
+        "keep_alive": KEEP_ALIVE,
+    }
+
+    request = urllib.request.Request(
+        f"{OLLAMA_HOST}/api/chat", data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+
+    try:
+        response = urllib.request.urlopen(request, timeout=timeout or REQUEST_TIMEOUT)
+    except Exception as e:
+        raise BrainOffline(f"Ollama unreachable at {OLLAMA_HOST}: {e}")
+
+    with response:
+        for raw in response:
+            if not raw.strip():
+                continue
+            try:
+                chunk = json.loads(raw)
+            except ValueError:
+                continue
+            if "error" in chunk:
+                raise BrainOffline(chunk["error"])
+            piece = (chunk.get("message") or {}).get("content") or ""
+            if piece:
+                yield piece
+            if chunk.get("done"):
+                return
+
+
+def stream_sentences(messages: List[Dict[str, Any]], should_stop=None, **kwargs):
+    """
+    The same stream, regrouped into whole sentences.
+
+    `should_stop` is checked between sentences and is how barge-in works: when
+    the user starts talking, the caller flips it and generation stops rather
+    than finishing a paragraph nobody is listening to.
+    """
+    buffer = ""
+    for piece in chat_stream(messages, **kwargs):
+        if should_stop is not None and should_stop():
+            return
+        buffer += piece
+        while True:
+            match = _SENTENCE_END.search(buffer)
+            if not match or match.end() == 0:
+                break
+            sentence, buffer = buffer[:match.end()].strip(), buffer[match.end():]
+            if sentence:
+                yield sentence
+            if should_stop is not None and should_stop():
+                return
+    tail = buffer.strip()
+    if tail and not (should_stop is not None and should_stop()):
+        yield tail
 
 def chat_json(
     messages: List[Dict[str, Any]],

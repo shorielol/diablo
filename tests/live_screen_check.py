@@ -14,11 +14,11 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import agent_core  # noqa: E402
-import conversation  # noqa: E402
-import local_brain  # noqa: E402
-import screen_context  # noqa: E402
+sys.path.insert(0, os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo")))
+from skills import agent_core  # noqa: E402
+from skills import conversation  # noqa: E402
+from skills import local_brain  # noqa: E402
+from skills import screen_context  # noqa: E402
 
 results = []
 
@@ -45,12 +45,21 @@ def main():
            screen_context.frontmost_window()["app"])
     report("on-device OCR is installed", screen_context.ocr_available())
 
-    report("'browser' finds a browser",
-           bool(screen_context.find_window("browser")),
-           (screen_context.find_window("browser") or {}).get("app", "none open"))
-    report("'my chrome tab' resolves to the same window",
-           screen_context.find_window("my chrome tab") is not None,
-           (screen_context.find_window("my chrome tab") or {}).get("app", "-"))
+    # These need a browser to be open. Failing when one is not open tells you
+    # about the room, not about Diablo, so they skip instead.
+    browsers = {"safari", "chrome", "google chrome", "zen", "firefox", "arc",
+                "brave browser", "microsoft edge"}
+    browser_open = any(w["app"].lower() in browsers for w in windows)
+    if not browser_open:
+        print("  -  'browser' finds a browser  (skipped: no browser window open)")
+        print("  -  'my chrome tab' resolves to the same window  (skipped)")
+    else:
+        report("'browser' finds a browser",
+               bool(screen_context.find_window("browser")),
+               (screen_context.find_window("browser") or {}).get("app", "none open"))
+        report("'my chrome tab' resolves to the same window",
+               screen_context.find_window("my chrome tab") is not None,
+               (screen_context.find_window("my chrome tab") or {}).get("app", "-"))
     report("nonsense target does not silently grab the wrong window",
            screen_context.find_window("qzxwv nonexistent app") is None)
 

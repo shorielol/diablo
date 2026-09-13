@@ -21,18 +21,23 @@ A 14B model is not a frontier model, and the whole design leans on that:
 
 import json
 import os
-import re
+import re  # SIGNOFF_GUARD
 import sys
 import time
 from typing import Any, Callable, Dict, List, Optional
 
 # The skill registry loads this file by path, so its own folder is not
 # necessarily importable. Put it there before reaching for its siblings.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The package parent, so `from skills import x` resolves whether this module
+# is imported as part of the package or run directly as a script. Importing
+# bare `x` here instead created a SECOND copy of each module with its own
+# globals, which is why patching local_brain.OLLAMA_HOST in one place had no
+# effect in the other. One module, one instance.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import agent_tools  # noqa: E402
-import local_brain  # noqa: E402
-from local_brain import BrainOffline  # noqa: E402
+from skills import agent_tools  # noqa: E402
+from skills import local_brain  # noqa: E402
+from skills.local_brain import BrainOffline  # noqa: E402
 
 MAX_STEPS = int(os.getenv("DIABLO_MAX_STEPS", "14"))
 PLAN_THRESHOLD_WORDS = 6
@@ -317,6 +322,79 @@ def plan(task: str) -> List[str]:
         return []
 
 
+# ─── Ambiguity discovered mid-task ───────────────────────────────────────────
+#
+# understand() catches a request that is ambiguous on its face — "open the file"
+# never reaches the loop. It cannot catch ambiguity that only appears once a
+# folder has been listed: "append FINAL to the draft in my notes folder" sounds
+# specific right up until the listing comes back with draft-a.md and draft-b.md.
+#
+# qwen3:14b handled that from the prompt line telling it to ask. qwen3:4b
+# ignores that line, reproducibly: 0 asks in 4 trials, editing draft-a.md every
+# time without a word. Since the whole point is that Diablo does not guess which
+# of your files to change, this is enforced here rather than requested there.
+
+MUTATING = {"write_file", "append_file", "move_file", "delete_file"}
+
+# Words that name a kind of file rather than a file.
+_AMBIGUOUS_NOUNS = GENERIC | {"draft", "drafts", "version", "copy", "report"}
+
+
+def _listed_files(messages: List[Dict[str, Any]]) -> List[str]:
+    """Filenames from the most recent directory listing in this conversation."""
+    for entry in reversed(messages):
+        if entry.get("role") != "tool" or entry.get("tool_name") not in (
+                "list_files", "find_files"):
+            continue
+        names = []
+        for line in (entry.get("content") or "").splitlines():
+            line = line.strip()
+            if not line or line.endswith(":") or line.endswith("/"):
+                continue
+            name = line.split("  (")[0].split("\t")[0].strip()
+            if name and "." in name:
+                names.append(os.path.basename(name))
+        return names
+    return []
+
+
+def _ambiguous_target(task: str, name: str, args: Dict[str, Any],
+                      messages: List[Dict[str, Any]]) -> Optional[str]:
+    """
+    The question to ask, or None if the target is not in doubt.
+
+    Only fires when all three are true: the user named a kind of file rather
+    than one file, the folder holds more than one thing that could be it, and
+    the model is about to change one of them.
+    """
+    if name not in MUTATING:
+        return None
+    path = args.get("path") or args.get("source") or ""
+    if not isinstance(path, str) or not path:
+        return None
+
+    spoken = set(re.findall(r"[a-z]+", task.lower()))
+    nouns = spoken & _AMBIGUOUS_NOUNS
+    if not nouns:
+        return None
+
+    target = os.path.basename(path).lower()
+    # If the user actually said the filename, there is nothing to ask about.
+    stem = os.path.splitext(target)[0]
+    if stem and stem in task.lower().replace("-", " ").replace("_", " "):
+        return None
+
+    candidates = [f for f in _listed_files(messages)
+                  if any(n.rstrip("s") in f.lower() for n in nouns)]
+    if len(candidates) < 2:
+        return None
+    if target not in [c.lower() for c in candidates]:
+        return None
+
+    listed = ", ".join(candidates[:4])
+    return f"There are several: {listed}. Which one did you mean?"
+
+
 def _call_signature(name: str, args: Any) -> str:
     try:
         return name + json.dumps(args, sort_keys=True)
@@ -351,6 +429,10 @@ def run(
 
     seen: Dict[str, int] = {}
     used_any_tool = False
+    asked_which = False
+    performed = set()   # mutating tools that actually ran
+    challenged = False
+    asked_aloud = False
     reassured = False
 
     for step in range(1, MAX_STEPS + 1):
@@ -378,6 +460,31 @@ def run(
                                  "Do not describe what could be done. Use your "
                                  "tools and actually do it, then report back."})
                 continue
+            # It asked out loud instead of with the tool. Ask it properly and
+            # keep going, rather than ending the turn on a question nobody can
+            # answer.
+            if (ask and not asked_aloud and not performed
+                    and _is_really_a_question(answer, performed)):
+                asked_aloud = True
+                reply = ask(_speakable(answer))
+                if reply:
+                    messages.append({"role": "user", "content":
+                                     f"{reply}. Now finish the original request: {task}"})
+                    continue
+
+            if _claims_unperformed_action(answer, performed) and not challenged:
+                challenged = True
+                messages.append({"role": "user", "content":
+                                 "You have not called any tool that changes "
+                                 "anything, so nothing has happened yet. Do not "
+                                 "report it as done. Either make the change now "
+                                 "with the right tool, or say plainly that it was "
+                                 "not done and why."})
+                continue
+            if _claims_unperformed_action(answer, performed):
+                # It was told once and said it again. Do not pass the claim on.
+                return _speakable(
+                    "I could not complete that, Sir, and nothing was changed.")
             return _speakable(answer)
 
         messages.append({
@@ -391,6 +498,25 @@ def run(
             name = fn.get("name", "")
             args = fn.get("arguments", {}) or {}
 
+            # Never change one of several files the user did not name.
+            question = _ambiguous_target(task, name, args, messages)
+            if question and ask and not asked_which:
+                asked_which = True
+                print(f"  [Agent {step}] ambiguous target, asking: {question}")
+                reply = ask(question)
+                messages.append({"role": "tool", "tool_name": name, "content":
+                                 (f"Not done — the target was ambiguous so I asked. "
+                                  f"The user said: {reply}. Use exactly that file."
+                                  if reply else
+                                  "Not done — the target was ambiguous and no answer "
+                                  "came back. Ask again with ask_user, or stop.")})
+                continue
+            if question and not ask:
+                messages.append({"role": "tool", "tool_name": name, "content":
+                                 f"Error: {question} Nobody is listening, so pick "
+                                 f"the most likely one and say which you chose."})
+                continue
+
             signature = _call_signature(name, args)
             seen[signature] = seen.get(signature, 0) + 1
             if seen[signature] > 2:
@@ -403,9 +529,22 @@ def run(
                 print(f"  [Agent {step}] {name}({json.dumps(args)[:110]})")
                 result = agent_tools.execute(name, args)
                 used_any_tool = True
+                if name in MUTATING and not result.lower().startswith(
+                        ("error", "refused", "cancelled")):
+                    performed.add(name)
                 print(f"  [Agent {step}] -> {result[:160]}")
 
             messages.append({"role": "tool", "tool_name": name, "content": result})
+
+            # A clarification is the one point where the loop reliably stalls on
+            # a small model: it asks, is answered, and then treats the answer as
+            # the end of the turn. Measured on qwen3:4b — 1 completion in 3.
+            # A tool result carries less instructional weight than a user turn,
+            # so the outstanding job is restated as one.
+            if name == "ask_user" and "user said" in result.lower():
+                messages.append({"role": "user", "content":
+                                 f"Good. Now finish the original request with "
+                                 f"that answer: {task}"})
 
     # Out of steps. Ask for whatever was achieved rather than returning nothing.
     messages.append({"role": "user", "content":
@@ -417,6 +556,61 @@ def run(
                           or "I ran out of steps on that one, Sir.")
     except BrainOffline:
         return "I ran out of steps on that one, Sir."
+
+
+# ─── Claimed, but not done ───────────────────────────────────────────────────
+#
+# qwen3:4b-instruct asked which draft to edit, was told draft-b, and then
+# finished with: 'Appended "FINAL" to draft-b.md. The file is now complete and
+# ready for review.' It had never called append_file. The file was untouched.
+#
+# A voice assistant reporting a file change that did not happen is worse than
+# one that fails loudly, because there is nothing on screen to contradict it.
+# So the final answer is checked against what actually ran. This is not a
+# prompt instruction — there is already one of those, and it was ignored.
+
+_ACTION_CLAIM = re.compile(
+    r"\b(i\s+)?(have\s+)?(appended|wrote|written|created|made|moved|renamed|"
+    r"deleted|removed|saved|updated|added|edited|replaced|copied)\b", re.IGNORECASE)
+
+# Phrasings that report an absence of action rather than an action.
+_NEGATED = re.compile(
+    r"\b(did\s+not|didn'?t|could\s+not|couldn'?t|unable|cannot|can'?t|"
+    r"no\s+changes?|nothing\s+was|not\s+able)\b", re.IGNORECASE)
+
+
+def _claims_unperformed_action(answer: str, performed: set) -> bool:
+    """True when the spoken summary reports a change that never happened."""
+    if performed:
+        return False
+    if _NEGATED.search(answer):
+        return False
+    return bool(_ACTION_CLAIM.search(answer))
+
+
+_ENDS_IN_QUESTION = re.compile(r"\?\s*$")
+_OFFERS_A_CHOICE = re.compile(
+    r"\b(which|would you like|do you want|should i|shall i|let me know which|"
+    r"i found (two|three|several|multiple)|there are (two|three|several|multiple))\b",
+    re.IGNORECASE)
+
+
+def _is_really_a_question(answer: str, performed: set) -> bool:
+    """
+    True when the final answer is a question the model forgot to actually ask.
+
+    A small model asked to edit "the draft" when two exist often ends its turn
+    with "I found two draft files: draft-a.md and draft-b.md" instead of calling
+    ask_user. That is the right instinct and the wrong mechanism: on a voice
+    interface the turn ends, the sentence is spoken into the air, and the user
+    has to start again. Measured on qwen3:4b — 2 turns in 4 ended this way.
+
+    Nothing has been changed at that point, which is the condition that makes it
+    safe to turn the sentence back into a real question and carry on.
+    """
+    if performed:
+        return False
+    return bool(_ENDS_IN_QUESTION.search(answer) or _OFFERS_A_CHOICE.search(answer))
 
 
 def _looks_like_a_dodge(answer: str) -> bool:
@@ -436,6 +630,20 @@ def _speakable(text: str) -> str:
     text = re.sub(r"[*_`#]", "", text)
     text = re.sub(r"\n{2,}", " ", text).replace("\n", " ")
     text = re.sub(r"\s{2,}", " ", text).strip()
+    # Every prompt-level ban on this failed, in conversation and here alike. It
+    # is read aloud at the end of every single task, so it is cut in code.
+    before_strip = text
+    text = re.sub(
+        r"(?:^|(?<=[.!?]))\s*(?:and\s+)?(?:i\s+)?(?:"
+        r"let me know\b|hope (?:that|this) helps\b|is there anything else\b|"
+        r"feel free to\b|if you need (?:any |further |more )*(?:assistance|help)\b|"
+        r"i'?m here if\b|don'?t hesitate\b|happy to help\b"
+        r")[^.!?]*[.!?]?\s*$", "", text, flags=re.IGNORECASE).strip()
+    # Never let the strip consume the whole reply. If the filler WAS the reply,
+    # or the match was a false positive like "let me know what you think of the
+    # draft", keep what the model actually said.
+    if not text:
+        text = before_strip
     if len(text.split()) > 60:
         text = local_brain.speech_summary(text, limit_words=35)
     return text

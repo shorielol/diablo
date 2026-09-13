@@ -21,12 +21,12 @@ os.environ["DIABLO_BASE_DIR"] = SANDBOX
 # requests is only reached through local_brain, which every test stubs out.
 sys.modules.setdefault("requests", types.ModuleType("requests"))
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import agent_tools  # noqa: E402
-import local_brain  # noqa: E402
-import agent_core  # noqa: E402
-import delegation_tool  # noqa: E402
-import wake_word  # noqa: E402
+sys.path.insert(0, os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo")))
+from skills import agent_tools  # noqa: E402
+from skills import local_brain  # noqa: E402
+from skills import agent_core  # noqa: E402
+from skills import delegation_tool  # noqa: E402
+from skills import wake_word  # noqa: E402
 
 failures = []
 
@@ -118,8 +118,13 @@ agent_tools.CONTEXT["ask"] = None
 check_true("no listener -> tells the model to assume",
            "assume" in agent_tools.ask_user("which file?").lower())
 agent_tools.CONTEXT["ask"] = lambda q: "the second one"
-check("listener -> relays the answer", agent_tools.ask_user("which file?"),
-      "The user said: the second one")
+# The reply also has to tell the model the job is still outstanding. Without
+# that, qwen3:4b treats the answer as the end of its turn: it asks which file,
+# is told, and stops without making the change.
+_answer = agent_tools.ask_user("which file?")
+check_true("listener -> relays the answer", "the second one" in _answer)
+check_true("listener -> and says the task is not finished",
+           "not done" in _answer.lower() or "carry it out" in _answer.lower())
 agent_tools.CONTEXT["ask"] = None
 
 # ─────────────────────────────────────────────────────────────────────────────

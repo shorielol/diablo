@@ -25,16 +25,21 @@ Three things it does that the command path does not:
 
 import os
 import random
-import re
+import re  # SIGNOFF_GUARD
 import sys
 import time
 from typing import Any, Dict, List, Optional
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The package parent, so `from skills import x` resolves whether this module
+# is imported as part of the package or run directly as a script. Importing
+# bare `x` here instead created a SECOND copy of each module with its own
+# globals, which is why patching local_brain.OLLAMA_HOST in one place had no
+# effect in the other. One module, one instance.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import local_brain  # noqa: E402
-import persona  # noqa: E402
-import screen_context  # noqa: E402
+from skills import local_brain  # noqa: E402
+from skills import persona  # noqa: E402
+from skills import screen_context  # noqa: E402
 
 ASSISTANT_NAME = os.getenv("DIABLO_NAME", "Diablo")
 MAX_TURNS = int(os.getenv("DIABLO_MEMORY_TURNS", "12"))

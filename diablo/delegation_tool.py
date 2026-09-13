@@ -24,11 +24,16 @@ from typing import Callable, List, Optional
 
 # The skill registry loads this file by path, so its own folder is not
 # necessarily importable. Put it there before reaching for its siblings.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# The package parent, so `from skills import x` resolves whether this module
+# is imported as part of the package or run directly as a script. Importing
+# bare `x` here instead created a SECOND copy of each module with its own
+# globals, which is why patching local_brain.OLLAMA_HOST in one place had no
+# effect in the other. One module, one instance.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import agent_core  # noqa: E402
-import conversation  # noqa: E402
-import local_brain  # noqa: E402
+from skills import agent_core  # noqa: E402
+from skills import conversation  # noqa: E402
+from skills import local_brain  # noqa: E402
 
 BASE_DIR = os.getenv("DIABLO_BASE_DIR", os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo")))
 JOBS_PATH = os.path.join(BASE_DIR, "jobs.json")

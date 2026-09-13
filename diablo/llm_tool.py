@@ -20,10 +20,11 @@ import os
 import sys
 from typing import Optional
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Package parent, so `from skills import ...` works however this is loaded.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    import local_brain
+    from skills import local_brain
 except ImportError:  # pragma: no cover - only if the module is loaded alone
     local_brain = None
 

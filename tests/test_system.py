@@ -117,8 +117,11 @@ def run():
 
     with guard(r, "read_screen on the frontmost window"):
         out = T.execute("read_screen", {"target": ""})
+        # Not `"Error" not in out` — this reads the screen, and during a test
+        # run the screen usually has the word "Error" on it somewhere. Only a
+        # leading "Error:" is the tool reporting failure.
         r.check("returns window context",
-                isinstance(out, str) and "Error" not in out and "Window" in out,
+                isinstance(out, str) and out.startswith("Window") ,
                 out[:60].replace("\n", " "))
 
     with guard(r, "read_screen with a nonsense target"):
