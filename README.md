@@ -105,12 +105,54 @@ It will also never tell you it has done something it has not done. That sounds o
 ## Tests
 
 ```bash
-python3 tests/run_all.py
+diablo test        # 14 suites
+diablo eval        # score it on clear, ambiguous, risky and impossible asks
+diablo bench       # latency, throughput and memory, per model
+diablo trace       # why it decided what it decided, turn by turn
+diablo state       # what every subsystem is doing right now
 ```
 
-Fifteen suites, 430 checks. They use the real model, the real filesystem and a real Trash rather than mocks, because the failures worth catching are the ones a 14B produces and a scripted stand-in never will: narrating a plan instead of running it, calling the same tool forever, or reporting success having done nothing.
+Fourteen suites, 470 checks. They use the real model, the real filesystem and a real Trash rather than mocks, because the failures worth catching are the ones a 14B produces and a scripted stand-in never will: narrating a plan instead of running it, calling the same tool forever, or reporting success having done nothing.
 
 Every agent test checks the disk afterwards, not what Diablo said about the disk.
+
+`diablo eval` is the other half. The suites answer "is it broken"; the eval
+answers "is it any good", across seven categories — clear, ambiguous,
+impossible, invented-path, tool-failure, risky, and should-escalate — scoring
+clarification accuracy, hallucination rate, recovery, unnecessary escalation,
+completion and latency. Hallucination is judged from the filesystem and a
+forbidden-phrase list, never by asking the model whether it was honest: the
+whole failure mode is confidence while wrong, so its own account is worthless.
+
+```
+qwen3:4b-instruct-2507-q4_K_M
+passed 15/15   hallucinations 0   median 4.09s
+```
+
+## Why it does not make things up
+
+A small model asked to edit "the draft" when two exist will pick one. Asked to
+read a file, it will sometimes report contents it invented while the real ones
+sit in its context. Prompting did not fix either, so six guards do, and each
+one holds for any model:
+
+| Guard | What it stops |
+|---|---|
+| `_ambiguous_target` | editing one of several files you did not name |
+| `_claims_unperformed_action` | reporting a change no tool made |
+| `_quotes_something_unread` | quoting file contents no tool returned |
+| `_parent_must_exist` | inventing a folder from a mis-heard name |
+| `_is_really_a_question` | ending the turn on a question it forgot to ask |
+| `_invents_a_status` | reporting the state of something it cannot see |
+
+The last one is why "how is Brew and Critics doing" gets "no idea, want me to
+check?" instead of a confident paragraph about a backend Diablo has never
+touched.
+
+Each guard in code earned the deletion of a prohibition from the prompt. The
+conversation prompt went from 924 words containing 40 prohibitions to 515
+words containing 16, which is most of the reason Diablo stopped sounding
+defensive.
 
 ## Architecture
 

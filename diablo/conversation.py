@@ -50,46 +50,27 @@ SESSION_TIMEOUT = int(os.getenv("DIABLO_SESSION_TIMEOUT", "900"))  # 15 minutes
 # a matter of taste — they are what makes a reply usable through a speaker.
 PERSONA = persona.style_block() + """
 
-You are speaking out loud to him while he works, so:
-- One or two sentences. Never a list, never markdown, never a heading. Every
-  character you write is read aloud.
-- If he is thinking out loud, think with him. Do not turn every remark into a task.
-- If you do not know, say so in four words and stop. Do not fill the silence.
-- You can see his screen when he refers to it, and only then. That is the one
-  thing you can actually observe in this mode.
-- Never invent a fact about his files, his coursework, or what is on his screen.
-  If the screen text is garbled, say it is garbled.
+You are speaking out loud while he works, so everything you write is heard
+rather than read. One paragraph, no lists, no headings.
 
-THE ONE THING YOU MUST NOT DO
-You are talking, not working. In this mode you have no tools, no file access and
-no ability to change anything. You have therefore done nothing.
-
-Never say you have done something. Not "I've updated the roadmap", not "I've run
-a diagnostic", not "I've sent it to the team", not "I've noted that" — none of it
-happened and he may believe you.
-
-EVERYTHING YOU KNOW, IN FULL
-There are exactly two sources, and this is the complete list:
+WHAT YOU KNOW, IN FULL
+Two sources, and this is the complete list:
   1. what he has said to you in this conversation
   2. the screen text attached above, if any was attached this turn
 
-That is all. You have no inbox, no calendar, no analytics, no social feeds, no
-project tracker, no memory of previous days and no access to his files in this
-mode. You cannot see how his businesses are performing, how far through an
-assignment he is, or what happened this morning.
+That is everything. In this mode you have no tools, no files, no inbox, no
+calendar, no analytics and no memory of previous days. You cannot open
+anything, change anything or send anything, so nothing has been done.
 
-So when he asks about the state of something and it is not in those two
-sources, you do not know — and saying so is the correct, complete answer. Any
-status, number, date, percentage or "it's been quiet lately" that did not come
-from those two sources is something you invented, and he cannot tell the
-difference. An invented status is worse than no answer, because it sounds
-like one.
+That makes two kinds of answer honest. If it is in those two sources, answer
+it. If it is not, say you do not know and offer to go and look — "no idea,
+want me to check?" is a complete answer. Any status, number, date or
+percentage that did not come from those two sources is one you made up, and
+he cannot tell the difference from the other side of a speaker.
 
-Say you do not know, then offer to find out. Vary how you say it; do not repeat
-one stock phrase every time.
-
-If something needs doing, say what you would do and let him ask for it: "Want me
-to open it?" is right. "I've opened it" is a lie."""
+The same goes for actions. "Want me to open it?" is right. "I've opened it"
+is a lie, because you have no way to open anything from here.
+"""
 
 
 class Session:
@@ -133,7 +114,7 @@ class Session:
         # No history and a question about earlier: answer honestly without
         # asking the model, which will otherwise invent the thing being
         # referred to.
-        if not self.turns and BACKREFERENCE.search(text):
+        if not self.turns and _asks_about_earlier(text):
             answer = random.choice(NO_HISTORY)
             self.remember("user", text)
             self.remember("assistant", answer)
@@ -180,6 +161,8 @@ class Session:
         answer = _speakable((message.get("content") or "").strip())
         if not answer:
             answer = "I have nothing useful to say to that, Sir."
+        elif _invents_a_status(answer, text, screen):
+            answer = random.choice(_UNKNOWN)
 
         self.remember("user", text)
         self.remember("assistant", answer)
@@ -212,6 +195,87 @@ NO_HISTORY = [
 ]
 
 
+# ─── Claims about things it cannot see ───────────────────────────────────────
+#
+# Conversation mode has exactly two sources: what he has said in this session,
+# and the screen text attached this turn. Anything else is invention.
+#
+# The prompt says so plainly and that is not sufficient on a 4B. Asked "how is
+# Brew and Critics doing", with no screen attached and no prior mention, it
+# answered: "running smoothly, no issues on the backend, and the latest
+# review..." — fluent, confident, and entirely made up. He has no way to tell.
+#
+# So the reply is checked against the two sources. A confident present-tense
+# claim about a named thing that appears in neither is replaced with the honest
+# answer. This is narrow on purpose: it only fires on a claim about a proper
+# noun that was never mentioned, which is the shape of the failure.
+
+_STATUS_CLAIM = re.compile(
+    r"\b(is|are|has|have|was|were|seems?|looks?|remains?)\s+"
+    r"(running|going|doing|performing|sitting|tracking|trending|up|down|fine|"
+    r"good|great|well|smooth\w*|quiet|busy|steady|stable|on track|behind|ahead|"
+    r"complete\w*|finish\w*|ready|live|active|stalled|delayed)\b",
+    re.IGNORECASE)
+
+_PROPER_NOUN = re.compile(r"\b([A-Z][a-z]{2,}(?:\s+(?:and\s+)?[A-Z][a-z]{2,})*)\b")
+
+_UNKNOWN = [
+    "I've no way to check that from here, Sir. Want me to go and look?",
+    "No idea — that isn't something I can see. Shall I find out?",
+    "I can't see that from where I am. Want me to check?",
+    "Not something I have in front of me, Sir. I can look if you like.",
+]
+
+
+def _invents_a_status(reply: str, asked: str, screen: Optional[str]) -> bool:
+    """
+    True when the reply reports the state of something it has no access to.
+
+    Narrow by design. It needs all three: a present-tense status phrase, a
+    proper noun carrying it, and that noun appearing in neither the
+    conversation so far nor the screen text.
+    """
+    if not _STATUS_CLAIM.search(reply):
+        return False
+
+    # The question is deliberately not a source. He names the thing he is
+    # asking about — "how is Brew and Critics doing" — and naming it is not
+    # telling Diablo how it is doing. Counting the question let every invented
+    # status through, because the subject was always present in it.
+    known = " ".join(turn["content"] for turn in session.turns).lower()
+    known += " " + (screen or "").lower()
+
+    for noun in _PROPER_NOUN.findall(reply):
+        if noun.lower() in ("sir", "i", "diablo"):
+            continue
+        if noun.lower() not in known:
+            return True
+    return False
+
+
+def _asks_about_earlier(text: str) -> bool:
+    """
+    True only when he is asking Diablo to recall, not merely using a past word.
+
+    The first version fired on any sentence containing "again", which caught
+    "my launch got pushed again" — a statement, answered with "we haven't
+    spoken yet, so I have nothing to go back to". A back-reference has to be a
+    question or an instruction to remember, not a word.
+    """
+    if not BACKREFERENCE.search(text):
+        return False
+    stripped = text.strip()
+    if stripped.endswith("?"):
+        return True
+    # The trailing \b meant "whats that file called again" did not match, because
+    # the character after "what" is a letter. Spoken transcription drops
+    # apostrophes constantly, so the contracted forms have to be spelled out.
+    return bool(re.match(
+        r"\s*(what'?s?|who'?s?|when|where|which|how'?s?|why|did|do|does|had|"
+        r"was|were|remind|tell me|say|repeat)\b",
+        stripped, re.IGNORECASE))
+
+
 def _speakable(text: str) -> str:
     """
     Flatten a reply into something a speaker can deliver.
@@ -233,10 +297,15 @@ def _speakable(text: str) -> str:
         r"\s*(?:and\s+)?(?:just\s+)?(?:do\s+)?"
         r"(?:let me know|just let me know|feel free to ask|don'?t hesitate)"
         r"[^.!?]*[.!?]\s*$", "", text, flags=re.IGNORECASE)
+    before = text
     text = re.sub(r"\s*(?:i'?m here if[^.!?]*|hope (?:that|this) helps"
-                  r"|is there anything else[^.!?]*)[.!?]\s*$", "", text,
-                  flags=re.IGNORECASE)
-    return text.strip()
+                  r"|(?:is there |was there |need )?anything else[^.!?]*"
+                  r"|happy to help[^.!?]*|what else can i[^.!?]*)[.!?]?\s*$",
+                  "", text, flags=re.IGNORECASE)
+    # Never let the strip take the whole reply. "Anything else?" as the entire
+    # answer is rare, and a genuine question like "let me know what you think"
+    # should survive.
+    return (text or before).strip()
 
 
 session = Session()

@@ -44,6 +44,11 @@ CACHE_DIR = "/Users/shaurya/.diablo/audio_cache"
 audio_queue = queue.Queue()
 command_capture_queue = queue.Queue()
 is_capturing_command = threading.Event()
+
+# Set when the user starts talking while Diablo is mid-answer. Checked between
+# spoken segments, so speech stops within a sentence rather than at the end of
+# a paragraph nobody is listening to.
+barge_in = threading.Event()
 COMMAND_LOCK = threading.Lock()
 
 # Exclusive hold on the microphone for the length of one utterance. Reentrant
@@ -112,10 +117,18 @@ def speak(text, lang="en", cached_key=None):
     remembered to pre-render. The multilingual model handles the Devanagari
     that VOICE_HI used to be needed for.
     """
+    barge_in.clear()
     set_ui_state("speaking")
     print(f"\n  Diablo: {text}")
     try:
-        voice.speak(text)
+        # Long answers start on the first sentence instead of after the whole
+        # thing has been synthesised: 0.95s to the first word rather than
+        # 2.79s. say_long falls back to a single call for anything short, so
+        # the cached one-liners are unaffected.
+        if len(text) > 120:
+            voice.say_long(text, should_stop=lambda: barge_in.is_set())
+        else:
+            voice.speak(text)
     except Exception as e:
         print(f"  [TTS fallback: {e}]")
         subprocess.run(["say", "-v", "Daniel", text])
@@ -151,6 +164,12 @@ def take_screenshot():
 
 # ─── Diablo microphone layer (mic.py) ───
 
+# Roughly 0.24s of sustained speech above the threshold before Diablo yields.
+BARGE_IN_LEVEL = float(os.getenv("DIABLO_BARGE_IN_LEVEL", "0.22"))
+BARGE_IN_BLOCKS = int(os.getenv("DIABLO_BARGE_IN_BLOCKS", "3"))
+_barge: list = []
+
+
 def audio_callback(block):
     """
     Called from the audio thread with 1280 float32 samples at 16 kHz.
@@ -161,6 +180,20 @@ def audio_callback(block):
     audio_queue.put((block * 32767).astype(np.int16))
     if is_capturing_command.is_set():
         command_capture_queue.put(block.reshape(-1, 1).copy())
+
+    # Barge-in. While Diablo is speaking, a sustained loud block is the user
+    # talking over it. The threshold is deliberately high: Diablo hears itself
+    # through the speakers, and a low one would make it interrupt its own
+    # sentence every time.
+    if voice.SPEAKING.is_set() and not barge_in.is_set():
+        if float(np.abs(block).max()) > BARGE_IN_LEVEL:
+            _barge.append(1)
+            if len(_barge) >= BARGE_IN_BLOCKS:
+                barge_in.set()
+                voice.interrupt()
+                _barge.clear()
+        else:
+            _barge.clear()
 
 
 # ─── Diablo endpointed capture ───

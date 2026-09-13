@@ -32,6 +32,13 @@ from typing import Callable, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from skills import agent_core  # noqa: E402
+from skills import trace  # noqa: E402
+try:
+    from skills import route  # noqa: E402
+except Exception:  # pragma: no cover
+    # The router keeps working on the old path if this fails to
+    # import. A classifier is an improvement, not a dependency.
+    route = None
 from skills import conversation  # noqa: E402
 from skills import local_brain  # noqa: E402
 
@@ -177,7 +184,11 @@ def handle(
 
     Returns "chat", "clarify", "queued" or "error", for the log.
     """
+    trace.new_turn("voice")
+    trace.event("heard", text=text[:200])
+
     if not local_brain.available():
+        trace.event("route", route="error", reason="ollama offline")
         speak("My local brain is offline, Sir. Ollama does not appear to be running.")
         return "error"
 
@@ -187,7 +198,26 @@ def handle(
         speak("Forgotten, Sir.")
         return "chat"
 
-    verdict = agent_core.understand(text, in_conversation=conversation.session.is_followup())
+    in_conversation = conversation.session.is_followup()
+
+    # One classification, carrying confidence and risk rather than just a verb.
+    # classify() calls understand() internally, so this is not an extra model
+    # round trip — it is the same one, with two more axes read off it.
+    decision = None
+    if route is not None:
+        try:
+            decision = route.classify(text, in_conversation=in_conversation)
+            verdict = {"action": {"escalate": "act"}.get(decision.route, decision.route),
+                       "task": decision.goal,
+                       "question": decision.question,
+                       "reply": ""}
+        except Exception as e:
+            trace.event("decide", route="fallback", reason=f"{type(e).__name__}: {e}")
+            decision = None
+    if decision is None:
+        verdict = agent_core.understand(text, in_conversation=in_conversation)
+        trace.event("understand", route=verdict["action"], via="model",
+                    question=(verdict.get("question") or "")[:100])
 
     if verdict["action"] == "chat":
         # Not the one-shot reply the classifier produced — a real conversational
@@ -207,6 +237,7 @@ def handle(
         rounds += 1
         # `ask` speaks the question itself — it owns the microphone, so it has
         # to say the question and open the mic without a gap in between.
+        trace.event("clarify", round=rounds, question=verdict["question"][:120])
         answer = ask(verdict["question"])
         if not answer:
             speak("I did not catch that, Sir.")
@@ -231,9 +262,30 @@ def handle(
     task = verdict.get("task") or text
     depth = len(task.split())
 
+    # Escalation: not confident enough to let the small model act alone, but
+    # clear enough that another question would just be irritating.
+    if decision is not None and decision.route == "escalate":
+        trace.event("route", route="escalate", confidence=decision.confidence,
+                    reason=decision.reason)
+        speak("This one needs more thought, Sir. One moment.")
+        try:
+            summary = local_brain.with_model(
+                os.getenv("DIABLO_ESCALATE_MODEL", ""),
+                lambda: agent_core.run(task, speak, ask=ask, confirm=confirm))
+            conversation.session.remember("user", text)
+            conversation.session.remember("assistant", summary)
+            speak(summary)
+            trace.event("done", route="escalate", summary=summary[:120])
+            return "escalated"
+        except Exception as e:
+            trace.event("route", route="escalate_failed", reason=str(e)[:100])
+            # Fall through and let the small model try rather than giving up.
+
     if depth < LONG_TASK_WORDS and not store.active():
         # Short and nothing else queued: run it here so the reply is immediate.
+        trace.event("route", route="inline", words=depth, task=task[:120])
         summary = agent_core.run(task, speak, ask=ask, confirm=confirm)
+        trace.event("done", route="inline", summary=summary[:120])
         conversation.session.remember("user", text)
         conversation.session.remember("assistant", summary)
         speak(summary)
@@ -243,6 +295,7 @@ def handle(
         store.add(job)
         return "inline"
 
+    trace.event("route", route="queued", words=depth, task=task[:120])
     speak("On it, Sir.")
     submit(task, speak, ask=ask, confirm=confirm)
     return "queued"

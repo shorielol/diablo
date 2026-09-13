@@ -22,6 +22,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from typing import Any, Callable, Dict, List, Optional
 
 # ─── Where the agent is allowed to operate ───────────────────────────────────
@@ -190,6 +191,17 @@ def write_file(path: str, content: str) -> str:
     try:
         with open(target, "w") as f:
             f.write(content)
+        # Verify rather than assume. A write that raised nothing can still
+        # leave nothing on disk — a full volume, a file the OS holds open, a
+        # path that resolved somewhere unexpected. Reporting success from the
+        # absence of an exception is how "I've saved that" becomes untrue.
+        if not os.path.exists(target):
+            return f"Error: wrote {target} but the file is not there afterwards."
+        written = os.path.getsize(target)
+        expected = len(content.encode())
+        if written != expected:
+            return (f"Error: {target} is {written} bytes on disk but {expected} "
+                    f"were written. The file may be truncated.")
         return f"{'Overwrote' if existed else 'Wrote'} {target} ({len(content)} chars)."
     except Exception as e:
         return f"Error writing {target}: {e}"
@@ -200,9 +212,14 @@ def append_file(path: str, content: str) -> str:
     problem = _parent_must_exist(target)
     if problem:
         return problem
+    before = os.path.getsize(target) if os.path.exists(target) else 0
     try:
         with open(target, "a") as f:
             f.write(content)
+        after = os.path.getsize(target) if os.path.exists(target) else 0
+        if after <= before and content:
+            return (f"Error: appended to {target} but it did not grow "
+                    f"({before} bytes before and after). Nothing was added.")
         return f"Appended {len(content)} chars to {target}."
     except Exception as e:
         return f"Error appending to {target}: {e}"
@@ -256,6 +273,14 @@ def move_file(source: str, destination: str) -> str:
     try:
         import shutil
         shutil.move(src, dst)
+        # A move is two claims — it arrived, and it left. Both are checked,
+        # because a half-move that reported success would leave him looking for
+        # a file in the place it is no longer.
+        if not os.path.exists(dst):
+            return f"Error: moved {src} but nothing is at {dst}."
+        if os.path.exists(src):
+            return (f"Error: copied to {dst} but {src} is still there. "
+                    f"The move did not complete.")
         return f"Moved to {dst}."
     except Exception as e:
         return f"Error moving {src}: {e}"
@@ -275,7 +300,15 @@ def delete_file(path: str) -> str:
              f'tell application "Finder" to delete POSIX file "{target}"'],
             capture_output=True, timeout=30,
         )
-        return f"Moved {os.path.basename(target)} to the Trash."
+        # Finder's delete is asynchronous, so a moment is needed before the
+        # filesystem agrees. Claiming a deletion that has not happened is the
+        # worst direction to be wrong in.
+        for _ in range(10):
+            if not os.path.exists(target):
+                return f"Moved {os.path.basename(target)} to the Trash."
+            time.sleep(0.1)
+        return (f"Error: asked Finder to trash {os.path.basename(target)} but it "
+                f"is still on disk. Nothing was deleted.")
     except Exception as e:
         return f"Error deleting {target}: {e}"
 

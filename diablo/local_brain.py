@@ -14,6 +14,7 @@ Measured on this machine (M3 Pro, 2026-09-10):
 
 import json
 import os
+import threading
 import re
 import time
 import urllib.error
@@ -269,6 +270,69 @@ def warm(model: Optional[str] = None) -> float:
         return -1.0
     return time.time() - started
 
+
+
+# ─── Escalation ──────────────────────────────────────────────────────────────
+
+def unload(model: Optional[str] = None) -> bool:
+    """
+    Drop a model from memory now, rather than waiting out keep_alive.
+
+    Necessary rather than tidy: qwen3:4b-instruct is 3.18 GB resident and
+    qwen3:14b is 9.64 GB. On an 18 GB machine already running an IDE and a
+    browser, holding both is not an option, so escalating means evicting.
+    """
+    target = model or CHAT_MODEL
+    try:
+        _post_json("/api/generate", {"model": target, "keep_alive": 0}, 30)
+        return True
+    except Exception:
+        return False
+
+
+def resident() -> List[str]:
+    """Which models Ollama is holding right now."""
+    try:
+        body = _get_json("/api/ps", 3)
+        return [m.get("name", "") for m in (body or {}).get("models", [])]
+    except Exception:
+        return []
+
+
+def with_model(model: str, work):
+    """
+    Run `work()` against a different model, then put things back.
+
+    The swap is a module global rather than a parameter because the call sites
+    are three layers down inside the agent loop, and threading a model name
+    through all of them to change it twice a day is not worth the churn.
+
+    The small model is evicted first. Without that, Ollama loads the second
+    model alongside the first and the machine starts swapping, which is far
+    slower than the 8.18s cold start this is trying to manage.
+    """
+    global CHAT_MODEL
+    if not model or model == CHAT_MODEL:
+        return work()
+
+    previous = CHAT_MODEL
+    unload(previous)
+    CHAT_MODEL = model
+    try:
+        return work()
+    finally:
+        CHAT_MODEL = previous
+        # Evict the big one. Leaving it resident would mean the next ordinary
+        # request finds 9.6 GB already spoken for.
+        unload(model)
+        # ...and bring the small one back in the background, because otherwise
+        # the next thing said pays a 2.71s cold start for a swap it had no part
+        # in. The user is usually still listening to the escalated answer while
+        # this happens.
+        try:
+            threading.Thread(target=lambda: warm(previous), daemon=True).start()
+        except Exception:
+            pass
 
 def speech_summary(text: str, limit_words: int = 25) -> str:
     """

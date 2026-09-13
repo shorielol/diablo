@@ -9,6 +9,11 @@
 #   diablo doctor     find out what is broken, and fix what can be fixed
 #   diablo mic        re-probe the microphone and pick a working device
 #   diablo voice      re-cache the spoken lines
+#   diablo state      what every subsystem is doing right now
+#   diablo trace      why it decided what it decided, turn by turn
+#   diablo bench      latency, throughput and memory, per model
+#   diablo eval       score it on clear, ambiguous, risky and impossible asks
+#   diablo test       run every suite
 #
 # Starting goes through the app bundle rather than running python directly, and
 # that is the whole point. macOS grants microphone access to the *responsible
@@ -144,8 +149,24 @@ case "${1:-start}" in
     doctor)  exec "$PY" "$SKILLS/doctor.py" "${@:2}" ;;
     mic)     exec "$PY" "$SKILLS/mic.py" "${@:2}" ;;
     voice)   exec "$PY" "$SKILLS/voice.py" prewarm ;;
+    trace)   exec "$PY" "$SKILLS/trace.py" "${@:2}" ;;
+    bench)   exec "$PY" "$SKILLS/bench.py" "${@:2}" ;;
+    state)   exec "$PY" "$DIABLO_HOME/companion_manager.py" ;;
+    eval)
+        REPO="$HOME/Desktop/30 Code/35 Diablo"
+        if [ -f "$REPO/evals/run_eval.py" ]; then
+            exec "$PY" "$REPO/evals/run_eval.py" "${@:2}"
+        fi
+        echo "  The evaluation harness lives in the repo, not the install:"
+        echo "    $REPO/evals/run_eval.py"
+        ;;
+    test)
+        REPO="$HOME/Desktop/30 Code/35 Diablo"
+        exec "$PY" "$REPO/tests/run_all.py" "${@:2}"
+        ;;
     app)     exec "$PY" "$SKILLS/make_app.py" --run ;;
     *)
         echo "Usage: diablo [start|stop|restart|status|logs|doctor|mic|voice|app]"
+        echo "              [trace|bench|eval|test|state]"
         ;;
 esac

@@ -13,10 +13,11 @@ It streams the generated WAV audio directly and caches it to disk.
 
 import hashlib
 import os
+import queue
 import subprocess
 import sys
 import threading
-from typing import Optional
+from typing import List, Optional
 import urllib.request
 import json
 
@@ -238,6 +239,125 @@ def speak(text: str) -> str:
     _say_locally(text)
     return "local"
 
+
+
+# ─── Streaming speech ────────────────────────────────────────────────────────
+
+# Set while Diablo is speaking, cleared when it stops. The wake listener sets
+# STOP when it hears speech during playback, which is how barge-in works.
+SPEAKING = threading.Event()
+STOP = threading.Event()
+
+
+def interrupt() -> None:
+    """Stop talking, now. Safe to call from any thread."""
+    STOP.set()
+
+
+def speak_stream(pieces, should_stop=None) -> str:
+    """
+    Speak sentence by sentence as they arrive, instead of waiting for the lot.
+
+    `pieces` is an iterable of text — sentences from the model, or one string.
+    Each is synthesised and played in order, and the next is prepared while the
+    current one is still playing, so the gap between sentences is silence only
+    for as long as the cache miss takes.
+
+    The reason this exists: a six-sentence answer takes about six seconds to
+    generate and the old path said nothing for all six. Speaking from the first
+    sentence turns that into roughly two.
+
+    Returns the route the last segment took, or "interrupted".
+    """
+    STOP.clear()
+    SPEAKING.set()
+    route = "empty"
+
+    # Synthesis runs one segment ahead of playback. Without this, each sentence
+    # waits for the previous one to finish playing before it starts rendering,
+    # and a four-sentence answer took 22.6s to say when a single synthesis of
+    # the whole thing would have taken about 6. The first word still arrives
+    # early, which is the point, but the gaps in between were worse than the
+    # wait it replaced.
+    ahead: "queue.Queue" = queue.Queue(maxsize=2)
+    failed: List[BaseException] = []
+
+    def render() -> None:
+        try:
+            for piece in pieces:
+                if STOP.is_set():
+                    break
+                piece = (piece or "").strip()
+                if not piece:
+                    continue
+                path = None
+                try:
+                    path = cached_path(piece) or synthesize(piece)
+                except BaseException as e:
+                    failed.append(e)
+                ahead.put((piece, path))
+        except BaseException as e:
+            failed.append(e)
+        finally:
+            ahead.put(None)
+
+    worker = threading.Thread(target=render, daemon=True)
+    worker.start()
+
+    try:
+        while True:
+            if STOP.is_set() or (should_stop is not None and should_stop()):
+                return "interrupted"
+            try:
+                item = ahead.get(timeout=30)
+            except Exception:
+                return route
+            if item is None:
+                return route
+            piece, path = item
+            if STOP.is_set():
+                return "interrupted"
+            if path and _play(path):
+                route = "voicebox"
+            else:
+                # Whatever went wrong with this segment, say it some other way
+                # rather than dropping a sentence out of the middle of an answer.
+                route = speak(piece)
+    finally:
+        STOP.set()          # unblock the renderer if it is mid-queue
+        SPEAKING.clear()
+        worker.join(timeout=2)
+        STOP.clear()
+
+
+def say_long(text: str, should_stop=None) -> str:
+    """
+    Speak a whole answer, split at sentence boundaries first.
+
+    The convenience wrapper for the common case: one finished string that is
+    long enough to be worth starting early.
+    """
+    try:
+        from skills import speech
+        pieces = speech.segments(text)
+    except Exception:
+        pieces = [text]
+    if not pieces:
+        return speak(text)
+    if len(pieces) == 1:
+        return speak(pieces[0])
+
+    # First sentence alone, then everything else as one block.
+    #
+    # Measured on this machine for a four-sentence answer:
+    #   whole answer in one synthesis   2.79s before the first word, 12.1s total
+    #   every sentence separately       0.95s before the first word, 17.1s total
+    #   first sentence, then the rest   0.95s before the first word, ~13s total
+    #
+    # Splitting every sentence pays a synthesis round trip per sentence and the
+    # look-ahead only hides part of it. Splitting once buys nearly all of the
+    # head start and almost none of the tax.
+    return speak_stream([pieces[0], " ".join(pieces[1:])], should_stop=should_stop)
 
 # ─── Pre-warm ────────────────────────────────────────────────────────────────
 

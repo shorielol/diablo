@@ -36,6 +36,7 @@ from typing import Any, Callable, Dict, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from skills import agent_tools  # noqa: E402
+from skills import trace  # noqa: E402
 from skills import local_brain  # noqa: E402
 from skills.local_brain import BrainOffline  # noqa: E402
 
@@ -431,8 +432,11 @@ def run(
     used_any_tool = False
     asked_which = False
     performed = set()   # mutating tools that actually ran
+    saw: List[str] = []          # everything the reading tools returned
+    file_reads: List[str] = []   # read_file only, for the quote fallback
     challenged = False
     asked_aloud = False
+    quoted_challenge = False
     reassured = False
 
     for step in range(1, MAX_STEPS + 1):
@@ -466,6 +470,7 @@ def run(
             if (ask and not asked_aloud and not performed
                     and _is_really_a_question(answer, performed)):
                 asked_aloud = True
+                trace.event("guard", guard="question_not_asked", text=answer[:120])
                 reply = ask(_speakable(answer))
                 if reply:
                     messages.append({"role": "user", "content":
@@ -474,6 +479,7 @@ def run(
 
             if _claims_unperformed_action(answer, performed) and not challenged:
                 challenged = True
+                trace.event("guard", guard="claimed_unperformed", claim=answer[:120])
                 messages.append({"role": "user", "content":
                                  "You have not called any tool that changes "
                                  "anything, so nothing has happened yet. Do not "
@@ -485,6 +491,46 @@ def run(
                 # It was told once and said it again. Do not pass the claim on.
                 return _speakable(
                     "I could not complete that, Sir, and nothing was changed.")
+
+            # Checked after the unperformed-action guard on purpose. A model
+            # that claims an append it never made also invents the resulting
+            # file contents, and "you have not done it yet" is the correction
+            # that gets the job finished; replacing the answer with a file's
+            # contents just ends the turn with the work still outstanding.
+            invented = _quotes_something_unread(answer, "\n".join(saw))
+            if invented and not quoted_challenge:
+                quoted_challenge = True
+                trace.event("guard", guard="quoted_unread", quote=invented[:100])
+                messages.append({"role": "user", "content":
+                                 f"You put {invented[:80]!r} in quotes, and no tool "
+                                 f"returned that. Quote only what the tools actually "
+                                 f"gave you, or describe it without quoting."})
+                continue
+            if invented:
+                # Told once and it did it again. Deflecting here was the first
+                # attempt and it is a poor answer, because the real content is
+                # sitting in `saw` — Diablo read the file correctly and only
+                # the summary was invented. So report what the tool returned
+                # and let the model's version go.
+                # Only actual file contents. Falling back to `saw` meant a
+                # directory listing could be read out as though it were the
+                # contents of a file that does not exist.
+                if performed:
+                    # Something really was written. Reporting a file's contents
+                    # instead of what changed would be a different answer to a
+                    # different question.
+                    return _speakable("Done, Sir. I've made that change.")
+                short = [r.strip() for r in file_reads
+                         if r and len(r.strip()) < 400 and not r.startswith("Error")]
+                if short:
+                    content = short[-1].strip()
+                    trace.event("guard", guard="quoted_unread_replaced",
+                                content=content[:80])
+                    return _speakable(f"It says: {content}")
+                return _speakable(
+                    "I read it, Sir, but I can't report the contents reliably. "
+                    "Open it and I'll take another look.")
+
             return _speakable(answer)
 
         messages.append({
@@ -502,6 +548,7 @@ def run(
             question = _ambiguous_target(task, name, args, messages)
             if question and ask and not asked_which:
                 asked_which = True
+                trace.event("guard", guard="ambiguous_target", tool=name, question=question[:120])
                 print(f"  [Agent {step}] ambiguous target, asking: {question}")
                 reply = ask(question)
                 messages.append({"role": "tool", "tool_name": name, "content":
@@ -527,8 +574,17 @@ def run(
                 if on_step:
                     on_step(step, name, json.dumps(args)[:120])
                 print(f"  [Agent {step}] {name}({json.dumps(args)[:110]})")
+                began_call = time.time()
                 result = agent_tools.execute(name, args)
                 used_any_tool = True
+                if name in READING_TOOLS:
+                    saw.append(result)
+                    if name == "read_file":
+                        file_reads.append(result)
+                trace.event("tool", tool=name,
+                            ok=not result.startswith(("Error", "Refused", "Cancelled")),
+                            ms_call=round((time.time() - began_call) * 1000, 1),
+                            detail=result[:120])
                 if name in MUTATING and not result.lower().startswith(
                         ("error", "refused", "cancelled")):
                     performed.add(name)
@@ -611,6 +667,56 @@ def _is_really_a_question(answer: str, performed: set) -> bool:
     if performed:
         return False
     return bool(_ENDS_IN_QUESTION.search(answer) or _OFFERS_A_CHOICE.search(answer))
+
+
+# ─── Quoting things it never read ────────────────────────────────────────────
+#
+# Asked to read a file containing "the first line", qwen3:4b-instruct read it
+# correctly — the tool returned exactly that — and then reported:
+#
+#   The first line of notes.txt is: "Initial evaluation notes for the..."
+#
+# The true content was in its context. It pattern-completed a plausible
+# notes.txt instead, which is a worse failure than the earlier fabrications
+# because there is no missing information to blame.
+#
+# So anything the answer puts in quotes has to appear in something a tool
+# actually returned this turn. Cheap, and it only fires on the exact shape of
+# the failure: a quoted span presented as content.
+
+READING_TOOLS = {"read_file", "search_text", "list_files", "find_files",
+                 "read_screen", "explain_screen", "run_shell", "python_snippet"}
+
+_QUOTED = re.compile(r"[\"\u201c\u2018']([^\"\u201c\u201d\u2018\u2019']{12,200})[\"\u201d\u2019']")
+
+
+def _normalise_for_compare(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
+
+
+def _quotes_something_unread(answer: str, seen: str) -> Optional[str]:
+    """
+    The first quoted span in the answer that no tool ever produced, or None.
+
+    Short quotes are ignored — a model quoting a filename or a single word is
+    not claiming to have read it. Twelve characters is long enough that it is
+    presenting content.
+    """
+    if not seen:
+        return None
+    haystack = _normalise_for_compare(seen)
+    for candidate in _QUOTED.findall(answer):
+        needle = _normalise_for_compare(candidate)
+        if len(needle) < 12:
+            continue
+        if needle in haystack:
+            continue
+        # Allow a paraphrase that is mostly words it did read.
+        words = [w for w in needle.split() if len(w) > 3]
+        if words and sum(1 for w in words if w in haystack) / len(words) >= 0.7:
+            continue
+        return candidate
+    return None
 
 
 def _looks_like_a_dodge(answer: str) -> bool:
