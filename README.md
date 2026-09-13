@@ -108,13 +108,14 @@ It will also never tell you it has done something it has not done. That sounds o
 python3 tests/run_all.py
 ```
 
-Thirteen suites, 297 checks. They use the real model, the real filesystem and a real Trash rather than mocks, because the failures worth catching are the ones a 14B produces and a scripted stand-in never will: narrating a plan instead of running it, calling the same tool forever, or reporting success having done nothing.
+Fifteen suites, 430 checks. They use the real model, the real filesystem and a real Trash rather than mocks, because the failures worth catching are the ones a 14B produces and a scripted stand-in never will: narrating a plan instead of running it, calling the same tool forever, or reporting success having done nothing.
 
 Every agent test checks the disk afterwards, not what Diablo said about the disk.
 
 ## Architecture
 
 ```
+companion_manager.py the state machine: owns every subsystem, one health view
 voice_bridge.py      the service: audio in, wake detection, dispatch
 diablo/
   wake_word.py       rolling-window detection by transcription
@@ -127,7 +128,32 @@ diablo/
   conversation.py    rolling memory, anti-fabrication
   persona.py         the character dials
   voice.py           Voicebox, disk cache, system fallback
+  pointing.py        finding things on screen by measured coordinates
+  overlay.py         the on-screen marker, drawn in its own process
+  bench.py           latency, throughput and memory per model
 ```
+
+`companion_manager.py` is the single place that knows what Diablo is doing.
+It owns the lifecycle of the mic, wake word, voice, brain, screen and
+conversation, runs an explicit state machine (`cold → init → idle → listening
+→ processing → responding`), and emits events anything can subscribe to:
+
+```python
+from companion_manager import create_manager
+
+manager = create_manager()
+manager.on("state_changed", lambda e: print(e["old_state"], "->", e["new_state"]))
+manager.start()
+print(manager.health())
+```
+
+```bash
+python3 companion_manager.py     # full diagnostic report
+```
+
+Invalid state transitions are logged and refused rather than raised, because a
+voice assistant that throws on an odd transition goes silent, and silence is
+the one failure with no symptom.
 
 ## Licence
 

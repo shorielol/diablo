@@ -26,6 +26,7 @@ SUITES = [
     ("test_filesystem.py",   False, "every file tool, and the sandbox boundary"),
     ("test_safety.py",       False, "shell denylist, confirmations, execute() fuzzing"),
     ("test_mic_wake.py",     False, "endpointer and wake listener under load"),
+    ("test_manager.py",      False, "state machine, events, lifecycle, degradation"),
     ("test_pointing.py",     False, "finding things on screen, and marking them"),
     ("test_system.py",       False, "system tools, offline gating, screen sight"),
     ("test_voice.py",        False, "Voicebox, cache, and every fallback"),
