@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>J.A.R.V.I.S. Holographic HUD</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Iceland&display=swap" rel="stylesheet">
+</head>
+<body class="idle">
+    <div class="hologram-container">
+        <!-- Holographic Rings -->
+        <div class="rings">
+            <div class="ring outer"></div>
+            <div class="ring middle"></div>
+            <div class="ring inner"></div>
+        </div>
+
+        <!-- System Core -->
+        <div class="core-container">
+            <div class="core">
+                <div class="core-glow"></div>
+                <div class="core-inner"></div>
+            </div>
+        </div>
+
+        <!-- Status & Data Feed -->
+        <div class="hud-elements">
+            <div class="status-box">
+                <span class="label">SYSTEM STATUS:</span>
+                <span class="value" id="status-text">STANDING BY</span>
+            </div>
+            
+            <div class="diagnostics">
+                <div class="stat"><div class="bar" id="cpu-bar"></div><span>CPU</span></div>
+                <div class="stat"><div class="bar" id="mem-bar"></div><span>MEM</span></div>
+            </div>
+
+            <div class="data-feed">
+                <div class="feed-header">TACTICAL DATA FEED</div>
+                <div class="feed-content" id="data-content">
+                    Ready for commands, Sir.
+                </div>
+            </div>
+        </div>
+
+        <!-- Peripheral Decorative Elements -->
+        <div class="decor-line top-left"></div>
+        <div class="decor-line bottom-right"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

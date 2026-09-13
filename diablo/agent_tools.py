@@ -1,0 +1,914 @@
+"""
+D.I.A.B.L.O. Tool Belt
+======================
+The hands. Every one of these is a real function with a real effect — files get
+read, folders get made, apps get opened, messages get sent. The agent loop in
+agent_core.py picks from this registry and calls them.
+
+Three rules the whole file is built around:
+
+1. **Everything returns a string.** The model reads tool output as text, so a
+   crash has to come back as "Error: ..." rather than an exception, or the loop
+   dies instead of adapting.
+2. **Paths are confined.** Nothing outside ALLOWED_ROOTS can be read or written,
+   no matter what the model asks for, because the model is reading its
+   instructions off a microphone.
+3. **Destructive things ask first.** Deleting and shelling out route through the
+   confirmation callback, which is the user's voice.
+"""
+
+import glob as globlib
+import json
+import os
+import re
+import subprocess
+from typing import Any, Callable, Dict, List, Optional
+
+# ─── Where the agent is allowed to operate ───────────────────────────────────
+
+HOME = os.path.expanduser("~")
+DESKTOP = os.path.join(HOME, "Desktop")
+COWORK = os.path.join(HOME, "Documents", "CoWork OS")
+
+# Spoken shorthand -> real folder. Doubles as the map handed to the model, so it
+# knows "my EE" means the Academics workstation without guessing.
+WORKSPACES: Dict[str, str] = {
+    "academics": os.path.join(DESKTOP, "10 Academics"),
+    "ventures": os.path.join(DESKTOP, "20 Ventures"),
+    "code": os.path.join(DESKTOP, "30 Code"),
+    "studio": os.path.join(DESKTOP, "40 Studio"),
+    "finance": os.path.join(DESKTOP, "50 Finance"),
+    "system": os.path.join(DESKTOP, "00 System"),
+    "cowork": COWORK,
+    "desktop": DESKTOP,
+    "documents": os.path.join(HOME, "Documents"),
+    "downloads": os.path.join(HOME, "Downloads"),
+}
+
+ALLOWED_ROOTS = [DESKTOP, COWORK, os.path.join(HOME, "Documents"),
+                 os.path.join(HOME, "Downloads")]
+
+MAX_TOOL_OUTPUT = 6000  # characters handed back to the model per call
+
+# Set by agent_core before a run. `ask` speaks a question and returns the reply;
+# `confirm` speaks a yes/no and returns a bool.
+CONTEXT: Dict[str, Any] = {"ask": None, "confirm": None}
+
+
+# ─── Diablo skill access ─────────────────────────────────────────────────────
+
+def _skill(name: str):
+    """Fetch one of the existing Diablo skill modules, or None if unavailable."""
+    try:
+        from skills import skill_registry
+        mod = skill_registry.registry.get_skill(name)
+        if mod is not None:
+            return mod
+    except Exception:
+        pass
+    try:
+        import importlib
+        return importlib.import_module("skills." + name)
+    except Exception:
+        return None
+
+
+# ─── Path safety ─────────────────────────────────────────────────────────────
+
+def _resolve(path: str) -> str:
+    """
+    Turn whatever the model said into a real, allowed absolute path.
+
+    Accepts an absolute path, "~/...", a workspace nickname ("academics/11 Econ
+    EE"), or a bare relative path, which is searched for across the workspaces.
+    Raises ValueError if the result escapes ALLOWED_ROOTS.
+    """
+    if not path:
+        raise ValueError("no path given")
+
+    raw = path.strip().strip('"').strip("'")
+    candidate = os.path.expanduser(raw)
+
+    if not os.path.isabs(candidate):
+        head = raw.split("/", 1)[0].lower()
+        if head in WORKSPACES:
+            rest = raw.split("/", 1)[1] if "/" in raw else ""
+            candidate = os.path.join(WORKSPACES[head], rest)
+        else:
+            for root in [DESKTOP, COWORK] + list(WORKSPACES.values()):
+                trial = os.path.join(root, raw)
+                if os.path.exists(trial):
+                    candidate = trial
+                    break
+            else:
+                candidate = os.path.join(DESKTOP, raw)
+
+    resolved = os.path.realpath(candidate)
+    for root in ALLOWED_ROOTS:
+        if resolved == os.path.realpath(root) or resolved.startswith(os.path.realpath(root) + os.sep):
+            return resolved
+    raise ValueError(
+        f"'{path}' is outside the folders I am allowed to touch "
+        f"({', '.join(os.path.basename(r) or r for r in ALLOWED_ROOTS)})"
+    )
+
+
+def _clip(text: str) -> str:
+    text = text if isinstance(text, str) else str(text)
+    if len(text) > MAX_TOOL_OUTPUT:
+        return text[:MAX_TOOL_OUTPUT] + f"\n... [truncated, {len(text)} chars total]"
+    return text
+
+
+# ─── Filesystem ──────────────────────────────────────────────────────────────
+
+def list_files(path: str = "desktop") -> str:
+    target = _resolve(path)
+    if not os.path.isdir(target):
+        return f"Error: {target} is not a folder."
+    entries = sorted(os.listdir(target))
+    visible = [e for e in entries if not e.startswith(".")]
+    if not visible:
+        return f"{target} is empty."
+    lines = []
+    for name in visible[:200]:
+        full = os.path.join(target, name)
+        marker = "/" if os.path.isdir(full) else ""
+        size = "" if os.path.isdir(full) else f"  ({os.path.getsize(full)} bytes)"
+        lines.append(f"{name}{marker}{size}")
+    return f"{len(visible)} items in {target}:\n" + "\n".join(lines)
+
+
+def read_file(path: str) -> str:
+    target = _resolve(path)
+    # Extension is checked before existence: "that is a spreadsheet, use
+    # python_snippet" is the more useful correction either way.
+    if target.lower().endswith((".xlsx", ".xls", ".xlsm", ".docx", ".pptx", ".pdf")):
+        return (f"Error: {os.path.basename(target)} is a binary Office/PDF file, "
+                f"not text. Use python_snippet with openpyxl (spreadsheets), "
+                f"python-docx (Word) or python-pptx (decks) to read it.")
+    if not os.path.isfile(target):
+        return f"Error: no file at {target}."
+    try:
+        with open(target, "r", errors="replace") as f:
+            return _clip(f.read())
+    except Exception as e:
+        return f"Error reading {target}: {e}"
+
+
+def write_file(path: str, content: str) -> str:
+    target = _resolve(path)
+    existed = os.path.exists(target)
+    if existed:
+        confirm = CONTEXT.get("confirm")
+        if confirm and not confirm(f"overwrite {os.path.basename(target)}"):
+            return "Cancelled by the user. The existing file was left alone."
+    try:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w") as f:
+            f.write(content)
+        return f"{'Overwrote' if existed else 'Wrote'} {target} ({len(content)} chars)."
+    except Exception as e:
+        return f"Error writing {target}: {e}"
+
+
+def append_file(path: str, content: str) -> str:
+    target = _resolve(path)
+    try:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "a") as f:
+            f.write(content)
+        return f"Appended {len(content)} chars to {target}."
+    except Exception as e:
+        return f"Error appending to {target}: {e}"
+
+
+def find_files(name: str, path: str = "desktop") -> str:
+    root = _resolve(path)
+    pattern = name if any(c in name for c in "*?[") else f"*{name}*"
+    hits = globlib.glob(os.path.join(root, "**", pattern), recursive=True)
+    hits = [h for h in hits if "/." not in h][:60]
+    if not hits:
+        return f"Nothing matching '{name}' under {root}."
+    return f"{len(hits)} match(es):\n" + "\n".join(hits)
+
+
+def search_text(query: str, path: str = "desktop") -> str:
+    root = _resolve(path)
+    try:
+        proc = subprocess.run(
+            ["grep", "-rIl", "--exclude-dir=.git", "--exclude-dir=node_modules",
+             "-i", query, root],
+            capture_output=True, text=True, timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        return "Error: the search took too long. Narrow it to one folder."
+    hits = [line for line in proc.stdout.splitlines() if line][:40]
+    if not hits:
+        return f"No file under {root} contains '{query}'."
+    return f"{len(hits)} file(s) contain '{query}':\n" + "\n".join(hits)
+
+
+def make_folder(path: str) -> str:
+    target = _resolve(path)
+    try:
+        os.makedirs(target, exist_ok=True)
+        return f"Folder ready at {target}."
+    except Exception as e:
+        return f"Error creating {target}: {e}"
+
+
+def move_file(source: str, destination: str) -> str:
+    src, dst = _resolve(source), _resolve(destination)
+    if not os.path.exists(src):
+        return f"Error: nothing at {src}."
+    if os.path.isdir(dst):
+        dst = os.path.join(dst, os.path.basename(src))
+    if os.path.exists(dst):
+        confirm = CONTEXT.get("confirm")
+        if confirm and not confirm(f"replace {os.path.basename(dst)}"):
+            return "Cancelled by the user."
+    try:
+        import shutil
+        shutil.move(src, dst)
+        return f"Moved to {dst}."
+    except Exception as e:
+        return f"Error moving {src}: {e}"
+
+
+def delete_file(path: str) -> str:
+    target = _resolve(path)
+    if not os.path.exists(target):
+        return f"Error: nothing at {target}."
+    confirm = CONTEXT.get("confirm")
+    if confirm and not confirm(f"delete {os.path.basename(target)}"):
+        return "Cancelled by the user. Nothing was deleted."
+    try:
+        # Trash rather than unlink, so a misheard sentence is recoverable.
+        subprocess.run(
+            ["osascript", "-e",
+             f'tell application "Finder" to delete POSIX file "{target}"'],
+            capture_output=True, timeout=30,
+        )
+        return f"Moved {os.path.basename(target)} to the Trash."
+    except Exception as e:
+        return f"Error deleting {target}: {e}"
+
+
+# ─── Shell ───────────────────────────────────────────────────────────────────
+
+# Commands that cannot be undone by fishing something out of the Trash.
+SHELL_DENYLIST = [
+    r"\brm\s+-[a-z]*[rf]", r"\bmkfs\b", r"\bdd\s+if=", r"\bshutdown\b",
+    r"\breboot\b", r"\bdiskutil\s+erase", r"\bsudo\b", r"\bchown\s+-R\s+/",
+    r"\bchmod\s+-R\s+777\s+/", r":\(\)\s*\{", r"\bkillall\s+-9\b",
+    r">\s*/dev/[sr]d", r"\bcurl\b[^|]*\|\s*(ba)?sh", r"\bhistory\s+-c",
+    r"\bgit\s+push\b", r"\bdefaults\s+delete\b",
+]
+
+
+def run_shell(command: str, working_directory: str = "desktop") -> str:
+    """Run a shell command. Denylisted verbs are refused outright."""
+    for pattern in SHELL_DENYLIST:
+        if re.search(pattern, command, re.IGNORECASE):
+            return (f"Refused: '{command}' matches a blocked pattern ({pattern}). "
+                    f"Use delete_file if you need to remove something.")
+    try:
+        cwd = _resolve(working_directory)
+    except ValueError as e:
+        return f"Error: {e}"
+
+    confirm = CONTEXT.get("confirm")
+    if confirm and not confirm(f"run the command {command[:60]}"):
+        return "Cancelled by the user."
+
+    try:
+        proc = subprocess.run(command, shell=True, cwd=cwd, capture_output=True,
+                              text=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        return "Error: the command ran for over three minutes and was stopped."
+    out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
+    return _clip(out.strip() or f"Command finished with exit code {proc.returncode} and no output.")
+
+
+def python_snippet(code: str) -> str:
+    """Run a short Python program. The fastest route into xlsx, docx and pptx."""
+    confirm = CONTEXT.get("confirm")
+    if confirm and not confirm("run a Python snippet"):
+        return "Cancelled by the user."
+    try:
+        import sys
+        proc = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                              text=True, timeout=180, cwd=DESKTOP)
+    except subprocess.TimeoutExpired:
+        return "Error: the snippet ran for over three minutes and was stopped."
+    out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
+    return _clip(out.strip() or "Snippet finished with no output.")
+
+
+# ─── macOS control ───────────────────────────────────────────────────────────
+
+def open_app(name: str) -> str:
+    proc = subprocess.run(["open", "-a", name], capture_output=True, text=True)
+    if proc.returncode != 0:
+        return f"Error: could not open '{name}'. {proc.stderr.strip()}"
+    return f"Opened {name}."
+
+
+def open_url(url: str) -> str:
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    subprocess.Popen(["open", url])
+    return f"Opened {url}."
+
+
+def take_screenshot() -> str:
+    import time
+    path = os.path.join(DESKTOP, f"DIABLO_Screenshot_{int(time.time())}.png")
+    subprocess.run(["screencapture", "-t", "png", path], capture_output=True)
+    return f"Screenshot saved to {path}."
+
+
+def set_volume(level: int) -> str:
+    level = max(0, min(100, int(level)))
+    subprocess.run(["osascript", "-e", f"set volume output volume {level}"],
+                   capture_output=True)
+    return f"Volume set to {level}%."
+
+
+def set_brightness(level: int) -> str:
+    skill = _skill("system_skill")
+    if skill and hasattr(skill, "set_brightness"):
+        try:
+            skill.set_brightness(max(0, min(100, int(level))))
+            return f"Brightness set to {level}%."
+        except Exception as e:
+            return f"Error setting brightness: {e}"
+    return "Error: brightness control is unavailable on this machine."
+
+
+def system_status() -> str:
+    skill = _skill("sys_info_tool")
+    if skill:
+        for fn in ("format_status_report", "get_system_status"):
+            if hasattr(skill, fn):
+                try:
+                    return str(getattr(skill, fn)())
+                except Exception:
+                    break
+    try:
+        import psutil
+        battery = psutil.sensors_battery()
+        return (f"CPU {psutil.cpu_percent(interval=0.5)}%, "
+                f"RAM {psutil.virtual_memory().percent}%, "
+                f"disk {psutil.disk_usage('/').percent}% used"
+                + (f", battery {int(battery.percent)}%" if battery else ""))
+    except Exception as e:
+        return f"Error reading system status: {e}"
+
+
+def read_screen(target: str = "") -> str:
+    """
+    Read one window. Empty target means whatever is in front.
+
+    Replaces the old whole-screen OCR, which mashed every visible window into
+    one blob. Per-window keeps the browser's content out of the editor's, which
+    is the single thing that makes screen context usable rather than confusing.
+    """
+    try:
+        screen_context = _skill("screen_context")
+        if screen_context is None:
+            return "Error: screen reading is unavailable."
+        return _clip(screen_context.look(target))
+    except Exception as e:
+        return f"Error reading the screen: {type(e).__name__}: {e}"
+
+
+def explain_screen(question: str = "", target: str = "") -> str:
+    """
+    Understand a window and say what matters, rather than dumping its text.
+
+    read_screen returns everything OCR found, which is the right input when the
+    agent is going to reason over it. This is the right answer when the user
+    asked a question out loud and wants a sentence back.
+    """
+    try:
+        screen_context = _skill("screen_context")
+        if screen_context is None:
+            return "Error: screen reading is unavailable."
+        return _clip(screen_context.explain(question, target))
+    except Exception as e:
+        return f"Error understanding the screen: {type(e).__name__}: {e}"
+
+
+def list_windows() -> str:
+    """What is open, frontmost first. Cheap — no capture, no OCR."""
+    try:
+        screen_context = _skill("screen_context")
+        if screen_context is None:
+            return "Error: screen reading is unavailable."
+        return _clip(screen_context.look_everything())
+    except Exception as e:
+        return f"Error listing windows: {type(e).__name__}: {e}"
+
+
+def describe_visually(question: str, target: str = "") -> str:
+    """Ask a local vision model about a window, for what text alone cannot answer."""
+    try:
+        screen_context = _skill("screen_context")
+        if screen_context is None:
+            return "Error: screen reading is unavailable."
+        return _clip(screen_context.describe_visually(question, target))
+    except Exception as e:
+        return f"Error looking at the screen: {type(e).__name__}: {e}"
+
+
+# ─── Communication ───────────────────────────────────────────────────────────
+
+CONTACT_ALIASES = {
+    "mom": "don ji", "neelima": "don ji", "neelima singh": "don ji",
+    "dad": "corporate leaader dad", "pankaj": "corporate leaader dad",
+    "pankaj singh": "corporate leaader dad",
+}
+
+
+def send_whatsapp(contact: str, message: str) -> str:
+    skill = _skill("whatsapp_tool")
+    if not skill:
+        return "Error: WhatsApp is unavailable."
+    target = CONTACT_ALIASES.get(contact.lower().strip(), contact)
+    confirm = CONTEXT.get("confirm")
+    if confirm and not confirm(f"send {contact} the message: {message}"):
+        return "Cancelled by the user. Nothing was sent."
+    try:
+        skill.send_whatsapp_msg(target, message)
+        return f"WhatsApp message sent to {contact}."
+    except Exception as e:
+        return f"Error sending to {contact}: {e}"
+
+
+def send_imessage(contact: str, message: str) -> str:
+    skill = _skill("comms_tool")
+    if not skill:
+        return "Error: iMessage is unavailable."
+    confirm = CONTEXT.get("confirm")
+    if confirm and not confirm(f"send {contact} the message: {message}"):
+        return "Cancelled by the user. Nothing was sent."
+    try:
+        skill.send_imessage(contact, message)
+        return f"iMessage sent to {contact}."
+    except Exception as e:
+        return f"Error sending to {contact}: {e}"
+
+
+def search_contact(name: str) -> str:
+    skill = _skill("contacts_skill")
+    if not skill:
+        return "Error: the address book is unavailable."
+    try:
+        return str(skill.search_contact(name))
+    except Exception as e:
+        return f"Error searching contacts: {e}"
+
+
+# ─── Media ───────────────────────────────────────────────────────────────────
+
+def play_music(query: str = "") -> str:
+    skill = _skill("music_tool")
+    if not skill:
+        return "Error: music control is unavailable."
+    try:
+        if query:
+            return str(skill.search_and_play(query))
+        skill.play_pause()
+        return "Playback toggled."
+    except Exception as e:
+        return f"Error controlling music: {e}"
+
+
+def music_transport(action: str) -> str:
+    skill = _skill("music_tool")
+    if not skill:
+        return "Error: music control is unavailable."
+    action = action.lower().strip()
+    try:
+        if action in ("next", "skip"):
+            skill.next_track()
+            return "Skipped to the next track."
+        if action in ("previous", "back", "prev"):
+            skill.previous_track()
+            return "Went back a track."
+        skill.play_pause()
+        return "Playback toggled."
+    except Exception as e:
+        return f"Error controlling playback: {e}"
+
+
+def play_youtube(query: str) -> str:
+    skill = _skill("search_tool")
+    if not skill or not hasattr(skill, "search_youtube"):
+        return "Error: YouTube search is unavailable."
+    try:
+        skill.search_youtube(query)
+        return f"Playing '{query}' on YouTube."
+    except Exception as e:
+        return f"Error opening YouTube: {e}"
+
+
+# ─── Knowledge (these leave the machine) ─────────────────────────────────────
+
+def search_wikipedia(query: str) -> str:
+    skill = _skill("wiki_tool")
+    if not skill:
+        return "Error: Wikipedia lookup is unavailable."
+    try:
+        return _clip(str(skill.search_wikipedia(query)))
+    except Exception as e:
+        return f"Error searching Wikipedia: {e}"
+
+
+def web_search(query: str) -> str:
+    """
+    Opens the results in the browser. It does NOT bring text back — Shaurya has
+    to read the screen. When you need facts you can reason over, use
+    search_wikipedia, which returns actual prose.
+    """
+    skill = _skill("search_tool")
+    if not skill or not hasattr(skill, "google_search"):
+        return "Error: web search is unavailable."
+    try:
+        skill.google_search(query)
+        return (f"Opened a Google search for '{query}' in the browser. The results "
+                f"are on screen for the user to read; I cannot see them myself.")
+    except Exception as e:
+        return f"Error searching the web: {e}"
+
+
+def create_presentation(topic: str) -> str:
+    skill = _skill("ppt_tool")
+    if not skill:
+        return "Error: the presentation builder is unavailable."
+    try:
+        return str(skill.create_presentation(topic))
+    except Exception as e:
+        return f"Error building the deck: {e}"
+
+
+def generate_image(prompt: str) -> str:
+    skill = _skill("image_tool")
+    if not skill:
+        return "Error: the image generator is unavailable."
+    try:
+        return str(skill.generate_image(prompt))
+    except Exception as e:
+        return f"Error generating the image: {e}"
+
+
+# ─── Talking back ────────────────────────────────────────────────────────────
+
+def ask_user(question: str) -> str:
+    """
+    The clarification tool. Speaks a question, opens the mic, returns what came
+    back. This is how the agent gets unstuck instead of guessing.
+    """
+    ask = CONTEXT.get("ask")
+    if not ask:
+        return ("No one is listening right now, so assume the most reasonable "
+                "answer, state the assumption, and carry on.")
+    answer = ask(question)
+    if not answer:
+        return ("No answer came back. Assume the most reasonable option, say "
+                "which assumption you made, and finish the job.")
+    return f"The user said: {answer}"
+
+
+def list_capabilities() -> str:
+    """What Diablo can do right now, native and connected."""
+    lines = [f"{len(TOOLS)} built-in tools."]
+    module = _mcp()
+    if module is None:
+        lines.append("The MCP client is not loaded.")
+        return "\n".join(lines)
+    try:
+        module.registry.load()
+        status = module.registry.status()
+        tools = module.registry.ready_tools()
+        lines.append(f"{len(tools)} tools from MCP servers:")
+        lines.append(status)
+        if tools:
+            lines.append("Available: " + ", ".join(t["qualified"] for t in tools[:40]))
+    except Exception as e:
+        lines.append(f"MCP unavailable: {e}")
+    return "\n".join(lines)
+
+
+# ─── Registry ────────────────────────────────────────────────────────────────
+
+def _tool(name: str, fn: Callable, description: str, params: dict,
+          required: List[str], tags: str, network: bool = False) -> dict:
+    return {
+        "name": name, "fn": fn, "network": network, "tags": tags.split(),
+        "schema": {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": description,
+                "parameters": {"type": "object", "required": required,
+                               "properties": params},
+            },
+        },
+    }
+
+
+_S = {"type": "string"}
+_I = {"type": "integer"}
+
+TOOLS: Dict[str, dict] = {t["name"]: t for t in [
+    _tool("list_files", list_files,
+          "List what is inside a folder. Start here when you do not know where something lives.",
+          {"path": dict(_S, description="Folder path or workspace nickname, e.g. 'academics' or 'academics/11 Econ EE'")},
+          [], "file folder directory list browse find where"),
+    _tool("read_file", read_file,
+          "Read a text file (txt, md, py, csv, json). Not for xlsx/docx/pdf.",
+          {"path": _S}, ["path"], "read file open text draft note markdown csv"),
+    _tool("write_file", write_file,
+          "Create or overwrite a text file. Asks the user before replacing one that exists.",
+          {"path": _S, "content": _S}, ["path", "content"],
+          "write save create file draft note output"),
+    _tool("append_file", append_file, "Add text to the end of a file.",
+          {"path": _S, "content": _S}, ["path", "content"], "append add log note memory"),
+    _tool("find_files", find_files, "Find files by name or pattern beneath a folder.",
+          {"name": dict(_S, description="Name or glob, e.g. 'econ' or '*.xlsx'"), "path": _S},
+          ["name"], "find search locate file where missing"),
+    _tool("search_text", search_text, "Find which files contain a phrase.",
+          {"query": _S, "path": _S}, ["query"], "search grep contains inside text find"),
+    _tool("make_folder", make_folder,
+          "Create a folder, including any parent folders that do not exist yet.",
+          {"path": _S}, ["path"], "folder create make directory organise"),
+    _tool("move_file", move_file,
+          "Move or rename a file or folder. Confirms before replacing anything.",
+          {"source": _S, "destination": _S}, ["source", "destination"],
+          "move rename file organise tidy sort"),
+    _tool("delete_file", delete_file,
+          "Move a file to the Trash. Always confirms with the user first.",
+          {"path": _S}, ["path"], "delete remove trash bin clean"),
+    _tool("run_shell", run_shell,
+          "Run a shell command in a workspace folder. Use for git, ls, wc, pandoc, ffmpeg.",
+          {"command": _S, "working_directory": _S}, ["command"],
+          "shell terminal command run git bash script execute"),
+    _tool("python_snippet", python_snippet,
+          "Run a short Python program. The way into Excel (openpyxl), Word (python-docx) and data work.",
+          {"code": _S}, ["code"],
+          # The arithmetic words matter more than they look. Without them,
+          # "work out the total revenue" scored zero here, python_snippet was
+          # never offered, and the model did the sum in its head — returning
+          # 350 for a figure that was 115.
+          "python script code excel xlsx spreadsheet formula data calculate docx "
+          "analyse total sum add average count maths math number numbers revenue "
+          "cost profit percentage compute work multiply subtract divide"),
+    _tool("open_app", open_app, "Open a Mac application by name.", {"name": _S},
+          ["name"], "open launch app application start"),
+    _tool("open_url", open_url, "Open a website in the browser.", {"url": _S},
+          ["url"], "open website url browser site link"),
+    _tool("take_screenshot", take_screenshot, "Capture the screen to the Desktop.",
+          {}, [], "screenshot capture screen picture"),
+    _tool("set_volume", set_volume, "Set output volume, 0 to 100.", {"level": _I},
+          ["level"], "volume sound loud quiet mute audio"),
+    _tool("set_brightness", set_brightness, "Set display brightness, 0 to 100.",
+          {"level": _I}, ["level"], "brightness screen dim bright display"),
+    _tool("system_status", system_status, "CPU, memory, disk and battery.", {}, [],
+          "battery cpu memory disk storage system status slow"),
+    _tool("read_screen", read_screen,
+          "Read the text of one window on screen. Leave target empty for whatever "
+          "is in front, or name it: 'browser', 'chrome', 'code', 'terminal', "
+          "'excel'. Use this whenever the user says 'this', 'on screen', or names "
+          "something they are looking at.",
+          {"target": dict(_S, description="Window or app to read, or empty for frontmost")},
+          [], "screen read ocr see look display what this tab window browser page"),
+    _tool("explain_screen", explain_screen,
+          "Look at a window and explain what is on it in a sentence or two, "
+          "answering a specific question if one is given. Prefer this over "
+          "read_screen when the user asked what something says, what an error "
+          "means, or what they are looking at.",
+          {"question": dict(_S, description="What the user wants to know about the screen"),
+           "target": dict(_S, description="Window or app, or empty for frontmost")},
+          [], "screen explain what says means error understand looking this page tab"),
+    _tool("list_windows", list_windows,
+          "List every window open right now, frontmost first. Use before "
+          "read_screen when you are not sure what the user is looking at.",
+          {}, [], "windows open apps screen what running tabs"),
+    _tool("describe_visually", describe_visually,
+          "Ask a local vision model what a window looks like — layout, images, "
+          "charts, which control is greyed out. Only for what plain text cannot "
+          "answer; read_screen is faster and needs no extra model.",
+          {"question": _S, "target": _S}, ["question"],
+          "look see image picture chart diagram graph visual colour layout"),
+    _tool("search_contact", search_contact, "Look someone up in the address book.",
+          {"name": _S}, ["name"], "contact number phone address person"),
+    _tool("send_whatsapp", send_whatsapp,
+          "Send a WhatsApp message. Confirms before sending. Mom and Dad go here.",
+          {"contact": _S, "message": _S}, ["contact", "message"],
+          "message text whatsapp send tell mom dad"),
+    _tool("send_imessage", send_imessage, "Send an iMessage. Confirms before sending.",
+          {"contact": _S, "message": _S}, ["contact", "message"],
+          "message text imessage send tell"),
+    _tool("play_music", play_music, "Play a song or artist, or toggle playback.",
+          {"query": _S}, [], "music song play listen track artist album"),
+    _tool("music_transport", music_transport,
+          "Control playback: 'next', 'previous' or 'toggle'.", {"action": _S},
+          ["action"], "next skip previous pause resume stop track music"),
+    _tool("play_youtube", play_youtube, "Find and play a video on YouTube.",
+          {"query": _S}, ["query"], "youtube video watch play clip"),
+    _tool("search_wikipedia", search_wikipedia, "Look a subject up on Wikipedia.",
+          {"query": _S}, ["query"], "wikipedia who what fact about explain history",
+          True),
+    _tool("web_search", web_search,
+          "Open a web search in the browser for the user to read. This does NOT "
+          "return the results to you — use search_wikipedia when you need facts "
+          "you can actually reason over.",
+          {"query": _S}, ["query"],
+          "search google web look up online news current", True),
+    _tool("create_presentation", create_presentation,
+          "Build a PowerPoint deck on a topic.", {"topic": _S}, ["topic"],
+          "presentation powerpoint deck slides ppt"),
+    _tool("generate_image", generate_image, "Generate an image from a description.",
+          {"prompt": _S}, ["prompt"], "image picture draw generate art photo", True),
+    _tool("list_capabilities", list_capabilities,
+          "List every tool available right now, including tools from connected "
+          "MCP servers. Use this when asked what you can do, or when you suspect "
+          "a capability exists that is not in your current menu.",
+          {}, [], "capabilities tools can do able available mcp servers connected"),
+    _tool("ask_user", ask_user,
+          "Ask the user a question out loud and wait for their spoken answer. "
+          "Use this the moment a request is ambiguous, a file could be one of "
+          "several, or you would otherwise have to guess at something that matters.",
+          {"question": dict(_S, description="One short spoken question")},
+          ["question"], "ask clarify unclear which unsure question confirm"),
+]}
+
+# Always offered, whatever the request looks like.
+CORE_TOOLS = ["ask_user", "list_files", "read_file"]
+
+# How many MCP tools may ride along on one turn.
+MCP_LIMIT = int(os.getenv("DIABLO_MCP_TOOL_LIMIT", "6"))
+
+
+def offline_only() -> bool:
+    return os.getenv("DIABLO_OFFLINE", "0") not in ("0", "", "false", "False")
+
+
+# ─── MCP ─────────────────────────────────────────────────────────────────────
+# Tools from Model Context Protocol servers sit alongside the native ones in a
+# single namespace. The agent does not know or care which is which; the only
+# difference is that an mcp__ name is dispatched over a pipe instead of called.
+
+def _mcp():
+    try:
+        import mcp_client
+        return mcp_client
+    except Exception:
+        return None
+
+
+def mcp_tools() -> List[dict]:
+    """Descriptors for every MCP tool whose server came up. [] if none."""
+    module = _mcp()
+    if module is None:
+        return []
+    try:
+        return module.registry.ready_tools()
+    except Exception:
+        return []
+
+
+def _score_mcp(words: set, tool: dict) -> int:
+    """
+    Relevance for an MCP tool, scored on its own words.
+
+    Native tools carry hand-written tags. MCP tools arrive from strangers, so
+    the name and description are all there is to match on — which is enough,
+    because server authors name things after what they do.
+    """
+    haystack = re.findall(r"[a-z]+",
+                          (tool["tool"] + " " + tool["description"]).lower())
+    return sum(1 for word in words if len(word) > 3 and word in haystack)
+
+
+def select(text: str, limit: int = 12) -> List[str]:
+    """
+    Pick the tools worth showing the model for this request.
+
+    Handing a 29-tool menu to a 14B model on every turn is how it starts picking
+    at random. Scoring on tag overlap keeps the menu short and the choices sharp,
+    and costs nothing — no embeddings, no second model, no network.
+    """
+    words = set(re.findall(r"[a-z']+", text.lower()))
+    scored = []
+    for name, tool in TOOLS.items():
+        if tool["network"] and offline_only():
+            continue
+        hits = sum(1 for tag in tool["tags"] if tag in words)
+        if name.replace("_", " ") in text.lower():
+            hits += 3
+        if hits:
+            scored.append((hits, name))
+    scored.sort(reverse=True)
+
+    chosen = [name for _, name in scored[:limit]]
+
+    # Add the MCP tools that look relevant. Capped tightly: a couple of servers
+    # can add sixty tools, and burying the native ones under them is how the
+    # model stops finding read_file.
+    mcp_scored = []
+    for tool in mcp_tools():
+        hits = _score_mcp(words, tool)
+        if hits:
+            mcp_scored.append((hits, tool["qualified"]))
+    mcp_scored.sort(reverse=True)
+    chosen.extend(name for _, name in mcp_scored[:MCP_LIMIT])
+
+    for name in CORE_TOOLS:
+        if name not in chosen and name in TOOLS:
+            chosen.append(name)
+    if len(chosen) <= len(CORE_TOOLS):
+        # Nothing matched — the request is unusual. Offer the generalists.
+        for name in ["run_shell", "python_snippet", "find_files", "write_file",
+                     "search_text", "open_app"]:
+            if name not in chosen:
+                chosen.append(name)
+    return chosen
+
+
+def schemas(names: Optional[List[str]] = None) -> List[dict]:
+    """Ollama tool schemas for the given names, native and MCP alike."""
+    names = names if names is not None else list(TOOLS)
+    out = [TOOLS[n]["schema"] for n in names if n in TOOLS]
+
+    wanted = {n for n in names if n.startswith("mcp__")}
+    if wanted:
+        module = _mcp()
+        if module is not None:
+            out.extend(s for s in module.schemas()
+                       if s["function"]["name"] in wanted)
+    return out
+
+
+def execute(name: str, arguments: Dict[str, Any]) -> str:
+    """Run one tool call. Never raises — the loop reads failures as text."""
+    if name.startswith("mcp__"):
+        module = _mcp()
+        if module is None:
+            return "Error: the MCP client is unavailable."
+        if not isinstance(arguments, dict):
+            try:
+                arguments = json.loads(arguments)
+            except Exception:
+                return f"Error: arguments for {name} were not a JSON object."
+        try:
+            return _clip(module.call(name, arguments))
+        except Exception as e:
+            return f"Error calling {name}: {type(e).__name__}: {e}"
+
+    tool = TOOLS.get(name)
+    if not tool:
+        return (f"Error: there is no tool called '{name}'. "
+                f"Available: {', '.join(sorted(TOOLS))}")
+    if tool["network"] and offline_only():
+        return f"Error: {name} needs the internet and Diablo is in offline mode."
+    if not isinstance(arguments, dict):
+        try:
+            arguments = json.loads(arguments)
+        except Exception:
+            return f"Error: arguments for {name} were not a JSON object."
+    try:
+        return _clip(tool["fn"](**arguments))
+    except TypeError as e:
+        wanted = tool["schema"]["function"]["parameters"]["properties"]
+        return f"Error: wrong arguments for {name} ({e}). It takes: {', '.join(wanted)}"
+    except ValueError as e:
+        return f"Error: {e}"
+    except Exception as e:
+        return f"Error running {name}: {type(e).__name__}: {e}"
+
+
+def available_workspaces() -> Dict[str, str]:
+    """Only the nicknames that point at a folder that actually exists today."""
+    return {k: v for k, v in WORKSPACES.items() if os.path.isdir(v)}
+
+
+def workspace_map() -> str:
+    """
+    The folder briefing handed to the model in its system prompt. Missing
+    folders are left out — telling a small model about a directory that is not
+    there is an invitation to write files into a path that does not exist.
+    """
+    return "\n".join(f"  {k:<12} {v}" for k, v in available_workspaces().items())
+
+
+if __name__ == "__main__":
+    print(f"{len(TOOLS)} tools registered.")
+    print(f"Offline mode: {offline_only()}")
+    for probe in ["fix the formulas in my budget spreadsheet",
+                  "text mom I'll be late",
+                  "what is on my screen right now"]:
+        print(f"\n{probe!r}\n  -> {', '.join(select(probe))}")

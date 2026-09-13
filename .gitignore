@@ -1,0 +1,28 @@
+# Runtime state — created by the installer, never committed
+venv/
+venv_old/
+__pycache__/
+*.pyc
+.env
+mic_device.json
+mcp.json
+diablo.log
+*.log
+.diablo.pid
+
+# Generated audio and captures
+voice_cache/
+audio_cache/
+*.wav
+*.mp3
+*.png
+!docs/img/*.png
+
+# Backups written by the patchers in tools/
+*.bak
+*bak-*
+*.preview.py
+*-preview.py
+
+# macOS
+.DS_Store

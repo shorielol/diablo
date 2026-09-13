@@ -1,0 +1,151 @@
+#!/bin/bash
+# D.I.A.B.L.O. launcher — installed as ~/bin/diablo
+#
+#   diablo            start listening (and follow the log)
+#   diablo stop       shut it down
+#   diablo restart    stop, then start
+#   diablo status     is it alive
+#   diablo logs       follow the log
+#   diablo doctor     find out what is broken, and fix what can be fixed
+#   diablo mic        re-probe the microphone and pick a working device
+#   diablo voice      re-cache the spoken lines
+#
+# Starting goes through the app bundle rather than running python directly, and
+# that is the whole point. macOS grants microphone access to the *responsible
+# process*; for a shell command that is the terminal, which is why access came
+# and went depending on which terminal was used and vanished entirely when
+# permissions were reset. Launched as an app, Diablo owns the grant itself.
+
+DIABLO_HOME="${DIABLO_HOME:-$HOME/.diablo}"
+APP="$HOME/Applications/Diablo.app"
+LOG="$DIABLO_HOME/diablo.log"
+PY="$DIABLO_HOME/venv/bin/python3"
+SKILLS="$DIABLO_HOME/skills"
+
+running_pid() {
+    pgrep -f "$DIABLO_HOME/voice_bridge.py" | head -1
+}
+
+ensure_app() {
+    if [ ! -d "$APP" ]; then
+        echo "  Building Diablo.app (first run)..."
+        "$PY" "$SKILLS/make_app.py" >/dev/null 2>&1 || \
+            python3 "$SKILLS/make_app.py" >/dev/null 2>&1
+    fi
+}
+
+start_diablo() {
+    if [ -n "$(running_pid)" ]; then
+        echo "  Diablo is already running (PID $(running_pid))."
+        echo "  Following the log — Ctrl-C detaches, it keeps running."
+        sleep 1
+        tail -f "$LOG"
+        return
+    fi
+
+    ensure_app
+
+    # First run, or the microphone has never been verified. macOS will only show
+    # the permission dialog for an app the user launched themselves, so say so
+    # rather than starting something that cannot possibly hear.
+    if [ ! -f "$DIABLO_HOME/mic_device.json" ]; then
+        echo
+        echo "  ─────────────────────────────────────────────────────────────"
+        echo "  Diablo has not been granted microphone access yet."
+        echo
+        echo "  macOS only shows that dialog for an app you open yourself, so"
+        echo "  this one time, start it from Finder instead of from here:"
+        echo
+        echo "      open ~/Applications          (then double-click Diablo)"
+        echo
+        echo "  Click Allow when it asks. After that, \`diablo\` works normally."
+        echo "  ─────────────────────────────────────────────────────────────"
+        echo
+    fi
+
+    if [ ! -d "$APP" ]; then
+        echo "  ✗ Could not build Diablo.app. Run: diablo doctor"
+        return 1
+    fi
+
+    echo "  Starting Diablo..."
+    open -a "$APP"
+
+    # Give it a moment to come up, then check it actually did.
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        sleep 1
+        [ -n "$(running_pid)" ] && break
+    done
+
+    if [ -z "$(running_pid)" ]; then
+        echo "  ✗ Diablo did not start. The last few log lines:"
+        tail -20 "$LOG" 2>/dev/null | sed 's/^/      /'
+        echo
+        echo "  Run: diablo doctor"
+        return 1
+    fi
+
+    echo "  ✓ Running (PID $(running_pid))."
+    echo
+    echo "  If macOS asks for microphone access, click Allow — it asks once."
+    echo "  Say \"Hey Diablo\" to wake it. Ctrl-C detaches; it keeps listening."
+    echo
+    sleep 1
+    tail -f "$LOG"
+}
+
+stop_diablo() {
+    PID="$(running_pid)"
+    if [ -n "$PID" ]; then
+        kill "$PID" 2>/dev/null
+        sleep 1
+        kill -9 "$PID" 2>/dev/null
+    fi
+    pkill -f "$DIABLO_HOME/voice_bridge.py" 2>/dev/null
+    pkill -f widget_launcher.py 2>/dev/null
+    rm -f "$DIABLO_HOME/.diablo.pid"
+    echo "  ✓ Stopped."
+}
+
+run_here() {
+    # Run in the foreground of this terminal, inheriting its microphone grant.
+    # The app bundle is the better long-term answer because it owns its own
+    # permission, but this needs no separate grant at all — if the terminal can
+    # hear you, so can Diablo.
+    cd "$DIABLO_HOME" || exit 1
+    if [ -f "$DIABLO_HOME/.env" ]; then
+        set -a; . "$DIABLO_HOME/.env" 2>/dev/null || true; set +a
+    fi
+    export DIABLO_HOME PYTHONUNBUFFERED=1
+    # `diablo start` launches Voicebox via diablo.sh; this path bypassed that
+    # and quietly fell back to the macOS voice.
+    if ! curl -s --max-time 2 "${DIABLO_VOICEBOX_URL:-http://127.0.0.1:17493}/profiles" >/dev/null 2>&1; then
+        open -gj -a Voicebox 2>/dev/null && echo "  Starting Voicebox (hidden)..."
+    fi
+    echo "  Running in this terminal. Ctrl-C stops it."
+    echo
+    exec "$PY" -u "$DIABLO_HOME/voice_bridge.py" 2>&1 | tee -a "$LOG"
+}
+
+case "${1:-start}" in
+    start)   start_diablo ;;
+    run)     run_here ;;
+    stop)    stop_diablo ;;
+    restart) stop_diablo; sleep 2; start_diablo ;;
+    status)
+        PID="$(running_pid)"
+        if [ -n "$PID" ]; then
+            echo "  ✓ Diablo is running (PID $PID)"
+        else
+            echo "  ✗ Diablo is not running"
+        fi
+        ;;
+    logs)    tail -f "$LOG" ;;
+    doctor)  exec "$PY" "$SKILLS/doctor.py" "${@:2}" ;;
+    mic)     exec "$PY" "$SKILLS/mic.py" "${@:2}" ;;
+    voice)   exec "$PY" "$SKILLS/voice.py" prewarm ;;
+    app)     exec "$PY" "$SKILLS/make_app.py" --run ;;
+    *)
+        echo "Usage: diablo [start|stop|restart|status|logs|doctor|mic|voice|app]"
+        ;;
+esac

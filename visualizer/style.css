@@ -1,0 +1,237 @@
+:root {
+    --cyan: #00d2ff;
+    --blue: #0072ff;
+    --glow: rgba(0, 210, 255, 0.6);
+    --bg-trans: rgba(0, 0, 0, 0);
+    --data-bg: rgba(0, 210, 255, 0.05);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Orbitron', sans-serif;
+}
+
+body {
+    background-color: transparent !important;
+    width: 600px; /* HUD Size */
+    height: 400px;
+    overflow: hidden;
+    color: var(--cyan);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.hologram-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, rgba(0, 210, 255, 0.02) 0%, transparent 70%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    filter: drop-shadow(0 0 10px var(--glow));
+}
+
+/* RINGS */
+.rings {
+    position: absolute;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.ring {
+    position: absolute;
+    border: 1px solid var(--cyan);
+    border-radius: 50%;
+    opacity: 0.3;
+    transition: all 0.5s ease;
+}
+
+.outer {
+    width: 350px;
+    height: 350px;
+    border-style: dashed;
+    animation: rotate 20s linear infinite;
+}
+
+.middle {
+    width: 280px;
+    height: 280px;
+    border-width: 2px;
+    border-style: dotted;
+    animation: rotate-reverse 15s linear infinite;
+}
+
+.inner {
+    width: 200px;
+    height: 200px;
+    border-width: 4px;
+    border-style: double;
+    animation: rotate 10s linear infinite;
+}
+
+/* CORE */
+.core-container {
+    position: relative;
+    z-index: 10;
+}
+
+.core {
+    width: 100px;
+    height: 100px;
+    background: radial-gradient(circle, #fff 0%, var(--cyan) 50%, var(--blue) 100%);
+    border-radius: 50%;
+    box-shadow: 0 0 30px var(--cyan);
+    transition: all 0.3s ease;
+}
+
+.core-glow {
+    position: absolute;
+    top: -10px;
+    left: -10px;
+    right: -10px;
+    bottom: -10px;
+    border: 2px solid var(--cyan);
+    border-radius: 50%;
+    opacity: 0.5;
+    animation: pulse 2s infinite;
+}
+
+/* STATES */
+body.listening .core {
+    transform: scale(1.2);
+    box-shadow: 0 0 60px var(--cyan);
+}
+
+body.speaking .ring {
+    opacity: 0.8;
+    border-width: 3px;
+}
+
+body.speaking .core {
+    animation: talking-pulse 0.4s infinite alternate;
+}
+
+/* HUD ELEMENTS */
+.hud-elements {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.status-box {
+    position: absolute;
+    top: 20px;
+    left: 40px;
+    font-size: 12px;
+}
+
+.status-box .value {
+    font-weight: bold;
+    margin-left: 10px;
+    text-shadow: 0 0 5px var(--cyan);
+}
+
+.diagnostics {
+    position: absolute;
+    top: 20px;
+    right: 40px;
+    width: 100px;
+}
+
+.stat {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 10px;
+    margin-bottom: 5px;
+}
+
+.stat .bar {
+    flex-grow: 1;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    position: relative;
+}
+
+.stat .bar::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    width: 70%;
+    background: var(--cyan);
+    box-shadow: 0 0 5px var(--cyan);
+}
+
+.data-feed {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 320px;
+    background: var(--data-bg);
+    border: 1px solid var(--cyan);
+    padding: 10px;
+    font-size: 11px;
+    clip-path: polygon(0 0, 95% 0, 100% 20%, 100% 100%, 5% 100%, 0 80%);
+}
+
+.feed-header {
+    border-bottom: 1px solid var(--glow);
+    margin-bottom: 5px;
+    padding-bottom: 2px;
+    font-family: 'Iceland', sans-serif;
+    letter-spacing: 2px;
+}
+
+/* DECOR */
+.decor-line {
+    position: absolute;
+    border: 1px solid var(--cyan);
+}
+
+.top-left {
+    top: 10px;
+    left: 10px;
+    width: 50px;
+    height: 20px;
+    border-right: none;
+    border-bottom: none;
+}
+
+.bottom-right {
+    bottom: 10px;
+    right: 10px;
+    width: 50px;
+    height: 20px;
+    border-left: none;
+    border-top: none;
+}
+
+/* ANIMATIONS */
+@keyframes rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes rotate-reverse {
+    from { transform: rotate(360deg); }
+    to { transform: rotate(0deg); }
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 0.3; }
+    50% { transform: scale(1.1); opacity: 0.6; }
+}
+
+@keyframes talking-pulse {
+    from { transform: scale(1); filter: brightness(1); }
+    to { transform: scale(1.05); filter: brightness(1.5); }
+}
