@@ -224,3 +224,70 @@ def search_youtube(query: str):
 if __name__ == "__main__":
     # Test
     play_latest_video("Wembu")
+
+
+# ─── Reading a page ──────────────────────────────────────────────────────────
+
+class _Readable(HTMLParser):
+    """Visible text only: no script, no style, no navigation furniture."""
+
+    SKIP = {"script", "style", "noscript", "nav", "header", "footer", "svg",
+            "form", "aside", "button", "select"}
+    BREAK = {"p", "div", "li", "br", "h1", "h2", "h3", "h4", "h5", "h6",
+             "tr", "section", "article"}
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts: List[str] = []
+        self._muted = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in self.SKIP:
+            self._muted += 1
+        elif tag in self.BREAK:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag in self.SKIP and self._muted:
+            self._muted -= 1
+
+    def handle_data(self, data):
+        if not self._muted:
+            text = data.strip()
+            if text:
+                self.parts.append(text + " ")
+
+
+def read_page(url: str, limit: int = 6000) -> str:
+    """
+    The readable text of a page, or "".
+
+    Needed because a search snippet is two lines and instructions are ten. It
+    is deliberately crude — no JavaScript, no rendering — which means it works
+    on documentation and fails on single-page applications, and that is the
+    right trade for something that has to answer in a couple of seconds.
+
+    Whatever comes back is somebody else's words off the open web. It is data,
+    never an instruction, and every caller has to treat it that way.
+    """
+    if not url or not url.startswith("http"):
+        return ""
+    request = urllib.request.Request(url, headers={
+        "User-Agent": AGENT, "Accept": "text/html", "Accept-Language": "en"})
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+            kind = (response.headers.get("Content-Type") or "").lower()
+            if "html" not in kind and "text" not in kind:
+                return ""
+            raw = response.read(2_000_000).decode("utf-8", "replace")
+    except Exception:
+        return ""
+    parser = _Readable()
+    try:
+        parser.feed(raw)
+    except Exception:
+        pass
+    text = "".join(parser.parts)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s*\n+", "\n", text)
+    return text.strip()[:limit]

@@ -364,6 +364,63 @@ def main() -> int:
             voice.on_audio_start is not None,
             "the animation used to start 1125ms before any audio")
 
+    # ── Going and finding out ────────────────────────────────────────────
+    #
+    # "There's nothing about that on this screen" is true and useless. If
+    # Diablo does not know how, the job is to look it up — quietly, with
+    # nothing appearing on screen — and then teach it.
+    r.head("Looking it up when it is not on screen")
+    with guard(r, "a page can be read without a browser"):
+        from skills import search_tool
+        text = search_tool.read_page(
+            "https://support.apple.com/en-gb/guide/textedit/welcome/mac")
+        r.check("a documentation page comes back as text",
+                len(text) > 300, f"{len(text)} characters")
+        r.check("  with the markup stripped",
+                "<" not in text[:400] and "function(" not in text[:400])
+
+    with guard(r, "the spoken question becomes a sensible search"):
+        import re as _re
+        def as_query(question, app):
+            asked = _re.sub(
+                r"^\s*(?:can you\s+|could you\s+|please\s+)?"
+                r"(?:teach|show|tell|walk|guide|help)\s+me\s+"
+                r"(?:how\s+to\s+|through\s+|with\s+|about\s+)?", "",
+                question.strip(), flags=_re.IGNORECASE)
+            asked = _re.sub(r"^\s*(?:how\s+do\s+i|how\s+can\s+i|how\s+would\s+i|"
+                            r"how\s+to|explain\s+how\s+to)\s+", "", asked,
+                            flags=_re.IGNORECASE).strip(" ?.")
+            asked = asked or question
+            return (f"how to {asked} in {app}"
+                    if app and app.lower() not in asked.lower()
+                    else f"how to {asked}")
+        # The preamble that routed it to the tutor has to come off before it
+        # reaches a search engine: "how to teach me how to add skills" finds
+        # nothing at all.
+        r.check("the teaching preamble is stripped",
+                as_query("teach me how to add skills onto claude", "Claude")
+                == "how to add skills onto claude")
+        r.check("the application is added when it is missing",
+                as_query("how do i change the font", "TextEdit")
+                == "how to change the font in TextEdit")
+
+    if os.getenv("DIABLO_TEST_NETWORK", "1") not in ("0", "", "false"):
+        with guard(r, "it finds a real procedure"):
+            found = tutor.research("how do i change the font", "TextEdit")
+            r.check("instructions were found", found is not None,
+                    (found or {}).get("source", "nothing"))
+            if found:
+                r.check("  from a real source", bool(found.get("source")),
+                        found["source"])
+                r.check("  as at least two steps", len(found["steps"]) >= 2,
+                        f"{len(found['steps'])} steps")
+                joined = " ".join(s["say"] for s in found["steps"]).lower()
+                # The thing it used to invent. Format > Font is the real path.
+                r.check("  naming the real menu, not an invented one",
+                        "format" in joined or "font" in joined, joined[:90])
+    else:
+        r.skip("looking something up", "needs the network")
+
     # ── Hearing ──────────────────────────────────────────────────────────
     r.head("Hearing you")
     with guard(r, "a transcriber loads and works"):

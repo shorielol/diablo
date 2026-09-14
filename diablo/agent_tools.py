@@ -733,19 +733,24 @@ def web_search(query: str, show: bool = False) -> str:
                     f"the Wikipedia article \"{title}\" instead, which may not "
                     f"be what you asked about:\n\n{backup}")
         return (f"The search engine is rate-limiting this machine, Sir "
-                f"({e}). Not that there are no results — ask me again shortly, "
-                f"or I can open the search in your browser.")
+                f"({e}). Not that there are no results — ask me again shortly.")
     except Exception as e:
         return f"I could not reach the web, Sir. ({type(e).__name__}: {e})"
 
-    if show or not results:
+    # A browser tab only when he asked to see one.
+    #
+    # Looking something up is Diablo's work, not his. A window appearing
+    # because the assistant needed to check something is the assistant doing
+    # its thinking on the user's screen, and finding nothing is not a reason
+    # to hand him a search page to read himself — that is giving up with extra
+    # steps.
+    if show:
         try:
             skill.google_search(query)
         except Exception:
             pass
     if not results:
-        return (f"I got nothing back for '{query}', Sir. I have opened the "
-                "search in your browser instead.")
+        return (f"I got nothing back for '{query}', Sir.")
 
     lines = [f"Search results for '{query}':"]
     for i, r in enumerate(results, 1):
