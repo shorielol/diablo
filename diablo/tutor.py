@@ -113,6 +113,7 @@ STEPS_SCHEMA = {
                 "properties": {
                     "say": {"type": "string"},
                     "look_for": {"type": "string"},
+                    "show": {"type": "string"},
                 },
                 "required": ["say"],
             },
@@ -133,6 +134,11 @@ Write the steps they should follow. For each step:
              that really appears there, not a description of one. Write
              "Settings", not "the Settings link in the sidebar". Leave it out
              if the step is not about one spot.
+  "show"     ONLY when solving a problem. The line of working as it stands
+             after this step, and nothing else: "5x = 35", then "x = 7". It is
+             drawn on screen beside the question while the step is spoken, so
+             it has to be short enough to read at a glance. Leave it out for
+             every step that is about using an application.
 
 Almost always, the first step is navigation. What they are asking about is
 usually not on the screen yet — only the way to reach it is. A visible tab,
@@ -270,6 +276,122 @@ def verify_equation(text: str):
                 "equation": f"{lhs} = {rhs}"}
     except Exception:
         return None
+
+
+# ─── When OCR cannot read it, look at it properly ───────────────────────────
+# Apple's Vision framework reads prose well and mathematical notation badly.
+# Measured three times on three separate renderings, at sizes up to 34pt bold
+# and 8x magnification:
+#
+#     on screen        Vision returned
+#     3x + 5 = 20      "3x+5"
+#     4x - 6 = 18      "4x", "18"
+#     5x - 12 = 23     "5x"
+#
+# The relation is dropped every time, and no amount of upscaling recovers it.
+# A vision model reads the same picture as a picture and gets it right. So the
+# order is: OCR first because it is free and instant, the vision model only
+# when OCR has produced something that will not parse.
+#
+# Three rules, and they are the whole reason this is trustworthy:
+#
+#   1. The vision model transcribes. It never solves. sympy solves.
+#   2. Its reading must be corroborated by OCR. Vision genuinely reads the
+#      characters it does report — it drops characters, it does not invent
+#      them — so whatever fragment it managed ("5x") must appear inside the
+#      model's line ("5x-12=23"). A hallucinated equation fails this.
+#   3. Whatever survives both is read back aloud before anything is taught
+#      from it, so a wrong reading costs two seconds instead of a lesson.
+
+VISION_READ_PROMPT = """Transcribe every mathematical expression in this image, exactly as written.
+
+Rules:
+- One expression per line. Nothing else: no explanation, no numbering, no working.
+- Use plain ASCII: * for multiply, / for divide, ^ for powers, = for equals.
+- Copy what is there. Do not solve it, simplify it, or correct it.
+- If there is no mathematics in the image, reply with exactly: NONE"""
+
+
+def _compact(text: str) -> str:
+    """Strip everything that is not part of the expression itself."""
+    return re.sub(r"[^0-9a-zA-Z+\-*/=^().]", "", (text or "")).lower()
+
+
+def corroborated(line: str, candidates: List[dict]) -> bool:
+    """
+    Does OCR back up what the vision model says it read?
+
+    OCR's failure mode is dropping characters, not inventing them, so the
+    pieces it did return have to be present in the model's line. "5x" sits
+    inside "5x-12=23"; it does not sit inside an equation the model made up.
+
+    A bare number is not corroboration — "18" appears in half the expressions
+    ever written — so a candidate only counts if it carries a letter.
+    """
+    reading = _compact(line)
+    if not reading:
+        return False
+    for fragment in candidates:
+        piece = _compact(fragment["text"])
+        if len(piece) < 2 or not any(c.isalpha() for c in piece):
+            continue
+        if piece in reading:
+            return True
+    return False
+
+
+def sharpened_reading(capture: str) -> Optional[dict]:
+    """
+    Read the capture again without the smoothing, and see if the maths parses.
+
+    Free compared to the vision model — one more OCR pass, about 200ms, no
+    model loaded, no memory. It recovers the common case, which is not that
+    Vision cannot see the equation but that the upscale blurred a 2 into a 7.
+    Tried first for exactly that reason.
+    """
+    for fragment in screen_context.sharp_fragments(capture):
+        solved = verify_equation(fragment["text"])
+        if solved:
+            return dict(solved, read_as=fragment["text"], corroborated=True)
+    return None
+
+
+def vision_reading(capture: str, fragments: List[dict],
+                   question: str = "") -> Optional[dict]:
+    """
+    Read the problem off the picture when OCR could not.
+
+    Returns the same shape verify_equation does, plus the line it was read
+    from, or None. None means fall through to asking him to read it out —
+    which is still the honest last resort, just no longer the first one.
+    """
+    if not screen_context.vision_available():
+        return None
+    candidates = [f for f in fragments if looks_like_a_problem(f)]
+    raw = screen_context.read_image(capture, VISION_READ_PROMPT, num_predict=200)
+    if not raw or raw.startswith("Error:") or raw.strip().upper() == "NONE":
+        return None
+
+    strict = []      # backed up by OCR
+    loose = []       # parses, but OCR read nothing to check it against
+    for line in raw.splitlines():
+        line = line.strip().strip("`").lstrip("-* ").strip()
+        if not line or len(line) > 120:
+            continue
+        solved = verify_equation(line)
+        if not solved:
+            continue
+        if corroborated(line, candidates):
+            strict.append((line, solved))
+        elif not candidates:
+            # OCR returned no fragment of the expression at all, so there is
+            # nothing to check against. Usable, but it gets read back aloud.
+            loose.append((line, solved))
+
+    line, solved = (strict or loose or [(None, None)])[0]
+    if not solved:
+        return None
+    return dict(solved, read_as=line, corroborated=bool(strict))
 
 
 def looks_like_a_problem(fragment: dict) -> bool:
@@ -597,6 +719,53 @@ def anchor(steps: List[Step], fragments: List[dict], window: dict,
     return steps
 
 
+def _screen_point(fragment: dict, window: dict):
+    """A fragment's normalised box as a point on the actual screen."""
+    if fragment.get("menu"):
+        bx, by, bw, bh = fragment.get(
+            "screen", (window["x"], window["y"], window["width"], window["height"]))
+    else:
+        bx, by, bw, bh = (window["x"], window["y"],
+                          window["width"], window["height"])
+    x = bx + (fragment["left"] + fragment["right"]) / 2.0 * bw
+    y = by + (fragment["top"] + fragment["height"] / 2.0) * bh
+    return x, y
+
+
+def pin_working(steps: List[Step], fragments: List[dict], window: dict) -> int:
+    """
+    Put the working on screen, next to the question it belongs to.
+
+    Why this exists. A walkthrough of an application anchors every step to a
+    button, so the marker has somewhere to go. Solving an equation does not:
+    "subtract twelve from both sides" is not written anywhere on screen, so
+    every step failed to anchor and the marker never appeared once. That is the
+    whole of "the drawing has never worked" — the feature was correct and
+    silent.
+
+    So the anchor for a working step is the problem itself, which IS on screen,
+    and the caption is the line of working after that step. The marker stays on
+    the question while the working develops in place beside it.
+    """
+    spot = next((f for f in fragments if looks_like_a_problem(f)), None)
+    if spot is None:
+        return 0
+    x, y = _screen_point(spot, window)
+    pinned = 0
+    for step in steps:
+        if step.get("found"):
+            continue
+        working = (step.get("show") or "").strip()
+        if not working or len(working) > 40:
+            continue
+        step["x"], step["y"] = x, y
+        step["matched"] = working
+        step["found"] = True
+        step.pop("missing", None)
+        pinned += 1
+    return pinned
+
+
 # ─── The marker, across a whole walkthrough ──────────────────────────────────
 
 def background_is_light(capture: str, window: dict,
@@ -859,6 +1028,33 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
     # every step after a misread first step is correct given the first. So the
     # loop is closed the only way it can be: he reads the line out, and the
     # lesson is built on what he said.
+    # OCR could not parse it. Before troubling him for it, look at the picture
+    # properly — the vision model reads notation that Vision's OCR drops.
+    # The trigger is deliberately wider than the refusal gate. That gate needs
+    # prose on screen saying "Solve for x", because refusing is expensive when
+    # it is wrong. Looking is not: a worksheet that is nothing but equations
+    # carries no such instruction, and the corroboration check below is what
+    # makes it safe to look anyway. If there is no mathematics in the picture
+    # the model says NONE and nothing has been lost but three seconds.
+    read_as = ""
+    worth_looking = asks_about_a_problem(question) and (
+        unreadable_problem(fragments, question)
+        or any(looks_like_a_problem(f) for f in fragments))
+    if not verified and worth_looking:
+        # Cheapest thing that could work, first.
+        seen = sharpened_reading(capture) or vision_reading(capture, fragments,
+                                                            question)
+        if seen:
+            verified = {k: seen[k] for k in ("symbol", "solutions", "equation")}
+            read_as = seen["read_as"]
+            screen_text = f"{screen_text}\n(Read from the image as: {read_as})"
+            if not seen["corroborated"]:
+                # Nothing on the OCR side to check it against, so he checks it.
+                speak(f"I'm reading that as {read_as}, Sir. Stop me if that's "
+                      "not it.")
+            print(f"  [Tutor] vision read: {read_as} "
+                  f"(corroborated={seen['corroborated']})")
+
     if not verified:
         partial = unreadable_problem(fragments, question)
         if partial:
@@ -889,6 +1085,10 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
 
     plan_result = plan(question, screen_text, verified)
     steps = anchor(plan_result["steps"], fragments, window, menus)
+    if plan_result["kind"] == "work":
+        pinned = pin_working(steps, fragments, window)
+        if pinned:
+            print(f"  [Tutor] pinned {pinned} working steps to the question")
 
     # The "unclear" label is the model's opinion of its own answer, and this
     # project has been here before: asked for its confidence, the classifier

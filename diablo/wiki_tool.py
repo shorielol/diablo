@@ -13,6 +13,7 @@ needs nothing but urllib.
 
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -21,25 +22,59 @@ API = "https://en.wikipedia.org/api/rest_v1/page/summary/"
 SEARCH = "https://en.wikipedia.org/w/api.php"
 AGENT = "Diablo/2.0 (local voice assistant; https://github.com/)"
 TIMEOUT = int(os.getenv("DIABLO_WEB_TIMEOUT", "10"))
+# What to wait when Wikipedia says 429 but does not say for how long,
+# and the longest wait worth taking before it is faster to fail and say so.
+RETRY_AFTER = 2.0
+MAX_RETRY_WAIT = 12.0
 
 
 def _get(url: str, params: dict = None) -> dict:
+    """
+    One request, with Wikipedia's own rate limit obeyed rather than reported.
+
+    api.php returns 429 with a Retry-After header under load, and the tool used
+    to hand that straight back as "I could not reach Wikipedia, Sir." — which
+    is both wrong and useless, because Wikipedia was reachable and asking again
+    in nine seconds would have worked. It waits once, and only for as long as
+    the server asked for.
+    """
     if params:
         url = f"{url}?{urllib.parse.urlencode(params)}"
     request = urllib.request.Request(url, headers={
         "User-Agent": AGENT, "Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
-        return json.loads(response.read().decode("utf-8", "replace"))
+    for attempt in (1, 2):
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+                return json.loads(response.read().decode("utf-8", "replace"))
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == 2:
+                raise
+            try:
+                wait = float(e.headers.get("Retry-After") or RETRY_AFTER)
+            except (TypeError, ValueError):
+                wait = RETRY_AFTER
+            time.sleep(min(max(wait, 0.0), MAX_RETRY_WAIT))
+    raise urllib.error.URLError("unreachable")
 
 
 def _best_title(query: str) -> str:
     """
     The article the search endpoint thinks he meant.
 
-    Going straight to /summary/<query> works only when the query is already an
-    exact title. Searching first is what makes "treaty of versailles" and
-    "the versailles treaty" both land on the same page.
+    The summary endpoint is tried first, because it is the one that is not
+    rate-limited and most queries arrive already spelled like a title —
+    "Treaty of Versailles" resolves in one request and never touches the search
+    API at all. Search is the fallback, and it is what makes "the versailles
+    treaty" land on the same page.
     """
+    direct = query.strip().replace(" ", "_")
+    try:
+        data = _get(API + urllib.parse.quote(direct, safe=""))
+        title = (data.get("titles", {}) or {}).get("canonical") or data.get("title")
+        if title and not data.get("type", "").endswith("disambiguation"):
+            return title.replace("_", " ")
+    except Exception:
+        pass
     data = _get(SEARCH, {"action": "query", "list": "search", "srsearch": query,
                          "srlimit": 1, "format": "json", "utf8": 1})
     hits = data.get("query", {}).get("search", [])

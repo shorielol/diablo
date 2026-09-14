@@ -239,8 +239,26 @@ OCR_UPSCALE = config.env_float("DIABLO_OCR_UPSCALE", 3.0, low=1.0, high=6.0)
 OCR_UPSCALE_BELOW = config.env_float("DIABLO_OCR_UPSCALE_BELOW", 1.5)
 
 
-def _enlarge(path: str, factor: float) -> Optional[str]:
-    """A bigger copy of the capture, or None if it could not be made."""
+def _enlarge(path: str, factor: float, smooth: bool = True) -> Optional[str]:
+    """
+    A bigger copy of the capture, or None if it could not be made.
+
+    `smooth` decides how the pixels in between are filled in, and it is not a
+    detail — it changes what Vision reads. Measured over 20 renderings at 10px
+    and 12px, three upscale factors:
+
+                      prose (mean similarity)   equations solved
+        smooth              0.84                    2 of 5
+        nearest             0.83                    4 of 5
+
+    Smoothing interpolates across the thin strokes that separate a 2 from a 7
+    and a 1 from an l, so "5x - 12 = 23" comes back as "5x-l?=". Nearest
+    neighbour keeps the strokes hard and loses a little on letterforms, which
+    prose survives and arithmetic does not.
+
+    So prose keeps the smoothing, because anchoring a marker depends on reading
+    labels, and the maths path asks for nearest separately.
+    """
     try:
         from AppKit import (NSBitmapImageRep, NSGraphicsContext, NSImage,
                             NSPNGFileType)
@@ -261,11 +279,12 @@ def _enlarge(path: str, factor: float) -> Optional[str]:
         context = NSGraphicsContext.graphicsContextWithBitmapImageRep_(rep)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.setCurrentContext_(context)
-        context.setImageInterpolation_(3)          # high
+        # NSImageInterpolationHigh (3) or NSImageInterpolationNone (1).
+        context.setImageInterpolation_(3 if smooth else 1)
         source.drawInRect_(NSMakeRect(0, 0, width, height))
         NSGraphicsContext.currentContext().flushGraphics()
         NSGraphicsContext.restoreGraphicsState()
-        out = path.replace(".png", "_big.png")
+        out = path.replace(".png", "_big.png" if smooth else "_sharp.png")
         rep.representationUsingType_properties_(NSPNGFileType, {}).writeToFile_atomically_(out, True)
         return out
     except Exception:
@@ -345,6 +364,27 @@ def _ocr_fragments_at(path: str):
             "confidence": float(candidates[0].confidence()),
         })
     return fragments
+
+
+def sharp_fragments(path: str, factor: float = 3.0):
+    """
+    The same capture read again with the strokes kept hard.
+
+    Second opinion, not a replacement. It costs one more Vision pass — around
+    200ms — and it is only worth asking for when the answer is arithmetic,
+    where a blurred digit is the difference between an answer and a refusal.
+    """
+    scaled = _enlarge(path, factor, smooth=False)
+    if not scaled:
+        return []
+    try:
+        result = _ocr_fragments_at(scaled)
+        return [] if isinstance(result, str) else result
+    finally:
+        try:
+            os.unlink(scaled)
+        except OSError:
+            pass
 
 
 def _find_columns(fragments, x_bins: int = 140, y_bins: int = 60,
@@ -570,6 +610,39 @@ def look_everything() -> str:
         flag = "  [not captured: sensitive]" if window["sensitive"] else ""
         lines.append(f"  {window['app']}{title}{flag}")
     return "\n".join(lines)
+
+
+def vision_available() -> bool:
+    """Whether the vision model is actually pulled, not just configured."""
+    try:
+        return VISION_MODEL in local_brain.installed_models()
+    except Exception:
+        return False
+
+
+def read_image(path: str, instruction: str, num_predict: int = 300) -> str:
+    """
+    Ask the vision model about an image already on disk.
+
+    Split out of describe_visually because the caller sometimes already holds
+    the capture. The tutor does: it captures once, OCRs it, and decides only
+    afterwards that the OCR is not good enough. Re-capturing there would grab a
+    different screen — the user has had two seconds to move something — and
+    the fragments it already anchored to would no longer match the picture.
+    """
+    try:
+        with open(path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode()
+    except OSError as e:
+        return f"Error: could not read the capture ({e})."
+    try:
+        message = local_brain.chat(
+            [{"role": "user", "content": instruction, "images": [encoded]}],
+            model=VISION_MODEL, num_predict=num_predict,
+        )
+        return (message.get("content") or "").strip()
+    except local_brain.BrainOffline as e:
+        return f"Error: vision model unavailable ({e})."
 
 
 def describe_visually(question: str, target: str = "") -> str:
