@@ -44,6 +44,7 @@ from typing import Any, Dict, List, Optional
 # effect in the other. One module, one instance.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from skills import config  # noqa: E402
 from skills import local_brain  # noqa: E402
 
 VISION_MODEL = os.getenv("DIABLO_VISION_MODEL", "qwen2.5vl:7b")
@@ -202,14 +203,98 @@ def ocr_available() -> bool:
         return False
 
 
-def _ocr_fragments(path: str):
+# How much to enlarge a capture before reading it.
+#
+# Measured, on a window on a non-Retina display showing "3x + 5 = 20":
+#
+#     x1   '3x*5'        'QuEStlon 3'   'ShDW all WDrklny.'
+#     x2   '3x+5'        'Questthn 3'   'ShDw 4ll WDrklThy.'
+#     x3   '3x+5'        'Question 3'   'Slww all workang.'
+#
+# The plus sign read as a multiplication sign at native size, which is not a
+# typo — it is a different equation, and the tutor built on top of this taught
+# multiplication for several minutes before anyone noticed. Three times costs
+# about 40ms and fixes it.
+OCR_UPSCALE = config.env_float("DIABLO_OCR_UPSCALE", 3.0, low=1.0, high=6.0)
+# Below this many pixels per point a capture is worth enlarging. A Retina
+# capture is already 2x and gains little.
+OCR_UPSCALE_BELOW = config.env_float("DIABLO_OCR_UPSCALE_BELOW", 1.5)
+
+
+def _enlarge(path: str, factor: float) -> Optional[str]:
+    """A bigger copy of the capture, or None if it could not be made."""
+    try:
+        from AppKit import (NSBitmapImageRep, NSGraphicsContext, NSImage,
+                            NSPNGFileType)
+        from Foundation import NSData, NSMakeRect
+    except ImportError:
+        return None
+    try:
+        source = NSImage.alloc().initWithContentsOfFile_(path)
+        original = NSBitmapImageRep.imageRepWithData_(
+            NSData.dataWithContentsOfFile_(path))
+        width = int(original.pixelsWide() * factor)
+        height = int(original.pixelsHigh() * factor)
+        if width <= 0 or height <= 0 or width * height > 80_000_000:
+            return None
+        rep = NSBitmapImageRep.alloc().initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel_(
+            None, width, height, 8, 4, True, False, "NSCalibratedRGBColorSpace", 0, 0)
+        rep.setSize_((width, height))
+        context = NSGraphicsContext.graphicsContextWithBitmapImageRep_(rep)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.setCurrentContext_(context)
+        context.setImageInterpolation_(3)          # high
+        source.drawInRect_(NSMakeRect(0, 0, width, height))
+        NSGraphicsContext.currentContext().flushGraphics()
+        NSGraphicsContext.restoreGraphicsState()
+        out = path.replace(".png", "_big.png")
+        rep.representationUsingType_properties_(NSPNGFileType, {}).writeToFile_atomically_(out, True)
+        return out
+    except Exception:
+        return None
+
+
+def _pixels_per_point(path: str, window: Optional[dict]) -> float:
+    if not window or not window.get("width"):
+        return 1.0
+    try:
+        from AppKit import NSBitmapImageRep
+        from Foundation import NSData
+        rep = NSBitmapImageRep.imageRepWithData_(NSData.dataWithContentsOfFile_(path))
+        return float(rep.pixelsWide()) / float(window["width"])
+    except Exception:
+        return 1.0
+
+
+def _ocr_fragments(path: str, window: Optional[dict] = None):
     """
     Raw OCR fragments with their boxes, or a string if OCR is unavailable.
 
     Vision returns observations in no useful order and with normalised,
     bottom-left-origin boxes. They come back here flipped to a top-left origin
     so everything downstream can think in reading order.
+
+    The boxes are normalised, so enlarging the image first does not move
+    anything: a fragment at 30% across is at 30% across whatever the pixel
+    dimensions are. That is what makes the upscale free for every caller.
     """
+    scaled = None
+    if OCR_UPSCALE > 1.0 and _pixels_per_point(path, window) < OCR_UPSCALE_BELOW:
+        scaled = _enlarge(path, OCR_UPSCALE)
+        if scaled:
+            path = scaled
+    try:
+        return _ocr_fragments_at(path)
+    finally:
+        if scaled:
+            try:
+                os.unlink(scaled)
+            except OSError:
+                pass
+
+
+def _ocr_fragments_at(path: str):
+    """The Vision call itself, on whatever image it is handed."""
     try:
         import Vision
         from Foundation import NSURL
@@ -322,9 +407,9 @@ def _label_for(span, fragments_in_span) -> str:
     return "main area"
 
 
-def ocr_regions(path: str):
+def ocr_regions(path: str, window: Optional[dict] = None):
     """OCR one window into labelled, spatially coherent regions."""
-    fragments = _ocr_fragments(path)
+    fragments = _ocr_fragments(path, window)
     if isinstance(fragments, str):
         return fragments
     if not fragments:
@@ -357,9 +442,9 @@ def ocr_regions(path: str):
     return regions
 
 
-def ocr_image(path: str) -> str:
+def ocr_image(path: str, window: Optional[dict] = None) -> str:
     """Backwards-compatible flat text, now in correct reading order."""
-    regions = ocr_regions(path)
+    regions = ocr_regions(path, window)
     if isinstance(regions, str):
         return regions
     if not regions:
@@ -579,7 +664,7 @@ def structured(target: str = "") -> Dict[str, Any]:
         info["error"] = "Could not capture that window."
         return info
     try:
-        regions = ocr_regions(path)
+        regions = ocr_regions(path, window)
     finally:
         try:
             os.unlink(path)

@@ -94,7 +94,7 @@ class _RunContext:
         return f"_RunContext({self._slot()!r})"
 
 
-CONTEXT = _RunContext(ask=None, confirm=None)
+CONTEXT = _RunContext(ask=None, confirm=None, speak=None)
 
 
 # ─── Diablo skill access ─────────────────────────────────────────────────────
@@ -722,6 +722,23 @@ def web_search(query: str, show: bool = False) -> str:
     return "\n".join(lines)
 
 
+def walk_me_through(question: str, target: str = "") -> str:
+    """Teach him how, out loud, pointing at the screen as it goes."""
+    skill = _skill("tutor")
+    if not skill:
+        return "Error: the walkthrough engine is unavailable."
+    speak = CONTEXT.get("speak")
+    if speak is None:
+        # Without a voice there is nothing to walk him through; the steps are
+        # spoken as they happen and a transcript afterwards is not a lesson.
+        return ("I can only take you through something out loud, Sir, and I "
+                "have no voice channel here.")
+    try:
+        return skill.walk(question, speak, target=target, ask=CONTEXT.get("ask"))
+    except Exception as e:
+        return f"The walkthrough came apart, Sir: {type(e).__name__}: {e}"
+
+
 def create_presentation(topic: str) -> str:
     skill = _skill("ppt_tool")
     if not skill:
@@ -850,6 +867,14 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
           "python script code excel xlsx spreadsheet formula data calculate docx "
           "analyse total sum add average count maths math number numbers revenue "
           "cost profit percentage compute work multiply subtract divide"),
+    _tool("walk_me_through", walk_me_through,
+          "Teach him how to do something on his screen, step by step, out loud, "
+          "putting a marker on each thing as you mention it. Use this whenever "
+          "he asks to be shown, taught, helped with or walked through something "
+          "he can see — not when he only wants the answer.",
+          {"question": _S, "target": _S}, ["question"],
+          "explain teach show how walk through guide help me with step by step "
+          "how do i tutorial learn understand stuck", True),
     _tool("point_at", point_at,
           "Put a marker on the user's screen over a thing they are looking for, and "
           "say where it is. Use this whenever he asks where something is, how to "

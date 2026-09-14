@@ -420,6 +420,9 @@ def run(
     """
     agent_tools.CONTEXT["ask"] = ask
     agent_tools.CONTEXT["confirm"] = confirm
+    # Tools that narrate as they work — the walkthrough is the only one so far
+    # — need the voice, not just a return value.
+    agent_tools.CONTEXT["speak"] = speak
 
     steps = plan(task)
     tool_names = agent_tools.select(task)

@@ -45,6 +45,7 @@ from skills import conversation  # noqa: E402
 from skills import local_brain  # noqa: E402
 from skills import roster  # noqa: E402
 from skills import persona  # noqa: E402
+from skills import tutor  # noqa: E402
 
 BASE_DIR = os.getenv("DIABLO_BASE_DIR", os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo")))
 JOBS_PATH = os.path.join(BASE_DIR, "jobs.json")
@@ -310,6 +311,22 @@ def handle(
         trace.event("understand", route=verdict["action"], via="model",
                     question=(verdict.get("question") or "")[:100])
 
+    # Being asked to be shown, rather than told.
+    #
+    # Routed before anything else because the two are easy to confuse and the
+    # cost of confusing them is exactly what prompted this: asked to help with
+    # a maths question, Diablo read the screen, worked out the answer, and said
+    # the answer. The request had been "help me with this".
+    if tutor.wants_teaching(text) and ask is not None:
+        trace.event("route", route="teach", task=text[:120])
+        speak(persona.working())
+        summary = tutor.walk(text, speak, ask=ask)
+        conversation.session.remember("user", text)
+        conversation.session.remember("assistant", summary)
+        conversation.session.focus = "vassago"
+        trace.event("done", route="teach", summary=summary[:120])
+        return "taught"
+
     # A named agent takes the conversation, whatever kind of turn this is.
     named = conversation.addressed_to(text)
     if named:
@@ -342,7 +359,23 @@ def handle(
         gathered = f"{gathered}\n(I asked: {verdict['question']} — you said: {answer})"
         verdict = agent_core.understand(gathered,
                                         in_conversation=conversation.session.is_followup())
-        # A named agent takes the conversation, whatever kind of turn this is.
+        # Being asked to be shown, rather than told.
+    #
+    # Routed before anything else because the two are easy to confuse and the
+    # cost of confusing them is exactly what prompted this: asked to help with
+    # a maths question, Diablo read the screen, worked out the answer, and said
+    # the answer. The request had been "help me with this".
+    if tutor.wants_teaching(text) and ask is not None:
+        trace.event("route", route="teach", task=text[:120])
+        speak(persona.working())
+        summary = tutor.walk(text, speak, ask=ask)
+        conversation.session.remember("user", text)
+        conversation.session.remember("assistant", summary)
+        conversation.session.focus = "vassago"
+        trace.event("done", route="teach", summary=summary[:120])
+        return "taught"
+
+    # A named agent takes the conversation, whatever kind of turn this is.
     named = conversation.addressed_to(text)
     if named:
         conversation.session.focus = None if named == "diablo" else named

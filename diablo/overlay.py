@@ -19,11 +19,23 @@ display's height. Getting this wrong is invisible on a single screen and
 obvious the moment a second display sits above or below the first.
 
     python3 overlay.py --x 960 --y 797 --label "Continue" --seconds 3
+
+With --session it stays up instead and takes instructions on stdin, one JSON
+object per line, so a walkthrough can move one marker from step to step:
+
+    {"x": 960, "y": 797, "label": "Click Continue", "step": "2 of 5"}
+    {"quit": true}
+
+Respawning a process per step was the obvious thing and it looks wrong: the
+marker blinks out and back, which reads as two separate pointers rather than
+one thing moving, and the spawn costs about 180ms of nothing on screen.
 """
 
 import argparse
+import json
 import math
 import sys
+import threading
 
 WIDTH, HEIGHT = 420.0, 260.0
 
@@ -34,6 +46,9 @@ def main() -> int:
     parser.add_argument("--y", type=float, required=True, help="Quartz y, top-left origin")
     parser.add_argument("--label", default="")
     parser.add_argument("--seconds", type=float, default=3.0)
+    parser.add_argument("--step", default="", help="e.g. '2 of 5'")
+    parser.add_argument("--session", action="store_true",
+                        help="stay up and take moves on stdin")
     args = parser.parse_args()
 
     try:
@@ -65,6 +80,7 @@ def main() -> int:
             self.phase = 0.0
             self.opacity = 1.0
             self.label = ""
+            self.step = ""
             return self
 
         def isOpaque(self):
@@ -104,6 +120,21 @@ def main() -> int:
             if not self.label:
                 return
 
+            # "2 of 5", above the label. Knowing there are three more steps is
+            # the difference between following along and wondering whether it
+            # has finished.
+            if self.step:
+                counter = NSString.stringWithString_(self.step)
+                counter_attrs = {
+                    NSFontAttributeName: NSFont.boldSystemFontOfSize_(10.0),
+                    NSForegroundColorAttributeName:
+                        NSColor.colorWithCalibratedRed_green_blue_alpha_(
+                            1.0, 0.72, 0.72, 0.9 * self.opacity),
+                }
+                csize = counter.sizeWithAttributes_(counter_attrs)
+                counter.drawAtPoint_withAttributes_(
+                    NSPoint(cx - csize.width / 2, cy + 30), counter_attrs)
+
             text = NSString.stringWithString_(self.label)
             attributes = {
                 NSFontAttributeName: NSFont.boldSystemFontOfSize_(13.0),
@@ -140,8 +171,13 @@ def main() -> int:
 
     view = MarkerView.alloc().initWithFrame_(NSMakeRect(0, 0, WIDTH, HEIGHT))
     view.label = args.label
+    view.step = args.step
     window.setContentView_(view)
     window.orderFrontRegardless()                 # show without taking focus
+
+    if args.session:
+        return _run_session(args, app, window, view, primary_height,
+                            NSApp, NSMakeRect, NSTimer)
 
     state = {"elapsed": 0.0}
     step = 1.0 / 30.0
@@ -155,6 +191,64 @@ def main() -> int:
         view.setNeedsDisplay_(True)
         if state["elapsed"] >= args.seconds:
             NSApp().terminate_(None)
+
+    NSTimer.scheduledTimerWithTimeInterval_repeats_block_(step, True, tick)
+    app.run()
+    return 0
+
+
+def _run_session(args, app, window, view, primary_height,
+                 NSApp, NSMakeRect, NSTimer) -> int:
+    """
+    Stay up and move when told. One marker, many steps.
+
+    stdin is read on its own thread because a blocking readline on the main
+    thread would stop the run loop, and a run loop that is not running is a
+    marker that does not pulse and a window that does not redraw.
+    """
+    from Foundation import NSOperationQueue
+
+    def place(x, y, label, step):
+        # AppKit off the main thread is undefined behaviour that usually looks
+        # like it works, right up until it draws nothing.
+        def apply():
+            window.setFrame_display_(
+                NSMakeRect(x - WIDTH / 2, (primary_height - y) - HEIGHT / 2,
+                           WIDTH, HEIGHT), True)
+            view.label = label
+            view.step = step
+            view.opacity = 1.0
+            window.orderFrontRegardless()
+            view.setNeedsDisplay_(True)
+        NSOperationQueue.mainQueue().addOperationWithBlock_(apply)
+
+    def reader():
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                message = json.loads(line)
+            except Exception:
+                continue
+            if message.get("quit"):
+                break
+            try:
+                place(float(message["x"]), float(message["y"]),
+                      str(message.get("label", ""))[:60],
+                      str(message.get("step", ""))[:12])
+            except Exception:
+                continue
+        NSOperationQueue.mainQueue().addOperationWithBlock_(
+            lambda: NSApp().terminate_(None))
+
+    threading.Thread(target=reader, daemon=True).start()
+
+    step = 1.0 / 30.0
+
+    def tick(timer):
+        view.phase = (view.phase + step * 0.9) % 1.0
+        view.setNeedsDisplay_(True)
 
     NSTimer.scheduledTimerWithTimeInterval_repeats_block_(step, True, tick)
     app.run()

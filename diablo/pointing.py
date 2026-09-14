@@ -164,7 +164,7 @@ def locate(description: str, target: str = "", limit: int = 5) -> List[Hit]:
     if not path:
         return []
     try:
-        fragments = screen_context._ocr_fragments(path)
+        fragments = screen_context._ocr_fragments(path, window)
     finally:
         try:
             os.unlink(path)

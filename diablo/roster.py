@@ -87,12 +87,15 @@ AGENTS: List[Dict[str, Any]] = [
     {
         "id": "vassago", "name": "Vassago", "role": "Watches the screen",
         "accent": "#3DA9FC", "eye": "#8FD3FF", "mouth": "calm",
-        "blurb": "Window capture, reading text off the glass, pointing at things.",
+        "blurb": "Reads the glass, points at things, and walks you through them.",
         "tools": ["read_screen", "explain_screen", "describe_visually", "list_windows",
-                  "take_screenshot", "point_at", "find_on_screen"],
+                  "take_screenshot", "point_at", "find_on_screen",
+                  "walk_me_through"],
         "keywords": ["screen", "window", "this page", "on my screen", "show me where",
                      "point at", "highlight", "what am i looking at", "screenshot",
-                     "tab", "visible", "in front of me"],
+                     "tab", "visible", "in front of me", "help me with",
+                     "show me how", "walk me through", "teach me", "how do i",
+                     "explain this", "step by step"],
         "voice": (
             "You are Vassago. You watch his screen. You describe what is actually v"
             "isible and nothing behind it, and when you cannot make something out y"
