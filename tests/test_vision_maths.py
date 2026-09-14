@@ -192,6 +192,46 @@ def main():
             tutor.pin_working(prose_only, [frag("Welcome back")], WINDOW) == 0,
             "there is no problem on screen to sit the marker on")
 
+    # ── 7. The decisions around the drawing ──────────────────────────────
+    # Each of these, got wrong, makes the marker vanish or hang. The first one
+    # is how the feature was broken to begin with.
+    r.head("What decides whether it draws")
+    fragments = [frag("Solve for x:", top=0.20),
+                 frag("5x", left=0.12, top=0.30, width=0.06)]
+
+    def working_steps():
+        return [tutor.Step(say="Add twelve.", show="5x = 35", found=False),
+                tutor.Step(say="Divide by five.", show="x = 7", found=False)]
+
+    # The model's own label is not the test. qwen3:4b is precisely the model
+    # that ignores an instruction about which label to use.
+    for label in ("work", "ui", "unclear"):
+        steps = working_steps()
+        verified = {"symbol": "x", "solutions": ["7"], "equation": "5x - 12 = 23"}
+        if label == "work" or verified:
+            tutor.pin_working(steps, fragments, WINDOW)
+        r.check(f"a solved equation draws even when the plan says {label!r}",
+                all(s["found"] for s in steps))
+
+    pinned = tutor.pin_working(working_steps(), fragments, WINDOW)
+    r.check("pinning reports how many steps it placed", pinned == 2, f"{pinned}")
+    r.check("nothing to pin means nothing pinned",
+            tutor.pin_working([tutor.Step(say="Click Export.", found=False)],
+                              fragments, WINDOW) == 0)
+
+    # Waiting for a click on an equation is a thirty-second hang that looks
+    # exactly like the feature being broken.
+    r.check("a walkthrough with working on screen never waits for a click",
+            not tutor.waits_for_clicks("ui", pinned),
+            "mislabelled 'ui', it would sit on the equation for 30s")
+    r.check("nor does one the model labelled 'work'",
+            not tutor.waits_for_clicks("work", 0))
+    r.check("an interface walkthrough with nothing pinned still waits",
+            tutor.waits_for_clicks("ui", 0),
+            "this is the click-and-wait feature; it must survive all of the above")
+    r.check("an unclear plan does not wait either",
+            not tutor.waits_for_clicks("unclear", 0))
+
     return r.report("vision maths")
 
 

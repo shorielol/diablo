@@ -732,6 +732,18 @@ def _screen_point(fragment: dict, window: dict):
     return x, y
 
 
+def waits_for_clicks(kind: str, pinned: int) -> bool:
+    """
+    Whether this walkthrough should stop and wait for him at each step.
+
+    Only an interface walkthrough waits. There is nothing to click on an
+    equation, and a marker sitting on one for thirty seconds waiting for a
+    click that is never coming is exactly what a broken feature looks like —
+    so working on screen settles it whatever the plan called itself.
+    """
+    return kind == "ui" and not pinned
+
+
 def pin_working(steps: List[Step], fragments: List[dict], window: dict) -> int:
     """
     Put the working on screen, next to the question it belongs to.
@@ -1085,7 +1097,14 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
 
     plan_result = plan(question, screen_text, verified)
     steps = anchor(plan_result["steps"], fragments, window, menus)
-    if plan_result["kind"] == "work":
+    # Evidence, not the model's label for its own answer.
+    #
+    # Gating this on kind == "work" put the drawing back at the mercy of the
+    # one thing the 4B reliably gets wrong: following an instruction about
+    # which label to use. If there is a solved equation and the steps carry
+    # working, that IS a worked problem whatever the model called it.
+    pinned = 0
+    if plan_result["kind"] == "work" or verified:
         pinned = pin_working(steps, fragments, window)
         if pinned:
             print(f"  [Tutor] pinned {pinned} working steps to the question")
@@ -1117,6 +1136,10 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
             steps = anchor(found["steps"], fragments, window, menus)
             plan_result = {"kind": "ui", "steps": steps}
             researched = found["source"]
+            # These are different steps entirely — a procedure read off the
+            # web, about an interface. Nothing pinned to the old ones survives,
+            # and this walkthrough waits for clicks like any other.
+            pinned = 0
         else:
             doors = navigation_labels(fragments)
             if doors:
@@ -1145,7 +1168,7 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
     if researched:
         speak(f"This is from {researched}, so check it against what you see.")
 
-    interactive = (plan_result["kind"] == "ui")
+    interactive = waits_for_clicks(plan_result["kind"], pinned)
     marker = Marker(watch_clicks=interactive)
     spoken, waited, done_by_hand = 0, 0, 0
     try:
