@@ -2,7 +2,7 @@ import re
 import subprocess
 import time
 import webbrowser
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from skills import browsers  # noqa: E402
 
 def run_applescript(script: str) -> str:
@@ -81,6 +81,127 @@ def shuffle_library() -> str:
     return result
 
 
+# ─── The library, matched properly ───────────────────────────────────────────
+#
+# The old search asked AppleScript for `every track whose name contains "<the
+# whole query>" or artist contains "<the whole query>"`. That works only if
+# you say the title and nothing else. Measured against this library:
+#
+#     "The Truth"                 1 match
+#     "the truth by lil tecca"    0 matches
+#     "ivy by frank ocean"        0 matches
+#
+# Both of those songs are in the library. Phrase it the way a person speaks
+# and the search misses, the app types the query into Music's search box with
+# synthetic keystrokes, presses Tab and Return at whatever has focus, and then
+# gives up and opens YouTube. That is the "it searches the song but never
+# plays it" — it was barely searching the library at all.
+#
+# Fifty tracks is nothing. Read them once and match in Python, where there can
+# be a real scorer rather than a substring test.
+
+_library_cache: Tuple[float, List[dict]] = (0.0, [])
+LIBRARY_TTL = 300.0
+
+# Words that describe the request rather than the music.
+_SKIP = {"play", "put", "on", "some", "the", "a", "an", "by", "from", "for",
+         "me", "please", "song", "track", "tune", "listen", "to", "of", "my"}
+
+
+def library(force: bool = False) -> List[dict]:
+    """Every track, as {id, name, artist}. Cached for a few minutes."""
+    global _library_cache
+    age, cached = _library_cache
+    if cached and not force and (time.time() - age) < LIBRARY_TTL:
+        return cached
+    script = """
+    tell application "Music"
+        set out to ""
+        repeat with t in (get every track of library playlist 1)
+            set out to out & (persistent ID of t) & tab & (name of t) & tab & (artist of t) & linefeed
+        end repeat
+        return out
+    end tell
+    """
+    raw = run_applescript(script)
+    tracks = []
+    for line in (raw or "").splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 3 and parts[0].strip():
+            tracks.append({"id": parts[0].strip(), "name": parts[1].strip(),
+                           "artist": parts[2].strip()})
+    if tracks:
+        _library_cache = (time.time(), tracks)
+    return tracks
+
+
+def _tokens(text: str) -> List[str]:
+    return [w for w in re.findall(r"[a-z0-9']+", (text or "").lower())
+            if w and w not in _SKIP]
+
+
+def find_in_library(query: str):
+    """
+    The track he meant, or None.
+
+    Scored on how much of what he said the title and artist account for, and
+    how much of the title he actually said. Both halves matter: the first
+    alone matches any song by the right artist, the second alone matches "The
+    Truth" for someone asking about truth or dare.
+
+    None is a real answer. A wrong song is worse than falling through to the
+    web, because the web at least gets the right one.
+    """
+    wanted = _tokens(query)
+    if not wanted:
+        return None
+    best, best_score = None, 0.0
+    for track in library():
+        title = set(_tokens(track["name"]))
+        artist = set(_tokens(track["artist"]))
+        if not title:
+            continue
+        explained = sum(1 for w in wanted if w in title or w in artist)
+        coverage = explained / len(wanted)
+        title_hit = sum(1 for w in title if w in wanted) / len(title)
+        score = coverage * 0.6 + title_hit * 0.4
+        if score > best_score:
+            best, best_score = track, score
+    return best if best_score >= 0.72 else None
+
+
+def play_track(track: dict) -> str:
+    """
+    Play one track by its persistent ID. Returns what is actually playing.
+
+    It waits for the persistent ID of the current track to become the one that
+    was asked for, rather than reading the name after a fixed delay. Music
+    takes a moment to change over, and a fixed delay caught the *previous*
+    track: asked for Irish Goodbye it played Irish Goodbye and announced The
+    Truth, which is the kind of small lie that makes you stop trusting it.
+    """
+    script = f"""
+    tell application "Music"
+        set shuffle enabled to false
+        set t to (first track of library playlist 1 whose persistent ID is "{track['id']}")
+        play t
+        repeat 25 times
+            try
+                if (persistent ID of current track) is "{track['id']}" then
+                    return (name of current track) & " by " & (artist of current track)
+                end if
+            end try
+            delay 0.08
+        end repeat
+        return "TIMEOUT"
+    end tell
+    """
+    result = run_applescript(script)
+    if result.startswith("Error:") or result == "TIMEOUT":
+        return ""
+    return result
+
+
 def play_pause():
     return run_applescript('tell application "Music" to playpause')
 
@@ -152,77 +273,39 @@ def play_on_web_service(query: str, service: str = "youtube"):
 
 def search_and_play(query: str):
     """
-    Robust 'Type-Direct' Music Search Engine (v7.2).
-    Activates Music -> Manual Type -> Wait -> Autonomous Play.
-    """
-    clean_query = query.replace('"', '\\"')
-    print(f"  [Music Tool] Executing Type-Direct Search for: {clean_query}...")
-    
-    # 1. First, check local library (Fastest)
-    lib_script = f'''
-    tell application "Music"
-        try
-            set matchingTracks to (every track whose name contains "{clean_query}" or artist contains "{clean_query}")
-            if (count of matchingTracks) > 0 then
-                play (first item of matchingTracks)
-                return "playing from library"
-            end if
-        on error
-            return ""
-        end try
-    end tell
-    '''
-    lib_res = run_applescript(lib_script)
-    if "playing" in lib_res:
-        return lib_res
-    
-    # 2. Try the 'Type-Direct' search in Music.app first (Acoustic Precision)
-    # FORCE STOP previous music to ensure we don't just 'resume' the old track
-    run_applescript('tell application "Music" to stop')
-    
-    nav_script = f'''
-    tell application "Music" to activate
-    delay 0.5
-    tell application "System Events"
-        tell process "Music"
-            -- Force open Search
-            keystroke "f" using {{command down, option down}}
-            delay 0.5
-            keystroke "a" using {{command down}}
-            key code 51 -- Delete
-            keystroke "{clean_query}"
-            delay 0.3
-            key code 36 -- Enter trigger search
-        end tell
-    end tell
-    '''
-    run_applescript(nav_script)
-    
-    # 3. Autonomous Playback Trigger
-    # Wait for results to load
-    time.sleep(3.5)
-    
-    play_script = '''
-    tell application "System Events"
-        tell process "Music"
-            -- Navigate results and force play the top hit
-            key code 48 -- Tab (Highlight Search Result)
-            delay 0.3
-            key code 36 -- Enter (Force Play New Song)
-        end tell
-    end tell
-    '''
-    run_applescript(play_script)
-    
-    # Check if successful
-    is_playing = run_applescript('tell application "Music" to get player state')
-    if "playing" in is_playing:
-        return "playing from search"
-        
-    # 4. Final Alexa Fallback: Web Streaming
-    print("  [Music Tool] Local search yields no result. Transitioning to Web Stream (Alexa Logic)...")
-    return play_on_web_service(query, service="youtube")
+    Play a named song: from the library if it is there, from the web if not.
 
-if __name__ == "__main__":
-    # Test
-    pass
+    The middle step is gone. It used to activate Music, type the query into
+    the search box with synthetic keystrokes, wait three and a half seconds,
+    then press Tab and Return at whatever happened to have focus. Guessing at
+    focus is not searching, and it is what you were watching when the song got
+    searched for and never played.
+
+    Either the track is in the library, in which case it plays by persistent
+    ID with nothing guessed at all, or it is not, in which case say so plainly
+    and stream it.
+    """
+    query = (query or "").strip()
+    if not query:
+        return ""
+
+    hit = find_in_library(query)
+    if hit:
+        now = play_track(hit)
+        if now:
+            print(f"  [Music] from your library: {now}")
+            return f"Playing {now} from your library."
+        # Found and would not play — a cloud track with no local file, usually.
+        # Falling through is right; pretending it worked is not.
+        print(f"  [Music] {hit['name']} is in the library but would not play")
+
+    print(f"  [Music] '{query}' is not in your library; streaming instead")
+    url = resolve_track(query)
+    if url:
+        browsers.open_url(url)
+        return ("That one is not in your Apple Music library, Sir, "
+                "so I have put it on YouTube.")
+
+    fallback = f"https://music.youtube.com/search?q={query.replace(' ', '+')}"
+    browsers.open_url(fallback)
+    return f"I could not find a single track for {query}, so here is a search."

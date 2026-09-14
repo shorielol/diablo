@@ -87,6 +87,55 @@ def main() -> int:
             r.check("it reports what it put on",
                     "Shuffling" in answer and "Playing" in answer, answer[:80])
 
+    # ── A named song ─────────────────────────────────────────────────────
+    #
+    # The old search matched the whole spoken phrase against a track title, so
+    # it only worked if you said the title and nothing else. "ivy by frank
+    # ocean" found nothing, with Ivy by Frank Ocean sitting in the library.
+    r.head("Playing a particular song")
+    with guard(r, "the library is readable"):
+        tracks = music_tool.library()
+        r.check("the library can be read", len(tracks) > 0, f"{len(tracks)} tracks")
+        if tracks:
+            r.check("  with a title, an artist and an id for each",
+                    all(t.get("id") and t.get("name") for t in tracks))
+
+            # Ask for a real track the way a person actually says it.
+            sample = next((t for t in tracks if t["name"] and t["artist"]), None)
+            spoken = f"{sample['name'].split('(')[0].strip()} by {sample['artist']}"
+            found = music_tool.find_in_library(spoken)
+            r.check(f"'{spoken[:38]}' is found",
+                    found is not None and found["id"] == sample["id"],
+                    (found or {}).get("name", "not found"))
+            r.check("  and the bare title works too",
+                    (music_tool.find_in_library(sample["name"]) or {}).get("id")
+                    == sample["id"])
+
+    with guard(r, "a song that is not there is not substituted"):
+        for absent in ("bohemian rhapsody by queen",
+                       "some song that does not exist anywhere"):
+            r.check(f"'{absent[:34]}' finds nothing",
+                    music_tool.find_in_library(absent) is None,
+                    "a wrong song is worse than falling through to the web")
+
+    if INTRUSIVE:
+        with guard(r, "it plays what it says it is playing"):
+            tracks = music_tool.library()
+            target = tracks[0] if tracks else None
+            if target:
+                answer = agent_tools.play_music(
+                    query=f"{target['name']} by {target['artist']}")
+                import subprocess as sp
+                playing = sp.run(
+                    ["osascript", "-e",
+                     'tell application "Music" to return name of current track'],
+                    capture_output=True, text=True).stdout.strip()
+                r.check("the track it announced is the track that started",
+                        playing and playing[:12].lower() in answer.lower(),
+                        f"announced {answer[:50]!r}, playing {playing!r}")
+    else:
+        r.skip("playing a named track", "starts audio; DIABLO_TEST_INTRUSIVE=1")
+
     r.check("'play music' reaches the music tool", picks("play music", "play_music"))
     r.check("'next song' reaches transport", picks("next song", "music_transport"))
 
