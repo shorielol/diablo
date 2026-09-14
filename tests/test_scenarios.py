@@ -243,6 +243,42 @@ def main() -> int:
             voice.on_audio_start is not None,
             "the animation used to start 1125ms before any audio")
 
+    # ── Hearing ──────────────────────────────────────────────────────────
+    r.head("Hearing you")
+    with guard(r, "a transcriber loads and works"):
+        from skills import stt
+        import numpy as np
+        import wave as wavelib
+        engine = stt.load()
+        r.check("an engine is available", engine is not None, engine.name)
+
+        clip = os.path.join(DIABLO_HOME, "command.wav")
+        if not os.path.exists(clip):
+            r.skip("transcribing a real recording", "no sample on disk")
+        else:
+            # Both shapes, because they come from different paths: push to
+            # talk hands over a numpy array it collected itself, the wake path
+            # hands over a file. An engine that only takes one of them breaks
+            # exactly half of the ways you can talk to it.
+            by_path = engine.transcribe(clip)["text"].strip().lower()
+            r.check("a file transcribes", "instagram" in by_path, by_path[:50])
+
+            with wavelib.open(clip) as handle:
+                audio = (np.frombuffer(handle.readframes(handle.getnframes()),
+                                       dtype=np.int16).astype(np.float32) / 32768.0)
+            by_array = engine.transcribe(audio, fp16=False,
+                                         beam_size=5)["text"].strip().lower()
+            r.check("a numpy array transcribes too", "instagram" in by_array,
+                    by_array[:50])
+            r.check("  and Whisper's keyword arguments are tolerated",
+                    True, "fp16 and beam_size mean nothing to Parakeet")
+
+    with guard(r, "it falls back rather than going deaf"):
+        from skills import stt
+        fallback = stt.load(prefer="whisper")
+        r.check("whisper is still reachable", fallback.name == "whisper",
+                fallback.model_id)
+
     # ── Things this suite cannot do unattended ───────────────────────────
     r.head("Not tested here")
     for what, why in (

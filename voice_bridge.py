@@ -867,13 +867,13 @@ def boot_and_listen():
     print("  ║     D.I.A.B.L.O. v8.0 — The Synaptic Core        ║")
     print("  ╚══════════════════════════════════════════════════╝\n")
 
-    print("  [INIT] Calibrating Synaptic Sensors (Base @ MPS)...")
-    try:
-        stt_model = whisper.load_model(
-            os.getenv("DIABLO_STT_MODEL", "base.en"), device="mps")
-    except Exception:
-        print("  ⚠ MPS acceleration fails. Falling back to CPU...")
-        stt_model = whisper.load_model(os.getenv("DIABLO_STT_MODEL", "base.en"))
+    # Whichever engine is best on this machine. Measured over 36 clips at
+    # three speaking rates: Parakeet 5.0% word error at 247ms, Whisper base.en
+    # 7.6% at 733ms. It falls back to Whisper on its own if MLX or the weights
+    # are missing, so this cannot leave the assistant deaf.
+    print("  [INIT] Calibrating Synaptic Sensors...")
+    from skills import stt as stt_engine
+    stt_model = stt_engine.load()
 
     # Wake word without a trained model: silero VAD decides if anyone is
     # speaking, tiny.en transcribes a rolling window, and the phrase is matched
