@@ -136,46 +136,53 @@ export function mascot({ accent = '#E0233C', eye = '#F2C230',
 /*
   The roster.
 
-  Diablo is the one you talk to. The other three are what it becomes when it
-  goes away to do something, and they exist because a background task that
-  reports as "Diablo" is indistinguishable from the Diablo you are currently
-  speaking to. Giving the work a face makes "what is it doing" answerable at a
-  glance, which is the entire point of the agents panel.
+  Diablo is the one you talk to. It does not do the work itself — it hands the
+  pieces out and collects what comes back, and the others are who it hands them
+  to. Names are Goetic, picked for what each one was said to do rather than for
+  sounding sinister: Asmodeus knew things, Marbas answered of hidden things and
+  the mechanical arts, Vassago declared what was lost, Seere went anywhere in an
+  instant, and Leviathan was simply the deep one.
+
+  This list mirrors skills/roster.py, which is the source of truth and is
+  served at /api/agents. It is duplicated here only so the window has something
+  to draw in the moment before the first fetch lands.
+
+  There used to be three others on this panel — a reader, a writer and a guard.
+  They were never agents. They were a drawing of the permission gate, and that
+  gate is not a thing to put on a card: it runs on every mutating call whatever
+  name is on the job, and it is not optional, not selectable, and not the
+  user's business to manage. It is still there. It just is not scenery.
 */
 export const AGENTS = [
-  {
-    id: 'diablo', name: 'Diablo', role: 'The one you talk to',
+  { id: 'diablo',  name: 'Diablo',  role: 'The one you talk to',
     accent: '#E0233C', eye: '#F2C230', mouth: 'grin',
-    blurb: 'Listens, decides, answers. Everything starts here.',
-  },
-  {
-    id: 'scout', name: 'Scout', role: 'Reads the screen',
+    blurb: 'Listens, decides, and hands the work out.' },
+  { id: 'asmo',    name: 'Asmo',    role: 'Finds things out',
+    accent: '#8B5CF6', eye: '#D6BCFA', mouth: 'smirk',
+    blurb: 'The web, encyclopaedias, and anything you want looked up.' },
+  { id: 'marbas',  name: 'Marbas',  role: 'Papers and numbers',
+    accent: '#46C46B', eye: '#B6EEC6', mouth: 'calm',
+    blurb: 'Reads, writes, moves and totals whatever is on disk.' },
+  { id: 'vassago', name: 'Vassago', role: 'Watches the screen',
     accent: '#3DA9FC', eye: '#8FD3FF', mouth: 'calm',
-    blurb: 'Window capture, OCR, and pointing at things.',
-    tools: ['read_screen', 'explain_screen', 'list_windows', 'point_at', 'find_on_screen'],
-  },
-  {
-    id: 'scribe', name: 'Scribe', role: 'Handles your files',
-    accent: '#46C46B', eye: '#B6EEC6', mouth: 'smirk',
-    blurb: 'Reading, writing, moving, and the arithmetic in between.',
-    tools: ['read_file', 'write_file', 'append_file', 'move_file', 'find_files',
-            'search_text', 'make_folder', 'python_snippet', 'create_presentation'],
-  },
-  {
-    id: 'warden', name: 'Warden', role: 'Guards the risky ones',
-    accent: '#F2C230', eye: '#FFE6A8', mouth: 'flat',
-    blurb: 'Deletes, messages and shell. Asks first, every time.',
-    tools: ['delete_file', 'run_shell', 'send_whatsapp', 'send_imessage', 'set_volume'],
-  },
+    blurb: 'Window capture, reading text off the glass, pointing at things.' },
+  { id: 'seere',   name: 'Seere',   role: 'Runs the errands',
+    accent: '#F2913D', eye: '#FFD8A8', mouth: 'grin',
+    blurb: 'Apps, music, volume, messages. In and out quickly.' },
+  { id: 'levi',    name: 'Levi',    role: 'The deep one',
+    accent: '#D93AA8', eye: '#FFC2E9', mouth: 'flat',
+    blurb: 'Wakes the larger model when the small one is out of its depth.' },
 ];
 
-/** Which agent owns a given tool. Used to put a face on live activity. */
-export function agentForTool(tool) {
-  if (!tool) return AGENTS[0];
-  for (const agent of AGENTS) {
-    if (agent.tools && agent.tools.includes(tool)) return agent;
-  }
-  return AGENTS[0];
+export const byId = Object.fromEntries(AGENTS.map(a => [a.id, a]));
+
+/** Index a roster fetched from /api/agents, falling back to the built-in one. */
+export function index(list) {
+  if (!Array.isArray(list) || !list.length) return byId;
+  return Object.fromEntries(list.map(a => [a.id, a]));
 }
 
-export const byId = Object.fromEntries(AGENTS.map(a => [a.id, a]));
+/** Look one up by id without ever returning undefined. */
+export function agent(id, roster) {
+  return (roster || byId)[id] || byId.diablo;
+}

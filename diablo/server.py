@@ -102,6 +102,20 @@ def _jobs() -> List[Dict[str, Any]]:
         return []
 
 
+def _agents() -> List[Dict[str, Any]]:
+    """The roster, as the window should draw it.
+
+    Served rather than duplicated in JavaScript so there is one list. The
+    internal safety classes are not in it and never were: those describe the
+    permission gate, which is not an agent and not something to put on a card.
+    """
+    try:
+        from skills import roster
+        return roster.roster()
+    except Exception:
+        return []
+
+
 def _trace(limit: int = 12) -> List[List[Dict[str, Any]]]:
     try:
         from skills import trace
@@ -262,6 +276,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(_state())
             if route == "/api/jobs":
                 return self._json(_jobs())
+            if route == "/api/agents":
+                return self._json(_agents())
             if route == "/api/trace":
                 return self._json(_trace())
             if route == "/api/conversation":
@@ -273,6 +289,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({
                     "state": _state(), "jobs": _jobs(), "trace": _trace(6),
                     "conversation": _conversation(), "settings": _settings(),
+                    "agents": _agents(),
                 })
             if route == "/events":
                 return self._events()
@@ -385,6 +402,17 @@ def _control(action: str) -> Dict[str, Any]:
                 _panel_toggle()
                 return {"ok": True}
             return {"ok": False, "error": "no shell attached"}
+        if action.startswith("grant:") and _manager is not None:
+            kind = action.split(":", 1)[1]
+            result = _manager.request_permission(kind)
+            # The window polls /api/state, but a permission it just asked for
+            # is worth telling it about immediately.
+            push("permissions", permissions=_manager.check_permissions())
+            return result
+        if action == "recheck" and _manager is not None:
+            perms = _manager.forget_permissions()
+            push("permissions", permissions=perms)
+            return {"ok": True, "permissions": perms}
         if action == "quit":
             push("quitting")
             threading.Timer(0.3, lambda: os._exit(0)).start()

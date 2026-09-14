@@ -20,6 +20,7 @@ Three rules the whole file is built around:
 import glob as globlib
 import json
 import os
+import threading
 
 from skills import config  # noqa: E402
 import re
@@ -55,7 +56,45 @@ MAX_TOOL_OUTPUT = 6000  # characters handed back to the model per call
 
 # Set by agent_core before a run. `ask` speaks a question and returns the reply;
 # `confirm` speaks a yes/no and returns a bool.
-CONTEXT: Dict[str, Any] = {"ask": None, "confirm": None}
+#
+# Per thread, not per process. Agents now run several at a time, and a plain
+# dict here meant the last one to start overwrote everybody's callbacks: the
+# confirmation for Seere's delete would announce itself as Marbas, because
+# Marbas set CONTEXT last. The gate still fired — it is the same function
+# either way — but a safety prompt with the wrong name on it is its own kind of
+# wrong. Each run owns its own pair, and a thread that never set them reads
+# None rather than borrowing another agent's.
+class _RunContext:
+    """A dict, as far as its callers are concerned, but private to each thread."""
+
+    def __init__(self, **defaults: Any):
+        self._defaults = defaults
+        self._local = threading.local()
+
+    def _slot(self) -> Dict[str, Any]:
+        current = getattr(self._local, "values", None)
+        if current is None:
+            current = dict(self._defaults)
+            self._local.values = current
+        return current
+
+    def __getitem__(self, key: str) -> Any:
+        return self._slot()[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._slot()[key] = value
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._slot().get(key, default)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._slot()
+
+    def __repr__(self) -> str:
+        return f"_RunContext({self._slot()!r})"
+
+
+CONTEXT = _RunContext(ask=None, confirm=None)
 
 
 # ─── Diablo skill access ─────────────────────────────────────────────────────

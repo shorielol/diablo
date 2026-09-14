@@ -29,6 +29,7 @@ SUITES = [
     ("test_manager.py",      False, "state machine, events, lifecycle, degradation"),
     ("test_app.py",          False, "the app API, its assets, and what is on screen"),
     ("test_pointing.py",     False, "finding things on screen, and marking them"),
+    ("test_roster.py",       True,  "delegation: who gets what, and several at once"),
     ("test_system.py",       False, "system tools, offline gating, screen sight"),
     ("test_voice.py",        False, "Voicebox, cache, and every fallback"),
     ("test_brain.py",        True,  "the model, conversation, anti-fabrication"),

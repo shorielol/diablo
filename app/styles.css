@@ -48,7 +48,24 @@
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
 
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Three curves, not one.
+     The built-in CSS easings are too weak to read as deliberate, and one
+     curve cannot serve both an element arriving and an element moving.
+     ease-in is absent on purpose: it delays the first few frames, which are
+     exactly the ones the user is watching, so it feels slower than ease-out
+     at the same duration. */
+  --ease-out:    cubic-bezier(0.23, 1, 0.32, 1);     /* entering, leaving */
+  --ease-move:   cubic-bezier(0.77, 0, 0.175, 1);    /* moving on screen */
+  --ease-hover:  ease;                               /* colour, hover */
+  --ease: var(--ease-out);                           /* the old name */
+
+  /* Durations. Everything the user triggers stays under 300ms; a 180ms
+     dropdown feels more responsive than a 400ms one, and the difference is
+     not subtle. */
+  --t-press: 140ms;
+  --t-hover: 160ms;
+  --t-enter: 220ms;
+  --t-leave: 140ms;   /* leaving is always faster than arriving */
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -67,6 +84,18 @@ body {
 }
 
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+/* Every pressable thing answers to a press.
+   A button that does not move under the cursor leaves a half-second where
+   the interface has not said whether it heard you, and that gap is where an
+   app starts to feel unresponsive — regardless of how fast the work behind
+   it is. The scale is small on purpose: 0.97 registers, 0.9 is a toy. */
+button, [role="button"] {
+  transition: transform var(--t-press) var(--ease-out);
+}
+button:active:not(:disabled), [role="button"]:active {
+  transform: scale(0.97);
+}
 
 /* Focus is never removed, only restyled. Keyboard users need to see where
    they are, and this app has a text field people will tab into. */
@@ -109,7 +138,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   border-radius: 999px;
   background: var(--surface-2);
   font-size: 12px; color: var(--dim);
-  transition: border-color 220ms var(--ease), color 220ms var(--ease);
+  transition: border-color var(--t-enter) var(--ease-hover),
+              color var(--t-enter) var(--ease-hover);
 }
 .state[data-state="listening"] { border-color: var(--crimson); color: #FFD9DE; }
 .state[data-state="processing"] { border-color: var(--gold-dim); color: #FFEEBB; }
@@ -135,9 +165,13 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .tab {
   padding: 5px 11px; border-radius: var(--radius-sm);
   font-size: 12.5px; color: var(--faint);
-  transition: color 160ms var(--ease), background 160ms var(--ease);
+  transition: color var(--t-hover) var(--ease-hover),
+              background var(--t-hover) var(--ease-hover),
+              transform var(--t-press) var(--ease-out);
 }
-.tab:hover { color: var(--dim); background: var(--surface-2); }
+@media (hover: hover) and (pointer: fine) {
+  .tab:hover { color: var(--dim); background: var(--surface-2); }
+}
 .tab[aria-selected="true"] { color: var(--text); background: var(--surface-3); }
 
 .tab .badge {
@@ -219,7 +253,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   transition: background 160ms var(--ease), color 160ms var(--ease),
               border-color 160ms var(--ease);
 }
-.iconbtn:hover { background: var(--surface-3); color: var(--text); }
+@media (hover: hover) and (pointer: fine) {
+  .iconbtn:hover { background: var(--surface-3); color: var(--text); }
+}
 .iconbtn[data-active="true"] { border-color: var(--crimson); color: var(--crimson); }
 .iconbtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
@@ -263,9 +299,12 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   display: flex; gap: var(--s3); align-items: flex-start;
   padding: var(--s3); border-radius: var(--radius);
   background: var(--surface); border: 1px solid var(--line-soft);
-  transition: border-color 200ms var(--ease), transform 200ms var(--ease);
+  transition: border-color var(--t-enter) var(--ease-hover),
+              transform var(--t-enter) var(--ease-out);
 }
-.agent:hover { border-color: var(--line); transform: translateY(-1px); }
+@media (hover: hover) and (pointer: fine) {
+  .agent:hover { border-color: var(--line); transform: translateY(-1px); }
+}
 .agent[data-busy="true"] { border-color: var(--accent, var(--crimson)); }
 
 .agent .av { width: 46px; height: 46px; flex-shrink: 0; border-radius: 10px; overflow: hidden; }
@@ -303,9 +342,15 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   flex: 1; height: 34px; border-radius: var(--radius-sm);
   border: 1px solid var(--line); background: var(--surface-2);
   color: var(--dim); font-size: 12.5px;
-  transition: all 160ms var(--ease);
+  /* Named properties, never `all`. `all` transitions things you did not
+     mean to — including layout properties that force a reflow per frame. */
+  transition: background var(--t-hover) var(--ease-hover),
+              color var(--t-hover) var(--ease-hover),
+              transform var(--t-press) var(--ease-out);
 }
-.steps button:hover { background: var(--surface-3); color: var(--text); }
+@media (hover: hover) and (pointer: fine) {
+  .steps button:hover { background: var(--surface-3); color: var(--text); }
+}
 .steps button[aria-pressed="true"] {
   background: var(--crimson-dim); border-color: var(--crimson); color: #fff;
 }
@@ -323,7 +368,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   font-size: 13px; font-weight: 500;
   transition: background 160ms var(--ease);
 }
-.btn:hover { background: #2C2C34; }
+@media (hover: hover) and (pointer: fine) {
+  .btn:hover { background: #2C2C34; }
+}
 .btn[data-variant="primary"] { background: var(--crimson-dim); border-color: var(--crimson); }
 .btn[data-variant="primary"]:hover { background: var(--crimson); }
 .btn[data-variant="quiet"] { background: transparent; }
@@ -332,16 +379,20 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ─── Motion, and the people who do not want it ──────────────────────────── */
 
+/* Reduced motion means fewer and gentler, not none.
+   Killing every transition also kills the colour and opacity changes that
+   tell someone what just happened; what causes motion sickness is movement,
+   so movement is what goes. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 0.001ms !important;
+    animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
+    transition-property: opacity, color, background-color, border-color !important;
+    transition-duration: 120ms !important;
+    scroll-behavior: auto !important;
   }
-  /* The state dot conveys meaning through motion, so when motion is off it
-     needs a ring to stay distinguishable at a glance. */
-  .state[data-state="listening"] .dot,
-  .state[data-state="processing"] .dot { box-shadow: 0 0 0 3px currentColor; }
+  .pane > *, .turn, .agent, .row { animation: none !important; opacity: 1 !important; }
+  button:active, [role="button"]:active { transform: none; }
 }
 
 /* The window is small; nothing here should ever scroll sideways. */
@@ -349,4 +400,144 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
   .titlebar { padding-left: var(--s4); }
   .wordmark { display: none; }
   .pane { padding: var(--s4); }
+}
+
+/* ─── Delegation ─────────────────────────────────────────────────────────── */
+/*
+   A fanned-out job, drawn as its pieces. The accent bar down the left is the
+   agent's colour and is the only thing tying a row to the card above it, so it
+   carries real information rather than decoration: at a glance you can see
+   which three of the six are busy and which half each one took.
+*/
+.agent[data-busy="true"] { animation: agent-working 2.4s var(--ease) infinite; }
+@keyframes agent-working {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+  50%      { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent[data-busy="true"] { animation: none; border-color: var(--accent); }
+}
+
+.parts { margin: 4px 0 var(--s3) 0; display: grid; gap: 4px; }
+.part {
+  display: grid; grid-template-columns: 62px 1fr auto;
+  gap: var(--s2); align-items: center;
+  padding: 6px var(--s2) 6px 10px;
+  border-left: 2px solid var(--accent, var(--line));
+  background: var(--surface-2, rgba(255, 255, 255, 0.02));
+  border-radius: 0 6px 6px 0;
+}
+.part[data-status="queued"] { opacity: 0.55; }
+.part .who  { font: 600 11px/1 var(--mono); color: var(--accent); }
+.part .what { font-size: 12px; color: var(--dim); overflow: hidden;
+              text-overflow: ellipsis; white-space: nowrap; }
+.row .owner { font-weight: 600; margin-right: 2px; }
+
+/* ─── Permissions ────────────────────────────────────────────────────────── */
+
+.perm { display: inline-flex; align-items: center; gap: var(--s2); }
+.ghost {
+  padding: 4px 10px; border-radius: 7px;
+  border: 1px solid var(--line); background: transparent; color: var(--text);
+  transition: background 160ms var(--ease), border-color 160ms var(--ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .ghost:hover:not(:disabled) { background: #2C2C34; border-color: var(--crimson); }
+}
+.ghost:disabled { opacity: 0.5; cursor: default; }
+.ghost.sm { font-size: 11.5px; padding: 3px 9px; }
+.ghost:focus-visible { outline: 2px solid var(--crimson); outline-offset: 2px; }
+
+.note {
+  margin-top: var(--s2); font-size: 12px; line-height: 1.55;
+  color: var(--faint); max-width: 62ch;
+}
+
+/* ─── Arrival ────────────────────────────────────────────────────────────── */
+/*
+   Things that appear do not appear from nothing.
+
+   Nothing in the world pops into being at full size, so nothing here starts
+   at scale(0) — a few pixels of rise and a fade is enough to read as "this
+   arrived" rather than "this was always here and you blinked". The whole
+   move is under a quarter of a second, because a panel you switch to twenty
+   times an hour must never make you wait to read it.
+
+   @starting-style rather than a mounted flag in JavaScript: the browser
+   already knows the element is new, and asking React to tell it again means
+   a second render before anything moves.
+*/
+@keyframes arrive {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.pane > * {
+  animation: arrive var(--t-enter) var(--ease-out) both;
+}
+
+/* Staggered, because a grid where six cards land at once reads as a page
+   load and a grid where they land in sequence reads as a list being dealt.
+   Delays stay short — past about 80ms apart it stops feeling considered and
+   starts feeling slow. */
+.agents .agent { animation: arrive 260ms var(--ease-out) both; }
+.agents .agent:nth-child(1) { animation-delay: 0ms; }
+.agents .agent:nth-child(2) { animation-delay: 40ms; }
+.agents .agent:nth-child(3) { animation-delay: 80ms; }
+.agents .agent:nth-child(4) { animation-delay: 120ms; }
+.agents .agent:nth-child(5) { animation-delay: 160ms; }
+.agents .agent:nth-child(6) { animation-delay: 200ms; }
+
+/* A new turn in the conversation. Transitions rather than keyframes: turns
+   arrive in bursts while he is answering, and a keyframe restarts from zero
+   when it is interrupted where a transition retargets from where it is. */
+.turn {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity var(--t-enter) var(--ease-out),
+              transform var(--t-enter) var(--ease-out);
+}
+@starting-style {
+  .turn { opacity: 0; transform: translateY(8px); }
+}
+
+/* A piece of work handed to an agent, sliding in under its parent row. */
+.part {
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+@starting-style {
+  .part { opacity: 0; transform: translateX(-6px); }
+}
+
+/* ─── Depth ──────────────────────────────────────────────────────────────── */
+/*
+   The title bar floats over the content rather than sitting beside it, which
+   is what stops a dark window reading as two flat rectangles stacked. The
+   blur is the only expensive thing in this stylesheet and it is on one
+   element that never scrolls.
+*/
+.titlebar {
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  position: relative;
+  z-index: 2;
+}
+
+.composer {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+.card, .agent {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.32);
+}
+
+/* The focus ring is gold against a red-and-black interface on purpose: it
+   has to be the one thing on screen that cannot be mistaken for a state. */
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  transition: outline-offset 120ms var(--ease-out);
 }

@@ -43,6 +43,7 @@ except Exception:  # pragma: no cover
     route = None
 from skills import conversation  # noqa: E402
 from skills import local_brain  # noqa: E402
+from skills import roster  # noqa: E402
 
 BASE_DIR = os.getenv("DIABLO_BASE_DIR", os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo")))
 JOBS_PATH = os.path.join(BASE_DIR, "jobs.json")
@@ -100,6 +101,17 @@ class JobStore:
                     break
             self._flush()
 
+    def update_part(self, job_id: str, index: int, **fields) -> None:
+        """One agent's slice of a fanned-out job."""
+        with self._lock:
+            for job in self._jobs:
+                if job["id"] == job_id:
+                    parts = job.get("parts") or []
+                    if 0 <= index < len(parts):
+                        parts[index].update(fields)
+                    break
+            self._flush()
+
     def active(self) -> List[dict]:
         with self._lock:
             return [j for j in self._jobs if j.get("status") in ("running", "queued")]
@@ -119,17 +131,75 @@ _workers_started = False
 _workers_lock = threading.Lock()
 
 
+def _push(event: str, **data) -> None:
+    """
+    Tell the window something happened, if a window is listening.
+
+    Imported here rather than at the top because server.py imports this module
+    to read the job store, and a circular import at load time would take the
+    assistant down over a progress indicator.
+    """
+    try:
+        from skills import server
+        server.push(event, **data)
+    except Exception:
+        pass
+
+
+def _fan_out(job: dict, ask, confirm) -> str:
+    """
+    Several agents on one request, at the same time.
+
+    Every sub-agent gets a silent `speak` — four voices at once is noise — and
+    they share one `Attention`, so only one of them can hold the microphone to
+    ask a question. What comes back is stitched together with attribution and
+    that is the only thing said out loud.
+    """
+    pieces = [(p["task"], p["agent"]) for p in job["parts"]]
+    index_of = {(t, a): i for i, (t, a) in enumerate(pieces)}
+    attention = roster.Attention(ask, confirm)
+
+    def runner(subtask, agent_id, quiet, sub_ask, sub_confirm):
+        return agent_core.run(subtask, quiet, ask=sub_ask, confirm=sub_confirm)
+
+    def started(agent_id, subtask):
+        i = index_of.get((subtask, agent_id), 0)
+        store.update_part(job["id"], i, status="running", started_at=time.time())
+        _push("agent_started", id=job["id"], agent=agent_id, task=subtask)
+        trace.event("agent", agent=agent_id, task=subtask[:120], state="started")
+
+    def finished(agent_id, subtask, answer):
+        i = index_of.get((subtask, agent_id), 0)
+        store.update_part(job["id"], i, status="done", finished_at=time.time(),
+                          summary=answer[:400])
+        _push("agent_done", id=job["id"], agent=agent_id, summary=answer[:200])
+        trace.event("agent", agent=agent_id, state="done", summary=answer[:120])
+
+    started_at = time.time()
+    results = roster.run_parallel(pieces, runner, attention, started, finished)
+    trace.event("fan_out", agents=[a for _t, a in pieces],
+                elapsed_ms=int((time.time() - started_at) * 1000))
+    return roster.merge(results)
+
+
 def _worker() -> None:
     while True:
         job, speak, ask, confirm = _queue.get()
         try:
             store.update(job["id"], status="running", started_at=time.time())
-            summary = agent_core.run(job["task"], speak, ask=ask, confirm=confirm)
+            _push("job_started", id=job["id"], task=job["task"],
+                  agent=job.get("agent", "diablo"), parts=job.get("parts") or [])
+            if job.get("parts"):
+                summary = _fan_out(job, ask, confirm)
+            else:
+                summary = agent_core.run(job["task"], speak, ask=ask, confirm=confirm)
             store.update(job["id"], status="done", finished_at=time.time(),
                          summary=summary)
             # Fold the result into the conversation so a follow-up like "what
             # did you find?" has something to refer back to.
             conversation.session.remember("assistant", summary)
+            _push("job_done", id=job["id"], agent=job.get("agent", "diablo"),
+                  summary=summary[:400])
             speak(summary)
         except Exception as e:
             store.update(job["id"], status="failed", finished_at=time.time(),
@@ -157,14 +227,26 @@ def submit(
     speak: Callable[[str], None],
     ask: Optional[Callable[[str], str]] = None,
     confirm: Optional[Callable[[str], bool]] = None,
+    pieces: Optional[List[tuple]] = None,
 ) -> dict:
-    """Queue a task and return immediately."""
+    """
+    Queue a task and return immediately.
+
+    `pieces` is the output of roster.split(): (subtask, agent_id) pairs. Two or
+    more and the job is fanned out, which is recorded on the job itself so the
+    window can show who has which half while it is still running.
+    """
     _ensure_workers()
+    if pieces is None:
+        pieces = [(task, roster.assign(task))]
     job = {
         "id": uuid.uuid4().hex[:8],
         "task": task,
         "status": "queued",
         "created_at": time.time(),
+        "agent": "diablo" if len(pieces) > 1 else pieces[0][1],
+        "parts": ([{"agent": a, "task": t, "status": "queued", "summary": ""}
+                   for t, a in pieces] if len(pieces) > 1 else []),
     }
     store.add(job)
     _queue.put((job, speak, ask, confirm))
@@ -293,13 +375,25 @@ def handle(
         speak(summary)
         job = {"id": uuid.uuid4().hex[:8], "task": task, "status": "done",
                "created_at": time.time(), "finished_at": time.time(),
-               "summary": summary}
+               "agent": roster.assign(task), "parts": [], "summary": summary}
         store.add(job)
         return "inline"
 
-    trace.event("route", route="queued", words=depth, task=task[:120])
-    speak("On it, Sir.")
-    submit(task, speak, ask=ask, confirm=confirm)
+    # Several errands in one sentence, and none of them waiting on another.
+    # roster.split() returns one piece unless it is certain, so the common case
+    # falls straight through to the ordinary queue.
+    pieces = roster.split(task)
+    if len(pieces) > 1:
+        trace.event("route", route="fan_out", task=task[:120],
+                    agents=[a for _t, a in pieces])
+        speak(roster.announce(pieces))
+        submit(task, speak, ask=ask, confirm=confirm, pieces=pieces)
+        return "delegated"
+
+    trace.event("route", route="queued", words=depth, task=task[:120],
+                agent=pieces[0][1])
+    speak(roster.announce(pieces))
+    submit(task, speak, ask=ask, confirm=confirm, pieces=pieces)
     return "queued"
 
 

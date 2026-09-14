@@ -34,6 +34,7 @@ import logging
 import os
 import sys
 import threading
+import subprocess
 import time
 import uuid
 from enum import Enum
@@ -693,34 +694,116 @@ class CompanionManager:
         if self._perm_cache and now - self._perm_checked < 30:
             return dict(self._perm_cache)
 
-        result = {"mic": False, "screen": False, "accessibility": False}
+        result: Dict[str, bool] = {}
 
+        # Accessibility and screen recording are answered by the OS through
+        # skills.permissions, which reaches the frameworks with ctypes rather
+        # than through a PyObjC binding that is not installed here. The old
+        # code imported ApplicationServices inside `except BaseException` and
+        # so reported accessibility as denied every single time, on a machine
+        # where AXIsProcessTrusted() actually returns true.
         try:
-            from skills import mic
-            # Whether a device has been chosen and saved. Deliberately not
-            # who_holds_the_input(), which runs lsof across every process.
-            result["mic"] = bool(mic.load_choice())
+            from skills import permissions
+            snapshot = permissions.snapshot()
         except BaseException as e:
-            log.debug("[Manager] mic permission check failed: %s", e)
+            log.warning("[Manager] permission check unavailable: %s", e)
+            snapshot = {}
 
-        try:
-            import Quartz
-            windows = Quartz.CGWindowListCopyWindowInfo(
-                Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []
-            # Without Screen Recording, titles come back empty for other apps.
-            result["screen"] = any(w.get("kCGWindowName") for w in windows)
-        except BaseException as e:
-            log.debug("[Manager] screen permission check failed: %s", e)
+        for name in ("accessibility", "screen"):
+            value = snapshot.get(name)
+            if value is None:
+                # Not knowable is not the same as denied, but the window has
+                # two states, and claiming a permission we cannot verify is
+                # the worse of the two mistakes.
+                log.debug("[Manager] %s permission unknown: %s", name,
+                          snapshot.get(f"{name}_error", "no answer"))
+            result[name] = bool(value)
 
-        try:
-            from ApplicationServices import AXIsProcessTrusted
-            result["accessibility"] = bool(AXIsProcessTrusted())
-        except BaseException as e:
-            log.debug("[Manager] accessibility check failed: %s", e)
+        mic_allowed = snapshot.get("mic")
+        if mic_allowed is None:
+            # AVFoundation is not installed, so there is no direct answer. What
+            # is available is whether an input device was chosen and saved,
+            # which is a proxy: it is true once audio has actually been
+            # captured, and capturing audio is what raises the TCC prompt.
+            try:
+                from skills import mic
+                mic_allowed = bool(mic.load_choice())
+            except BaseException as e:
+                log.debug("[Manager] mic permission check failed: %s", e)
+                mic_allowed = False
+        result["mic"] = bool(mic_allowed)
 
         self._perm_cache = dict(result)
         self._perm_checked = now
         return result
+
+    # ── asking for permission ────────────────────────────────────────────────
+    #
+    # Diablo cannot grant itself anything. What it can do is make macOS put the
+    # dialog in front of you, and when macOS has decided not to — which it does
+    # the moment you have answered once, for the life of that app identity —
+    # open the exact pane where the switch lives, rather than telling you to go
+    # and find it.
+
+    def request_permission(self, kind: str) -> Dict[str, Any]:
+        """
+        Ask macOS for one permission. Returns what happened, honestly.
+
+        `prompted` means the system dialog was raised. `opened_settings` means
+        it was not — almost always because this app has been answered before —
+        and the pane was opened instead. `granted` is re-read afterwards from
+        the real API, never assumed from the fact that we asked.
+        """
+        from skills import permissions
+        kind = (kind or "").strip().lower()
+        if kind not in permissions.PANES:
+            return {"ok": False, "error": f"no such permission {kind!r}"}
+
+        outcome: Dict[str, Any] = {"ok": True, "permission": kind,
+                                   "prompted": False, "opened_settings": False}
+        before = self.check_permissions().get(kind, False)
+
+        try:
+            from skills import permissions
+            if kind == "accessibility":
+                permissions.accessibility(prompt=True)
+                outcome["prompted"] = True
+            elif kind == "screen":
+                permissions.screen(prompt=True)
+                outcome["prompted"] = True
+            elif kind == "mic":
+                asked = permissions.microphone(prompt=True)
+                # None means there is no API here to ask with; the pane below
+                # is then the only route, and saying "prompted" would be a lie.
+                outcome["prompted"] = asked is not None
+        except Exception as e:
+            outcome["error"] = f"{type(e).__name__}: {e}"
+            log.debug("[Manager] %s prompt failed: %s", kind, e)
+
+        # The dialog is modal to the user, not to us, so a granted permission
+        # will not be visible for a moment. Give it one, then look.
+        time.sleep(0.6)
+        self._perm_checked = 0.0          # the 30s cache would hide a change
+        after = self.check_permissions().get(kind, False)
+        outcome["granted"] = after
+
+        if not after:
+            # Either they have not answered yet, or macOS declined to ask
+            # because it remembers a previous answer. Either way the pane is
+            # the only thing left that helps.
+            from skills import permissions
+            outcome["opened_settings"] = permissions.open_pane(kind)
+            if not outcome["opened_settings"]:
+                outcome["error"] = "could not open System Settings"
+
+        log.info("[Manager] %s permission: granted=%s prompted=%s settings=%s",
+                 kind, after, outcome["prompted"], outcome["opened_settings"])
+        return outcome
+
+    def forget_permissions(self) -> Dict[str, bool]:
+        """Re-read every permission now, ignoring the 30-second cache."""
+        self._perm_checked = 0.0
+        return self.check_permissions()
 
     # ── introspection ────────────────────────────────────────────────────────
 

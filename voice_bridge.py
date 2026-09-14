@@ -233,12 +233,34 @@ def get_command_audio(duration=None):
 
 # ─── Intelligence & Fuzzy Logic ──────────────────────────────────────────────
 
+# The shortest word that may be treated as a garbled version of something
+# else, and how much longer or shorter than the target it is allowed to be.
+FUZZY_MIN_LENGTH = 4
+FUZZY_LENGTH_SLACK = 2
+
+
 def fuzzy_match(input_text: str, targets: List[str], threshold: float = 0.6) -> bool:
-    """Returns True if the input text contains a close match to any target."""
-    words = input_text.split()
-    for word in words:
-        matches = difflib.get_close_matches(word, targets, n=1, cutoff=threshold)
-        if matches:
+    """
+    True if some word in the text is a plausible mis-hearing of a target.
+
+    The length guards are not tuning. Without them this function matched "me"
+    to "mute" at 0.667 — and "me" appears in a great many ordinary sentences,
+    every one of which was therefore routed into the volume reflex, turned the
+    volume down, and answered "Done, Sir." "Tell me what is on my screen" did
+    not reach the agent at all for as long as this existed.
+
+    difflib scores on shared characters, so a two-letter word is close to half
+    the dictionary. What this is actually for is absorbing a transcription slip
+    — "volyume", "britness", "lowder" — and a slip is roughly the length of the
+    word it came from. Requiring that is what makes the match mean something.
+    """
+    for word in input_text.split():
+        if len(word) < FUZZY_MIN_LENGTH:
+            continue
+        plausible = [t for t in targets
+                     if abs(len(t) - len(word)) <= FUZZY_LENGTH_SLACK]
+        if plausible and difflib.get_close_matches(
+                word, plausible, n=1, cutoff=threshold):
             return True
     return False
 

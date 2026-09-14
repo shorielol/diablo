@@ -157,6 +157,45 @@ def run():
             r.check(f"survives {body}", isinstance(result, dict), str(result)[:50])
 
     # ── control ─────────────────────────────────────────────────────────────
+    r.head("The roster over the wire")
+    with guard(r, "/api/agents"):
+        _, raw = get("/api/agents")
+        agents = json.loads(raw)
+        r.check("the roster is served", isinstance(agents, list) and len(agents) >= 4,
+                f"{len(agents) if isinstance(agents, list) else agents} agents")
+        ids = [a.get("id") for a in agents]
+        r.check("Diablo leads", ids and ids[0] == "diablo", str(ids))
+        r.check("Asmo is there", "asmo" in ids, str(ids))
+        # The reader, the writer and the guard were a drawing of the permission
+        # gate, not agents. They are not the user's to manage and must not come
+        # back as cards.
+        r.check("the internal safety classes are not exposed",
+                not ({"scout", "scribe", "warden"} & set(ids)), str(ids))
+        r.check("every agent can be drawn",
+                all(a.get("name") and a.get("accent") and a.get("mouth")
+                    for a in agents))
+        r.check("no routing internals leak to the window",
+                all("tools" not in a and "keywords" not in a for a in agents))
+
+    with guard(r, "the roster comes down with everything else"):
+        _, raw = get("/api/everything")
+        everything = json.loads(raw)
+        r.check("one round trip carries the agents",
+                isinstance(everything.get("agents"), list)
+                and len(everything["agents"]) >= 4)
+
+    r.head("Asking for permission")
+    with guard(r, "recheck drops the cache and re-reads"):
+        _, result = post("/api/control", {"action": "recheck"})
+        r.check("recheck is accepted", result.get("ok"), str(result)[:60])
+        perms = result.get("permissions") or {}
+        r.check("it returns all three",
+                set(perms) == {"mic", "screen", "accessibility"}, str(perms))
+
+    with guard(r, "an unknown permission is refused rather than opening a pane"):
+        _, result = post("/api/control", {"action": "grant:nonsense"})
+        r.check("refused", result.get("ok") is False, str(result)[:70])
+
     r.head("Control")
     with guard(r, "interrupt and reset"):
         for action in ("interrupt", "reset"):
@@ -191,9 +230,12 @@ def run():
         if ours:
             pill = ours[0]
             bounds = pill.get("kCGWindowBounds") or {}
-            r.check("it is at the pill's size",
-                    abs(bounds.get("Width", 0) - 300) < 2
-                    and abs(bounds.get("Height", 0) - 56) < 2,
+            # Square, and small. The 300x56 capsule this replaced sat across
+            # whatever was underneath it all day; the point of the orb is that
+            # it does not.
+            r.check("it is at the orb's size",
+                    abs(bounds.get("Width", 0) - 92) < 2
+                    and abs(bounds.get("Height", 0) - 92) < 2,
                     f"{bounds.get('Width')}x{bounds.get('Height')}")
             r.check("above ordinary windows", pill.get("kCGWindowLayer", 0) >= 20,
                     f"layer {pill.get('kCGWindowLayer')}")

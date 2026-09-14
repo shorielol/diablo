@@ -12,7 +12,7 @@
   polling either misses the burst or wastes the silence.
 */
 
-import { mascot, AGENTS, byId, agentForTool } from './mascot.js';
+import { mascot, AGENTS, byId, index as indexRoster, agent as pickAgent } from './mascot.js';
 
 const { createElement, useState, useEffect, useRef, useCallback, useMemo, memo } = React;
 const html = htm.bind(createElement);
@@ -188,17 +188,48 @@ const AgentCard = memo(({ agent, busy, status }) => html`
     </div>
   </article>`);
 
-function Agents({ jobs, activeTool }) {
+/* A fanned-out job, drawn as its pieces. This is the only place the split is
+   visible, and it is the answer to "what is it actually doing" — three names,
+   three sentences, three states, all moving at once. */
+const JobParts = memo(({ parts, roster }) => html`
+  <div class="parts">
+    ${parts.map((part, i) => {
+      const who = pickAgent(part.agent, roster);
+      return html`
+        <div class="part" key=${i} style=${{ '--accent': who.accent }}
+             data-status=${part.status || 'queued'}>
+          <span class="who">${who.name}</span>
+          <span class="what">${part.task}</span>
+          <span class="pill" data-tone=${
+            part.status === 'done' ? 'ok' : part.status === 'running' ? 'warn' : null}>
+            ${part.status || 'queued'}</span>
+        </div>`;
+    })}
+  </div>`);
+
+function Agents({ jobs, roster, liveAgents, activeTool }) {
+  const list = roster.length ? roster : AGENTS;
+  const rosterById = useMemo(() => indexRoster(list), [list]);
   const running = jobs.filter(j => j.status === 'running' || j.status === 'queued');
-  const live = activeTool ? agentForTool(activeTool) : null;
+  const live = Object.keys(liveAgents);
+
+  /* The tool name is only attributable while one agent is working. During a
+     fan-out three of them are calling tools at once and the stream does not
+     say whose is whose, so the card shows the errand instead of guessing. */
+  const status = (id) => {
+    const task = liveAgents[id];
+    if (!task) return null;
+    if (live.length === 1 && activeTool) return `${activeTool} — ${task}`;
+    return task;
+  };
 
   return html`
     <div class="pane">
       <div class="agents">
-        ${AGENTS.map(agent => html`
+        ${list.map(agent => html`
           <${AgentCard} key=${agent.id} agent=${agent}
-             busy=${live?.id === agent.id}
-             status=${live?.id === agent.id ? `Running ${activeTool}` : null} />`)}
+             busy=${!!liveAgents[agent.id]}
+             status=${status(agent.id)} />`)}
       </div>
 
       <div class="card" style=${{ marginTop: 'var(--s5)' }}>
@@ -206,12 +237,19 @@ function Agents({ jobs, activeTool }) {
         ${jobs.length === 0
           ? html`<div class="row"><span class="k">Nothing has been asked of it yet.</span></div>`
           : jobs.slice(0, 12).map(job => html`
-            <div class="row" key=${job.id}>
-              <span class="k">${job.task}</span>
-              <span class="pill" data-tone=${
-                job.status === 'done' ? 'ok'
-                : job.status === 'interrupted' || job.status === 'error' ? 'bad' : 'warn'}>
-                ${job.status}</span>
+            <div key=${job.id}>
+              <div class="row">
+                <span class="k">
+                  <b class="owner" style=${{ color: pickAgent(job.agent, rosterById).accent }}>
+                    ${pickAgent(job.agent, rosterById).name}</b>
+                  ${' '}${job.task}</span>
+                <span class="pill" data-tone=${
+                  job.status === 'done' ? 'ok'
+                  : job.status === 'interrupted' || job.status === 'error' ? 'bad' : 'warn'}>
+                  ${job.status}</span>
+              </div>
+              ${(job.parts && job.parts.length)
+                ? html`<${JobParts} parts=${job.parts} roster=${rosterById} />` : null}
             </div>`)}
       </div>
       ${running.length > 0 ? html`
@@ -255,9 +293,45 @@ function Trace({ turns }) {
 
 /* ─── Health ─────────────────────────────────────────────────────────────── */
 
-function Health({ state }) {
+const PERM_LABELS = {
+  mic: 'Microphone', screen: 'Screen recording', accessibility: 'Accessibility',
+};
+
+function Health({ state, onPermissions }) {
   const subsystems = state.subsystems || {};
   const perms = state.permissions || {};
+  const [asking, setAsking] = useState(null);
+  const [note, setNote] = useState('');
+
+  /* macOS decides whether the dialog appears, and it only ever appears once
+     per app. After that the honest thing is to open the exact pane and say so,
+     which is what the reply from the server tells us happened. */
+  const grant = useCallback(async (name) => {
+    setAsking(name); setNote('');
+    try {
+      const result = await api.post('/api/control', { action: `grant:${name}` });
+      if (result.granted) {
+        setNote(`${PERM_LABELS[name] || name} granted.`);
+      } else if (result.opened_settings) {
+        setNote('macOS would not show the dialog again, so I have opened the '
+              + 'pane. Switch Diablo on there, then press Check now.');
+      } else {
+        setNote(result.error || 'No answer yet. Press Check now once you have decided.');
+      }
+      if (result.permissions || result.granted !== undefined) onPermissions?.();
+    } catch (e) {
+      setNote(String(e));
+    } finally {
+      setAsking(null);
+    }
+  }, [onPermissions]);
+
+  const recheck = useCallback(async () => {
+    setNote('');
+    await api.post('/api/control', { action: 'recheck' });
+    onPermissions?.();
+  }, [onPermissions]);
+
   return html`
     <div class="pane">
       <div class="grid two">
@@ -284,14 +358,29 @@ function Health({ state }) {
         <h3>Permissions</h3>
         ${Object.entries(perms).map(([name, granted]) => html`
           <div class="row" key=${name}>
-            <span class="k">${name}</span>
-            <span class="pill" data-tone=${granted ? 'ok' : 'bad'}>
-              ${granted ? 'granted' : 'denied'}</span>
+            <span class="k">${PERM_LABELS[name] || name}</span>
+            <span class="perm">
+              <span class="pill" data-tone=${granted ? 'ok' : 'bad'}>
+                ${granted ? 'granted' : 'denied'}</span>
+              ${granted ? null : html`
+                <button class="ghost sm" disabled=${asking === name}
+                        onClick=${() => grant(name)}>
+                  ${asking === name ? 'Asking...' : 'Grant'}</button>`}
+            </span>
           </div>`)}
+
+        ${note ? html`<p class="note">${note}</p>` : null}
+
         ${perms.accessibility === false ? html`
-          <p style=${{ marginTop: 'var(--s2)', fontSize: 12, color: 'var(--faint)' }}>
-            Accessibility is only needed to point at buttons that have no text.
-            Everything else works without it.</p>` : null}
+          <p class="note">
+            Accessibility is only used to point at buttons that have no text
+            label. Everything else — the microphone, reading the screen, the
+            files — works without it.</p>` : null}
+
+        <div class="row" style=${{ marginTop: 'var(--s3)' }}>
+          <span class="k">Checked every 30 seconds</span>
+          <button class="ghost sm" onClick=${recheck}>Check now</button>
+        </div>
       </div>
     </div>`;
 }
@@ -369,6 +458,10 @@ function App() {
   const [trace, setTrace] = useState([]);
   const [settings, setSettings] = useState(null);
   const [activeTool, setActiveTool] = useState(null);
+  const [roster, setRoster] = useState(AGENTS);
+  // Who is working right now, and on what. Keyed by agent id so a card can
+  // light up the instant its piece starts rather than on the next poll.
+  const [liveAgents, setLiveAgents] = useState({});
 
   const refresh = useCallback(async () => {
     try {
@@ -378,6 +471,7 @@ function App() {
       setJobs(all.jobs || []);
       setTrace(all.trace || []);
       setSettings(all.settings || null);
+      if (all.agents?.length) setRoster(all.agents);
     } catch (e) {
       setState(s => ({ ...s, state: 'error', last_error: String(e) }));
     }
@@ -401,6 +495,18 @@ function App() {
           if (payload.new_state === 'idle') refresh();
         } else if (payload.event === 'tool') {
           setActiveTool(payload.tool);
+        } else if (payload.event === 'agent_started') {
+          setLiveAgents(a => ({ ...a, [payload.agent]: payload.task }));
+        } else if (payload.event === 'agent_done') {
+          setLiveAgents(a => { const next = { ...a }; delete next[payload.agent]; return next; });
+        } else if (payload.event === 'job_started') {
+          setLiveAgents(a => ({ ...a, [payload.agent || 'diablo']: payload.task }));
+          refresh();
+        } else if (payload.event === 'job_done') {
+          setLiveAgents({});
+          refresh();
+        } else if (payload.event === 'permissions') {
+          setState(s => ({ ...s, permissions: payload.permissions }));
         } else if (payload.event === 'transcript_ready') {
           setTurns(t => [...t, { role: 'user', content: payload.text }]);
         } else if (payload.event === 'response_ready') {
@@ -448,9 +554,10 @@ function App() {
       <div class="body">
         ${tab === 'talk' ? html`<${Talk} turns=${turns} state=${state.state}
              onSend=${send} onInterrupt=${interrupt} onReset=${reset} />` : null}
-        ${tab === 'agents' ? html`<${Agents} jobs=${jobs} activeTool=${activeTool} />` : null}
+        ${tab === 'agents' ? html`<${Agents} jobs=${jobs} roster=${roster}
+             liveAgents=${liveAgents} activeTool=${activeTool} />` : null}
         ${tab === 'trace' ? html`<${Trace} turns=${trace} />` : null}
-        ${tab === 'health' ? html`<${Health} state=${state} />` : null}
+        ${tab === 'health' ? html`<${Health} state=${state} onPermissions=${refresh} />` : null}
         ${tab === 'settings' && settings
           ? html`<${Settings} settings=${settings} onSave=${saveSettings} />` : null}
       </div>

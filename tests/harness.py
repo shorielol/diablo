@@ -16,6 +16,20 @@ import traceback
 DIABLO_HOME = os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo"))
 sys.path.insert(0, DIABLO_HOME)
 
+# Read .env before importing anything, exactly as the app does at startup.
+#
+# Without this the tests ran against local_brain's built-in defaults rather
+# than the configuration the app actually uses — CHAT_MODEL came out as
+# qwen3:14b while the running app was on qwen3:4b-instruct. Every model-facing
+# assertion was therefore being made about a model the user never runs, and a
+# task splitter that passed 3 of 3 here returned nothing at all in the app.
+# A test suite on the wrong model is worse than no suite: it reports green.
+try:
+    from companion_manager import load_env as _load_env
+    _load_env()
+except Exception as _e:                                   # pragma: no cover
+    print(f"  (could not load .env: {_e}; tests will use built-in defaults)")
+
 GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 
 

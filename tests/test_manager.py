@@ -292,6 +292,58 @@ def run():
         r.check("empty string returns nothing", m9.handle_utterance("") == "")
         r.check("and the state did not move", m9.state is DiabloState.IDLE)
 
+    # ── Permissions ──────────────────────────────────────────────────────
+    #
+    # These exist because the accessibility check was wrong for the life of
+    # the project and nobody could tell: it imported a PyObjC module that is
+    # not installed, inside `except BaseException`, and returned False forever.
+    # The app said "denied" on a machine where the real API said trusted. So
+    # what is tested here is not the answer — that depends on what the user has
+    # actually granted — but that the check is capable of being wrong out loud.
+    r.head("Permissions")
+    from skills import permissions
+
+    with guard(r, "the frameworks load"):
+        r.check("accessibility answers a boolean",
+                isinstance(permissions.accessibility(), bool))
+        r.check("screen answers a boolean", isinstance(permissions.screen(), bool))
+
+    with guard(r, "snapshot"):
+        snap = permissions.snapshot()
+        r.check("every permission is reported",
+                {"accessibility", "screen", "mic"} <= set(snap))
+        r.check("an unknowable permission is None, not False",
+                all(v is None or isinstance(v, bool)
+                    for k, v in snap.items() if not k.endswith("_error")),
+                str(snap))
+        # If a check fails it must say so next to the answer rather than
+        # quietly becoming a denial.
+        for name in ("accessibility", "screen"):
+            if snap.get(name) is None:
+                r.check(f"{name} explains why it could not answer",
+                        f"{name}_error" in snap, str(snap))
+
+    with guard(r, "every permission has somewhere to send you"):
+        r.check("three panes are known",
+                set(permissions.PANES) == {"accessibility", "screen", "mic"})
+        r.check("each is a System Settings URL",
+                all(u.startswith("x-apple.systempreferences:")
+                    for u in permissions.PANES.values()))
+        r.check("an unknown permission opens nothing",
+                permissions.open_pane("nonsense") is False)
+
+    with guard(r, "the manager asks properly"):
+        manager = create_manager()
+        r.check("an unknown permission is refused, not opened",
+                manager.request_permission("microphone-ish").get("ok") is False)
+        before = manager.check_permissions()
+        r.check("the cache can be dropped",
+                manager.forget_permissions().keys() == before.keys())
+        r.check("the manager reports the same three",
+                set(before) == {"mic", "screen", "accessibility"}, str(before))
+        r.check("and reports them as booleans",
+                all(isinstance(v, bool) for v in before.values()), str(before))
+
     return r.report("companion manager")
 
 

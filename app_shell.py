@@ -27,6 +27,7 @@ only arrangement macOS allows.
 """
 
 import json
+import math
 import os
 import sys
 import threading
@@ -59,9 +60,17 @@ from AppKit import (  # noqa: E402
     NSWindowCollectionBehaviorCanJoinAllSpaces, NSWindowCollectionBehaviorStationary,
     NSWindowCollectionBehaviorFullScreenAuxiliary, NSWindowTitleHidden,
     NSPanel, NSWindowStyleMaskNonactivatingPanel, NSGraphicsContext,
+    NSGradient,
 )
-from Foundation import NSOperationQueue, NSURL, NSURLRequest  # noqa: E402
+from Foundation import (  # noqa: E402
+    NSAffineTransform, NSOperationQueue, NSURL, NSURLRequest,
+)
 from WebKit import WKWebView, WKWebViewConfiguration  # noqa: E402
+
+# The character is defined once, in the icon builder, on the mascot's own
+# 120-unit grid. The orb draws the same paths rather than a second copy of
+# them, so his face cannot differ between the Dock and the screen.
+from skills import make_icon  # noqa: E402
 
 # ─── Look ────────────────────────────────────────────────────────────────────
 # The same tokens the web UI uses, so the two surfaces match exactly.
@@ -83,35 +92,45 @@ STATE_LOOK = {
     "shutdown":   (GREY,    "shutting down"),
 }
 
-PILL_W, PILL_H = 300.0, 56.0
-BARS = 28
+# ─── The orb ─────────────────────────────────────────────────────────────────
+#
+# It used to be a 300 by 56 capsule with his face on the left, the state in
+# words and a live waveform on the right. It was legible and it was too much:
+# a strip that wide sits across whatever is underneath it all day, and none of
+# the three things it said were things you needed to read.
+#
+# So: the character, in a circle, and nothing else. State is carried by the
+# ring around him and by his own face — the mouth moves while he talks, which
+# is the one animation that says "this is speaking to you" without a caption.
+
+ORB = 62.0          # the character's circle
+HALO = 15.0         # room around it for the ring to breathe into
+CANVAS = ORB + HALO * 2
 
 
 def _colour(rgb, alpha=1.0):
     return NSColor.colorWithCalibratedRed_green_blue_alpha_(*rgb, alpha)
 
 
-# ─── The pill ────────────────────────────────────────────────────────────────
-
-class PillView(NSView):
+class OrbView(NSView):
     """
-    What Diablo is doing, in 300 by 56 points.
+    Diablo, as a face in a circle.
 
-    Redrawn only when something changes, plus a slow tick while the waveform is
-    live. A view that redraws at 60fps for a dot that is not moving is how a
-    menu bar app ends up in the battery report.
+    Redraws on a clock only while something is actually moving. A view that
+    runs at 60fps for a dot that is not moving is how a menu bar app ends up
+    in the battery report, and idle is by far the most common state.
     """
 
     def initWithFrame_(self, frame):
-        self = objc.super(PillView, self).initWithFrame_(frame)
+        self = objc.super(OrbView, self).initWithFrame_(frame)
         if self is None:
             return None
         self.state = "idle"
-        self.headline = "ready"
-        self.subtitle = ""
-        self.levels: List[float] = [0.04] * BARS
         self.accent = GREY
+        self.level = 0.0          # smoothed microphone or speech amplitude
+        self.phase = 0.0          # seconds since this state began
         self.on_click = None
+        self.tooltip = "ready"
         return self
 
     def isOpaque(self):
@@ -123,138 +142,170 @@ class PillView(NSView):
 
     def update_(self, payload):
         state = payload.get("state", self.state)
+        if state != self.state:
+            self.phase = 0.0
+            self.level = 0.0
         self.state = state
-        self.accent, default_line = STATE_LOOK.get(state, (GREY, state))
-        self.headline = payload.get("headline") or default_line
-        self.subtitle = payload.get("subtitle", "")
+        self.accent, words = STATE_LOOK.get(state, (GREY, state))
+        self.tooltip = payload.get("headline") or words
+        self.setToolTip_(self.tooltip)
+        self.setNeedsDisplay_(True)
+
+    def animating(self) -> bool:
+        return self.state in ("listening", "processing", "responding")
+
+    def advance_(self, dt):
+        """One frame. Returns nothing; the shell decides how often to call it."""
+        if not self.animating():
+            return
+        self.phase += float(dt)
         self.setNeedsDisplay_(True)
 
     def pushLevel_(self, level):
-        self.levels = self.levels[1:] + [max(0.04, min(1.0, float(level)))]
-        if self.state in ("listening", "responding"):
+        # Smoothed, because raw microphone power jitters hard enough to make
+        # the ring look like it is being shaken rather than spoken to.
+        target = max(0.0, min(1.0, float(level)))
+        self.level += (target - self.level) * 0.35
+        if self.animating():
             self.setNeedsDisplay_(True)
+
+    # ── the face ─────────────────────────────────────────────────────────
+
+    def _mouth_openness(self) -> float:
+        """
+        How far open his mouth is, this frame.
+
+        Only while speaking. Two sine waves at unrelated frequencies rather
+        than one: a single sine is a metronome, and a mouth opening on a
+        metronome reads as a machine rather than as speech. The slower wave
+        supplies the pauses between phrases.
+        """
+        if self.state != "responding":
+            return 0.0
+        fast = math.sin(self.phase * 11.0)
+        slow = math.sin(self.phase * 2.7 + 1.1)
+        shaped = (0.55 + 0.45 * fast) * (0.45 + 0.55 * (0.5 + 0.5 * slow))
+        # Real amplitude when the voice can report it; the wave alone otherwise.
+        return max(0.0, min(1.0, shaped * (0.55 + 0.9 * self.level)))
 
     _draws = 0
 
     def drawRect_(self, rect):
-        PillView._draws += 1
-        bounds = self.bounds()
-        w, h = bounds.size.width, bounds.size.height
+        OrbView._draws += 1
+        cx = cy = CANVAS / 2.0
+        r = ORB / 2.0
+        context = NSGraphicsContext.currentContext()
 
-        # Body. Near-black at 92% with a hairline, which is what makes it read
-        # as a floating object rather than a hole in the screen.
-        body = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-            NSMakeRect(1, 1, w - 2, h - 2), 16, 16)
-        _colour((0.043, 0.043, 0.051),
-                0.72 if self.state in ("idle", "cold") else 0.94).set()
-        body.fill()
-        _colour((1, 1, 1), 0.09).set()
-        body.setLineWidth_(1.0)
-        body.stroke()
+        self._draw_ring(cx, cy, r)
 
-        # Badge: the character, reduced to what survives at fifteen points —
-        # a dark hair arc, two lit eyes, a grin. The suit, tie and gloved hand
-        # are in the full mascot and none of them read at this size.
-        #
-        # Built from explicit paths rather than clipping. The first version
-        # clipped a rectangle to a circle for the hair and the clip leaked,
-        # leaving a flat bar with a streak sticking out of the top of the head.
-        cx, cy, r = 26.0, h / 2, 15.0
-        _colour(self.accent, 0.18).set()
-        NSBezierPath.bezierPathWithOvalInRect_(
-            NSMakeRect(cx - r, cy - r, r * 2, r * 2)).fill()
+        # The disc he sits in.
+        disc = NSBezierPath.bezierPathWithOvalInRect_(
+            NSMakeRect(cx - r, cy - r, r * 2, r * 2))
+        context.saveGraphicsState()
+        disc.addClip()
+        # Pitched at his hair rather than darker than it. A disc noticeably
+        # darker than the character leaves the edge of his head visible as a
+        # seam inside the circle, and once you have seen it you cannot stop
+        # seeing it. Matched, he reads as filling the circle.
+        NSGradient.alloc().initWithStartingColor_endingColor_(
+            _colour((0.067, 0.067, 0.082), 0.97),
+            _colour((0.098, 0.098, 0.118), 0.97)).drawInRect_angle_(
+                NSMakeRect(cx - r, cy - r, r * 2, r * 2), 90.0)
 
-        # Face
-        _colour((0.937, 0.878, 0.824), 0.96).set()
-        NSBezierPath.bezierPathWithOvalInRect_(
-            NSMakeRect(cx - 9, cy - 9, 18, 18)).fill()
+        # The character, drawn from make_icon so that the orb, the app icon and
+        # the window are one drawing rather than three that drift apart.
+        # Framed with room around him. The first version scaled the head to
+        # 1.58 of the circle and cropped the top of his eyes against the rim,
+        # which made every state look faintly alarmed.
+        scale = ORB * 1.38 / 120.0
+        transform = NSAffineTransform.transform()
+        transform.translateXBy_yBy_(cx - 60 * scale, cy + 49 * scale)
+        transform.scaleXBy_yBy_(scale, -scale)
+        context.saveGraphicsState()
+        transform.concat()
+        # His streak stays crimson in every state. Recolouring it to match the
+        # ring was the obvious thing to try and it is wrong: the streak is how
+        # you recognise him, and a blue one is somebody else. State belongs on
+        # the ring, which is not part of him.
+        make_icon.draw_head(detail=True, mouth=self._mouth_openness())
+        context.restoreGraphicsState()
+        context.restoreGraphicsState()
 
-        # Hair: a half-disc across the top, as one closed arc.
-        hair = NSBezierPath.bezierPath()
-        hair.moveToPoint_(NSPoint(cx - 9, cy + 1))
-        # Clockwise, explicitly. The default is counter-clockwise, which took
-        # the arc from 180 degrees round through the bottom — the hair drew
-        # across the chin instead of over the head.
-        hair.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_clockwise_(
-            NSPoint(cx, cy + 1), 9.0, 180.0, 0.0, True)
-        hair.closePath()
-        # Lighter than the pill body on purpose. At near-black the hair was the
-        # same tone as the background behind it, so the head lost its top half
-        # and read as a bowl with a face in it.
-        _colour((0.18, 0.18, 0.22), 1.0).set()
-        hair.fill()
+        # A hairline, so he keeps an edge against a light background.
+        _colour((1, 1, 1), 0.14).set()
+        disc.setLineWidth_(1.0)
+        disc.stroke()
 
-        # The streak: a short stroke inside the hair, which is what tells the
-        # four agents apart at a glance.
-        streak = NSBezierPath.bezierPath()
-        streak.moveToPoint_(NSPoint(cx - 2.6, cy + 1.4))
-        streak.lineToPoint_(NSPoint(cx - 1.8, cy + 8.4))
-        streak.setLineWidth_(2.0)
-        _colour(self.accent, 1.0).set()
-        streak.stroke()
+    def _draw_ring(self, cx, cy, r):
+        """State, as everything outside the circle."""
+        if self.state in ("idle", "cold"):
+            return
 
-        # Eyes
-        _colour((0.082, 0.082, 0.102), 1.0).set()
-        NSBezierPath.bezierPathWithOvalInRect_(
-            NSMakeRect(cx - 5.4, cy - 3.6, 4.0, 3.6)).fill()
-        NSBezierPath.bezierPathWithOvalInRect_(
-            NSMakeRect(cx + 1.4, cy - 3.6, 4.0, 3.6)).fill()
-        iris = self.accent if self.state not in ("idle", "cold") else (0.62, 0.62, 0.68)
-        _colour(iris, 1.0).set()
-        NSBezierPath.bezierPathWithOvalInRect_(
-            NSMakeRect(cx - 4.4, cy - 3.1, 1.8, 2.6)).fill()
-        NSBezierPath.bezierPathWithOvalInRect_(
-            NSMakeRect(cx + 2.4, cy - 3.1, 1.8, 2.6)).fill()
+        if self.state == "listening":
+            # Two rings pushing outward, on the voice. Crimson.
+            for index in range(2):
+                offset = (self.phase * 0.9 + index * 0.5) % 1.0
+                spread = 3.0 + offset * (HALO - 2.0) * (0.5 + self.level)
+                fade = (1.0 - offset) * 0.55 * (0.35 + 0.65 * self.level)
+                if fade <= 0.02:
+                    continue
+                _colour(self.accent, fade).set()
+                ring = NSBezierPath.bezierPathWithOvalInRect_(
+                    NSMakeRect(cx - r - spread, cy - r - spread,
+                               (r + spread) * 2, (r + spread) * 2))
+                ring.setLineWidth_(2.0)
+                ring.stroke()
+            return
 
-        # Grin: a thin arc, not a filled blob.
-        grin = NSBezierPath.bezierPath()
-        grin.moveToPoint_(NSPoint(cx - 4.0, cy - 5.0))
-        grin.curveToPoint_controlPoint1_controlPoint2_(
-            NSPoint(cx + 4.0, cy - 5.0),
-            NSPoint(cx - 1.6, cy - 8.2), NSPoint(cx + 1.6, cy - 8.2))
-        grin.setLineWidth_(1.6)
-        _colour((1, 1, 1), 0.92).set()
-        grin.stroke()
+        if self.state == "responding":
+            # A steady halo that breathes with the mouth, rather than ripples.
+            # Ripples while he is talking read as "still listening", which is
+            # the one thing it must not say.
+            glow = 4.0 + 5.0 * self._mouth_openness()
+            _colour(self.accent, 0.30).set()
+            ring = NSBezierPath.bezierPathWithOvalInRect_(
+                NSMakeRect(cx - r - glow / 2, cy - r - glow / 2,
+                           (r + glow / 2) * 2, (r + glow / 2) * 2))
+            ring.setLineWidth_(glow)
+            ring.stroke()
+            return
 
-        # Text block. Two lines when there is a subtitle, one centred line when
-        # there is not, so a short status does not float above empty space.
-        head_attrs = {
-            NSFontAttributeName: NSFont.systemFontOfSize_weight_(13.0, 0.3),
-            NSForegroundColorAttributeName: _colour((0.95, 0.95, 0.96), 1.0),
-        }
-        sub_attrs = {
-            NSFontAttributeName: NSFont.systemFontOfSize_weight_(11.0, 0.0),
-            NSForegroundColorAttributeName: _colour((1, 1, 1), 0.55),
-        }
-        text_x = 50.0
-        if self.subtitle:
-            NSString.stringWithString_(self.subtitle).drawAtPoint_withAttributes_(
-                NSPoint(text_x, cy - 15), sub_attrs)
-            NSString.stringWithString_(self.headline).drawAtPoint_withAttributes_(
-                NSPoint(text_x, cy - 1), head_attrs)
-        else:
-            NSString.stringWithString_(self.headline).drawAtPoint_withAttributes_(
-                NSPoint(text_x, cy - 8), head_attrs)
+        if self.state == "processing":
+            # One arc going round. The oldest idiom there is for "working",
+            # and it cannot be mistaken for sound.
+            _colour(self.accent, 0.16).set()
+            track = NSBezierPath.bezierPathWithOvalInRect_(
+                NSMakeRect(cx - r - 5, cy - r - 5, (r + 5) * 2, (r + 5) * 2))
+            track.setLineWidth_(2.4)
+            track.stroke()
+            sweep = NSBezierPath.bezierPath()
+            head = (-self.phase * 200.0) % 360.0
+            sweep.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_clockwise_(
+                NSPoint(cx, cy), r + 5, head, head - 78, True)
+            sweep.setLineWidth_(2.4)
+            sweep.setLineCapStyle_(1)          # round
+            _colour(self.accent, 0.95).set()
+            sweep.stroke()
+            return
 
-        # Waveform, right-aligned. Only while there is sound to show — a static
-        # waveform is a lie about what the microphone is doing.
-        if self.state in ("listening", "responding"):
-            bw, gap = 2.5, 2.0
-            total = BARS * bw + (BARS - 1) * gap
-            x = w - 18 - total
-            _colour(self.accent, 0.9).set()
-            for level in self.levels:
-                bar_h = max(bw, level * 26.0)
-                NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-                    NSMakeRect(x, cy - bar_h / 2, bw, bar_h), bw / 2, bw / 2).fill()
-                x += bw + gap
+        # error, waking, shutting down: a plain ring, no movement.
+        _colour(self.accent, 0.65).set()
+        ring = NSBezierPath.bezierPathWithOvalInRect_(
+            NSMakeRect(cx - r - 4, cy - r - 4, (r + 4) * 2, (r + 4) * 2))
+        ring.setLineWidth_(2.0)
+        ring.stroke()
 
 
 class Pill:
-    """The panel the pill lives in. Never takes focus, never eats a click."""
+    """
+    The panel the orb lives in. Never takes focus, never eats a click.
+
+    Still called Pill because everything that talks to it calls it that, and
+    renaming the class would be the whole diff.
+    """
 
     def __init__(self):
-        frame = NSMakeRect(0, 0, PILL_W, PILL_H)
+        frame = NSMakeRect(0, 0, CANVAS, CANVAS)
         # alloc() and init...() must be chained. Calling init on the allocated
         # object and throwing the return value away leaves you holding an
         # uninitialised panel that accepts every setter and draws nothing —
@@ -277,14 +328,14 @@ class Pill:
         self.panel.setLevel_(25)                       # above windows, below alerts
         # Clickable, unlike Clicky's, which is purely informational. On a full
         # menu bar macOS hides new status items with no error and no way to
-        # override it, so the pill has to be reachable — otherwise the app has
+        # override it, so the orb has to be reachable — otherwise the app has
         # no entry point at all on a machine like this one.
         self.panel.setIgnoresMouseEvents_(False)
         self.panel.setCollectionBehavior_(
             NSWindowCollectionBehaviorCanJoinAllSpaces
             | NSWindowCollectionBehaviorStationary
             | NSWindowCollectionBehaviorFullScreenAuxiliary)
-        self.view = PillView.alloc().initWithFrame_(frame)
+        self.view = OrbView.alloc().initWithFrame_(frame)
         self.panel.setContentView_(self.view)
         self.visible = False
         self.on_click = None
@@ -293,16 +344,16 @@ class Pill:
         """
         Bottom-right of whichever screen the cursor is on.
 
-        Clicky puts its pill at the cursor. Diablo's is up for whole tasks
+        Clicky puts its character at the cursor. Diablo's is up for whole tasks
         rather than the moment you hold a key, so it sits in a corner instead —
-        a capsule following the mouse around for ninety seconds is maddening.
+        something following the mouse around for ninety seconds is maddening.
         """
         mouse = NSEvent.mouseLocation()
         screen = next((s for s in NSScreen.screens()
                        if _contains(s.frame(), mouse)), NSScreen.mainScreen())
         visible = screen.visibleFrame()
-        x = visible.origin.x + visible.size.width - PILL_W - 24
-        y = visible.origin.y + 24
+        x = visible.origin.x + visible.size.width - CANVAS - 18
+        y = visible.origin.y + 18
         self.panel.setFrameOrigin_(NSPoint(x, y))
 
     def show(self, **payload):
@@ -315,7 +366,7 @@ class Pill:
 
     def hide(self):
         if self.visible:
-            _log("pill.hide()")
+            _log("orb.hide()")
             self.panel.orderOut_(None)
             self.visible = False
 
@@ -519,20 +570,38 @@ class Shell:
 
     _ticks = 0
 
-    def _tick(self, timer):
-        """Once a second: retire a finished pill, and feed the waveform."""
+    def _tick(self, dt):
+        """
+        One animation frame: advance the orb, and feed it something to move to.
+
+        The microphone level is only meaningful while he is listening. While he
+        is speaking there is no amplitude to read — the voice engine plays a
+        file — so the mouth runs on its own waves and this just keeps them at a
+        steady strength. Pretending the microphone is his voice would make him
+        mouth along to the room instead of to himself.
+        """
         Shell._ticks += 1
-        if Shell._ticks % 50 == 1:
-            _log("tick", Shell._ticks, "pill.visible =", self.pill.visible)
         if self._hide_at and time.time() > self._hide_at:
             self._hide_at = None
             _on_main(self.pill.hide)
-        if self.manager is not None and self.pill.visible:
+        if not self.pill.visible:
+            return
+
+        state = self.pill.view.state
+        level = None
+        if state == "listening" and self.manager is not None:
             try:
-                level = self.manager.mic.audio_power_level
-                _on_main(lambda: self.pill.view.pushLevel_(level * 3.2))
+                level = min(1.0, self.manager.mic.audio_power_level * 3.2)
             except Exception:
-                pass
+                level = None
+        elif state == "responding":
+            level = 0.62
+
+        def frame():
+            if level is not None:
+                self.pill.view.pushLevel_(level)
+            self.pill.view.advance_(dt)
+        _on_main(frame)
 
     def run(self):
         _log("run(): starting the tick thread and entering the AppKit loop")
@@ -547,10 +616,25 @@ class Shell:
         self.app.run()
 
     def _tick_forever(self):
+        """
+        The clock behind the orb.
+
+        Twenty-four frames a second while something is moving, four when it is
+        not. Idle is by far the most common state and it has nothing to draw,
+        so running the same loop at animation speed all day would spend real
+        battery on a picture that does not change.
+        """
+        last = time.time()
         while True:
-            time.sleep(0.1)
             try:
-                self._tick(None)
+                animating = self.pill.visible and self.pill.view.animating()
+            except Exception:
+                animating = False
+            time.sleep(1.0 / 24.0 if animating else 0.25)
+            now = time.time()
+            dt, last = now - last, now
+            try:
+                self._tick(dt)
             except Exception:
                 pass
 

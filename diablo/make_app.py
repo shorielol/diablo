@@ -163,6 +163,27 @@ def build(verbose: bool = True) -> str:
     os.makedirs(macos_dir)
     os.makedirs(os.path.join(contents, "Resources"))
 
+    # The icon is drawn, not shipped: make_icon renders the same character the
+    # pill and the window draw, at the ten sizes Finder, the Dock, Spotlight
+    # and the About box each ask for. Built here so it can never go stale
+    # against the drawing it came from.
+    icon_name = ""
+    try:
+        # make_app is usually run as a script from its own folder, so the
+        # package parent is not necessarily importable. Put it there rather
+        # than relying on how this file was invoked.
+        _parent = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if _parent not in sys.path:
+            sys.path.insert(0, _parent)
+        from skills import make_icon
+        icon_name = "Diablo.icns"
+        make_icon.build(os.path.join(contents, "Resources", icon_name))
+    except Exception as e:
+        # An app with a blank icon is worse-looking, not broken. Say so and
+        # carry on rather than failing an install over a picture.
+        print(f"  [App] icon could not be drawn ({type(e).__name__}: {e})")
+        icon_name = ""
+
     launcher_path = os.path.join(macos_dir, "Diablo")
     with open(launcher_path, "w") as f:
         f.write(LAUNCHER.format(home=DIABLO_HOME))
@@ -194,6 +215,10 @@ def build(verbose: bool = True) -> str:
         # applies now that there is a status item to quit from.
         "LSUIElement": True,
     }
+    if icon_name:
+        info["CFBundleIconFile"] = icon_name
+        # Read by the newer icon services; harmless on older ones.
+        info["CFBundleIconName"] = "Diablo"
     with open(os.path.join(contents, "Info.plist"), "wb") as f:
         plistlib.dump(info, f)
 
