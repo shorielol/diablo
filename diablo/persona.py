@@ -126,6 +126,31 @@ GREETINGS_BY_HOUR = [
     (23, 29, ["Late one, {a}?", "Still awake, {a}?", "Burning the candle, {a}?"]),
 ]
 
+# What he says the moment work starts, before the first tool call.
+#
+# This is the difference between "it is thinking" and "it has crashed". A
+# spoken assistant that goes quiet for four seconds has, from the other side of
+# a speaker, done nothing at all — there is no spinner out here. One short line
+# costs nothing because it is cached to disk, and it buys the whole wait.
+WORKING = {
+    0: ["One moment.", "Working."],
+    1: ["One moment, {a}.", "Give me a second.", "Working on it."],
+    2: ["Give me a second, {a}.", "One moment, {a}.", "Bear with me.",
+        "Let me have a look.", "Just a second."],
+    3: ["Give me a second, {a}.", "Hold that thought.", "Let me have a look.",
+        "Two seconds.", "Right, let me see."],
+}
+
+# For when it has already taken longer than a second was.
+STILL_WORKING = {
+    0: ["Still working."],
+    1: ["Still on it, {a}.", "Nearly there."],
+    2: ["Still on it, {a}.", "Nearly there.", "Bear with me, {a}.",
+        "This one is taking a minute."],
+    3: ["Still on it, {a}.", "This one is taking a minute.",
+        "Almost, {a}.", "Nearly."],
+}
+
 DONE = {
     0: ["Done."],
     1: ["Done, {a}.", "That's done."],
@@ -144,6 +169,16 @@ def ack() -> str:
 
 def done() -> str:
     return _pick(DONE.get(HUMOUR, DONE[2]))
+
+
+def working() -> str:
+    """Said as work begins, so silence never reads as a crash."""
+    return _pick(WORKING.get(HUMOUR, WORKING[2]))
+
+
+def still_working() -> str:
+    """Said once more if it runs long."""
+    return _pick(STILL_WORKING.get(HUMOUR, STILL_WORKING[2]))
 
 
 def greeting() -> str:

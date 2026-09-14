@@ -39,9 +39,17 @@ def switch_to_site(site_keyword: str) -> bool:
     res = run_applescript(script)
     return res == "found"
 
-def run_browser_navigation(url: str):
-    """Opens a URL in the Zen Browser."""
-    subprocess.run(["open", "-a", "Zen", url])
+def run_browser_navigation(url: str) -> bool:
+    """
+    Open a URL, and say whether it worked.
+
+    Used to hardcode a browser name and ignore the exit code, which is how the
+    project ran for months calling `open -a "Zen Browser"` — an application
+    that does not exist under that name — while every tool above it reported
+    success.
+    """
+    from skills import browsers
+    return browsers.open_url(url)
 
 def universal_scroll(direction: str = "down", amount: int = 1):
     """ Simulates keyboard scroll globally. """

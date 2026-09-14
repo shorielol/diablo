@@ -9,6 +9,7 @@ from skills import config
 from skills import conversation, screen_context, wake_word, voice, skill_registry, local_brain, mcp_client
 # Added by patch_mic: these are called below but were never imported.
 from skills import delegation_tool, agent_tools, mic, persona, browser_tool  # ─── Diablo persona wiring ───
+import collections
 import queue
 import threading
 import json
@@ -17,6 +18,7 @@ import difflib
 from typing import List
 from http.server import SimpleHTTPRequestHandler
 from socketserver import TCPServer
+from skills import browsers  # noqa: E402
 
 # Import D.I.A.B.L.O. Skill Engine
 registry = skill_registry.registry
@@ -143,7 +145,7 @@ def open_app(app_name):
     subprocess.Popen(["open", "-a", app_name])
 
 def open_url(url):
-    """Opens a URL in Zen Browser, attempting to switch to an existing tab first."""
+    """Open a URL, switching to an existing tab for that site if there is one."""
     site_keyword = url.split("//")[-1].split("/")[0].replace("www.", "").split(".")[0]
     ack = persona.ack()
     
@@ -152,7 +154,8 @@ def open_url(url):
         return
 
     speak(f"{ack} Opening {site_keyword.title()}.")
-    browser_tool.run_browser_navigation(url)
+    if not browser_tool.run_browser_navigation(url):
+        speak("I could not open your browser, Sir.")
 
 def take_screenshot():
     desktop = os.path.expanduser("~/Desktop")
@@ -171,6 +174,26 @@ BARGE_IN_BLOCKS = config.env_int("DIABLO_BARGE_IN_BLOCKS", 3)
 _barge: list = []
 
 
+# A rolling few hundred milliseconds of the recent past, always being kept.
+#
+# This exists because of a measurement. Take a clean recording of "what\'s up"
+# and cut the front off it, then transcribe:
+#
+#     -  0ms   "What\'s up?"
+#     -120ms   "What\'s up?"
+#     -160ms   "S"
+#     -200ms   "shut up Ab"
+#
+# Past about 140ms of missing onset the transcription does not degrade, it
+# becomes a different sentence — and "its up" for "what\'s up" is exactly that
+# failure. A person pressing a key and starting to speak will routinely beat
+# the audio thread by more than 140ms, so push-to-talk without a pre-roll would
+# reproduce the bug it was built to fix. Holding the last 400ms costs 25 KB.
+PREROLL_SECONDS = config.env_float("DIABLO_PREROLL", 0.4, low=0.0, high=2.0)
+_preroll: "collections.deque" = collections.deque(
+    maxlen=max(1, int(PREROLL_SECONDS * RATE / CHUNK)))
+
+
 def audio_callback(block):
     """
     Called from the audio thread with 1280 float32 samples at 16 kHz.
@@ -179,8 +202,10 @@ def audio_callback(block):
     so everything downstream still sees the chunk size it was written against.
     """
     audio_queue.put((block * 32767).astype(np.int16))
+    shaped = block.reshape(-1, 1)
+    _preroll.append(shaped.copy())
     if is_capturing_command.is_set():
-        command_capture_queue.put(block.reshape(-1, 1).copy())
+        command_capture_queue.put(shaped.copy())
 
     # Barge-in. While Diablo is speaking, a sustained loud block is the user
     # talking over it. The threshold is deliberately high: Diablo hears itself
@@ -282,7 +307,7 @@ TRANSPORT_COMMANDS = {
 
 KNOWN_APPS = {
     "spotify": "Spotify", "safari": "Safari", "chrome": "Google Chrome",
-    "zen": "Zen Browser", "zen browser": "Zen Browser", "notes": "Notes",
+    "zen": browsers.default(), "zen browser": browsers.default(), "notes": "Notes",
     "finder": "Finder", "terminal": "Terminal", "mail": "Mail",
     "messages": "Messages", "imessage": "Messages", "calendar": "Calendar",
     "excel": "Microsoft Excel", "word": "Microsoft Word",
@@ -337,6 +362,131 @@ def capture_speech(duration=5, prompt=None, precision=True):
         return ""
     result = stt_model.transcribe(audio, fp16=False, beam_size=5 if precision else 1)
     return result["text"].strip()
+
+
+# ─── Push to talk ────────────────────────────────────────────────────────────
+#
+# Hold a key, speak, let go. Three things this fixes that the wake word cannot:
+#
+#   You know it is listening. The wake word gives no signal until Diablo
+#   answers, so every request begins with a second of wondering whether it
+#   heard you at all. The orb turns crimson on the keypress, before any audio
+#   work happens.
+#
+#   Nothing is clipped. The rolling window opens and closes on its own guess
+#   about where your sentence starts and stops; you are a much better judge of
+#   that than a voice-activity detector, and the pre-roll covers the gap
+#   between deciding to speak and actually pressing.
+#
+#   Nothing is waited for. The wake path must hear silence for 900ms before it
+#   believes you have finished. Letting go of a key is instant and unambiguous.
+
+_ptt_release = threading.Event()
+_ptt_active = threading.Event()
+_ptt_lock = threading.Lock()
+
+# Below this it was a stray keypress rather than a sentence.
+PTT_MIN_SECONDS = config.env_float("DIABLO_PTT_MIN", 0.25)
+# Above this the key is stuck, or somebody has leant on the keyboard.
+PTT_MAX_SECONDS = config.env_float("DIABLO_PTT_MAX", 30.0)
+
+
+def _ptt_worker(on_text):
+    """
+    Owns the microphone for one press, start to finish, on one thread.
+
+    That last part is not incidental. MIC_LOCK is an RLock, and an RLock can
+    only be released by the thread that took it — so a design where key-down
+    acquires on the main thread and key-up releases on a worker raises
+    RuntimeError at the end of every single utterance. The hold lives here
+    instead, and the keyboard handler only sets an Event.
+    """
+    if not MIC_LOCK.acquire(blocking=False):
+        # Something else owns the microphone: a clarifying question, a
+        # confirmation. Refusing is right — two listeners on one microphone is
+        # how an answer ends up attached to the wrong question.
+        print("  [PTT] microphone is busy")
+        _ptt_active.clear()
+        return
+    try:
+        listener = globals().get("wake_listener")
+        if listener is not None:
+            listener.mute_for(PTT_MAX_SECONDS)
+        # Holding the key while Diablo is talking is the most natural way to
+        # interrupt him, so it simply works.
+        try:
+            voice.interrupt()
+        except Exception:
+            pass
+
+        while not command_capture_queue.empty():
+            command_capture_queue.get()
+        # Seeded with the recent past, so the first syllable is already in hand.
+        for block in list(_preroll):
+            command_capture_queue.put(block)
+
+        is_capturing_command.set()
+        set_ui_state("listening")
+        began = time.time()
+
+        _ptt_release.wait(timeout=PTT_MAX_SECONDS)
+        held = time.time() - began
+
+        # A short tail: the microphone buffer is still carrying the last
+        # syllable when the key comes up, for the same reason the pre-roll
+        # exists at the other end.
+        time.sleep(0.18)
+        is_capturing_command.clear()
+
+        blocks = []
+        while not command_capture_queue.empty():
+            blocks.append(command_capture_queue.get())
+        set_ui_state("idle")
+    finally:
+        MIC_LOCK.release()
+        _ptt_active.clear()
+        _ptt_release.clear()
+
+    if held < PTT_MIN_SECONDS or not blocks:
+        print(f"  [PTT] too short ({held:.2f}s), ignored")
+        return
+
+    audio = np.concatenate(blocks).flatten().astype(np.float32)
+    started = time.time()
+    try:
+        text = stt_model.transcribe(audio, fp16=False, beam_size=5)["text"].strip()
+    except Exception as e:
+        print(f"  [PTT] transcription failed: {type(e).__name__}: {e}")
+        return
+    print(f'  [PTT] held {held:.2f}s, transcribed in {time.time() - started:.2f}s: "{text}"')
+    if not text:
+        speak("I didn't catch that, Sir.", cached_key="error_1")
+        return
+    try:
+        on_text(text) if on_text else process_command(text)
+    except Exception as e:
+        print(f"  [PTT] {type(e).__name__}: {e}")
+        speak("Something went wrong handling that, Sir.")
+
+
+def push_to_talk_start(on_text=None) -> bool:
+    """Key down. Opens the microphone and shows it. Returns False if busy."""
+    with _ptt_lock:
+        if _ptt_active.is_set():
+            return False
+        _ptt_active.set()
+        _ptt_release.clear()
+    threading.Thread(target=_ptt_worker, args=(on_text,), daemon=True).start()
+    return True
+
+
+def push_to_talk_stop() -> None:
+    """Key up. Everything else happens on the worker that took the lock."""
+    _ptt_release.set()
+
+
+def push_to_talk_active() -> bool:
+    return _ptt_active.is_set()
 
 
 def listen_for_response(duration=3):

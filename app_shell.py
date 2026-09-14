@@ -60,7 +60,8 @@ from AppKit import (  # noqa: E402
     NSWindowCollectionBehaviorCanJoinAllSpaces, NSWindowCollectionBehaviorStationary,
     NSWindowCollectionBehaviorFullScreenAuxiliary, NSWindowTitleHidden,
     NSPanel, NSWindowStyleMaskNonactivatingPanel, NSGraphicsContext,
-    NSGradient,
+    NSGradient, NSEventMaskFlagsChanged, NSEventModifierFlagControl,
+    NSEventModifierFlagOption, NSEventModifierFlagCommand, NSEventModifierFlagShift,
 )
 from Foundation import (  # noqa: E402
     NSAffineTransform, NSOperationQueue, NSURL, NSURLRequest,
@@ -71,6 +72,28 @@ from WebKit import WKWebView, WKWebViewConfiguration  # noqa: E402
 # 120-unit grid. The orb draws the same paths rather than a second copy of
 # them, so his face cannot differ between the Dock and the screen.
 from skills import make_icon  # noqa: E402
+
+
+# ─── Push to talk ────────────────────────────────────────────────────────────
+#
+# Hold two modifiers and speak. Clicky uses Control+Option and it is a good
+# choice: no application binds that pair, and it needs no key on top, so you
+# are not aiming for a letter while composing a sentence.
+#
+# Watched with a global NSEvent monitor, which requires Accessibility. That is
+# a real dependency and it fails silently when the permission is missing, so
+# the shell checks up front and says so rather than leaving a key that does
+# nothing.
+
+PTT_MASK = NSEventModifierFlagControl | NSEventModifierFlagOption
+PTT_NAME = "Control + Option"
+
+
+def _ptt_engaged(flags) -> bool:
+    """Both modifiers down, and nothing else that would make it a real chord."""
+    interesting = (NSEventModifierFlagControl | NSEventModifierFlagOption
+                   | NSEventModifierFlagCommand | NSEventModifierFlagShift)
+    return (int(flags) & interesting) == PTT_MASK
 
 # ─── Look ────────────────────────────────────────────────────────────────────
 # The same tokens the web UI uses, so the two surfaces match exactly.
@@ -606,6 +629,60 @@ class Shell:
             self.pill.view.advance_(dt)
         _on_main(frame)
 
+    # ── Push to talk ─────────────────────────────────────────────────────
+
+    def install_push_to_talk(self, on_start, on_stop) -> bool:
+        """
+        Watch for the modifiers being held, anywhere on the system.
+
+        Two monitors, not one. The global monitor never fires while our own
+        window is focused — that is documented behaviour, not a bug — so
+        holding the key with the Diablo window in front would do nothing
+        without the local one. The local monitor must return the event or the
+        modifier is swallowed from the rest of the app.
+        """
+        self._ptt_down = False
+        self._ptt_start = on_start
+        self._ptt_stop = on_stop
+
+        def changed(event):
+            try:
+                engaged = _ptt_engaged(event.modifierFlags())
+                if engaged and not self._ptt_down:
+                    self._ptt_down = True
+                    self._ptt_start()
+                elif not engaged and self._ptt_down:
+                    self._ptt_down = False
+                    self._ptt_stop()
+            except Exception:
+                traceback.print_exc()
+            return event
+
+        try:
+            self._ptt_global = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+                NSEventMaskFlagsChanged, changed)
+            self._ptt_local = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+                NSEventMaskFlagsChanged, changed)
+        except Exception as e:
+            print(f"  [PTT] could not install the key watcher: {e}")
+            return False
+
+        # A global monitor is accepted and never fires without Accessibility,
+        # which is the worst possible failure: a key that silently does
+        # nothing. Say so instead.
+        trusted = True
+        try:
+            from skills import permissions
+            trusted = permissions.accessibility()
+        except Exception:
+            pass
+        if trusted:
+            print(f"  Hold {PTT_NAME} and speak.")
+        else:
+            print(f"  [PTT] {PTT_NAME} needs Accessibility, which is not granted.")
+            print("        Open Diablo > Health and press Grant.")
+        return trusted
+
     def run(self):
         _log("run(): starting the tick thread and entering the AppKit loop")
         # Show it immediately rather than waiting for the first state change,
@@ -677,17 +754,23 @@ def _post(path: str, body: Dict[str, Any]) -> None:
 
 
 def run(listen: Optional[Callable[[], None]] = None, manager=None,
-        url: Optional[str] = None) -> None:
+        url: Optional[str] = None, push_to_talk=None) -> None:
     """
     Start the app. Blocks forever on the main thread.
 
     `listen` is the voice loop. It moves to a background thread because AppKit
     owns the main one, which is the reverse of how the bridge ran before.
+
+    `push_to_talk` is a (start, stop) pair. Given, the shell watches the
+    modifiers system-wide and calls them.
     """
     url = url or os.getenv("DIABLO_UI_URL", "http://127.0.0.1:17494")
     if listen is not None:
         threading.Thread(target=listen, name="diablo-voice", daemon=True).start()
-    Shell(url, manager=manager).run()
+    shell = Shell(url, manager=manager)
+    if push_to_talk is not None:
+        shell.install_push_to_talk(*push_to_talk)
+    shell.run()
 
 
 if __name__ == "__main__":

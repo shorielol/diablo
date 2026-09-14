@@ -59,8 +59,15 @@ def main() -> int:
             traceback.print_exc()
             manager.emit("error", subsystem="voice", message="the listener stopped")
 
+    # Hold Control+Option to talk. The wake word still works; this is the
+    # path for when you want to know it is listening before you start, which
+    # is most of the time.
+    def talk_start():
+        voice_bridge.push_to_talk_start(on_text=voice_bridge.process_command)
+
     import app_shell
-    app_shell.run(listen=listen, manager=manager, url=url)
+    app_shell.run(listen=listen, manager=manager, url=url,
+                  push_to_talk=(talk_start, voice_bridge.push_to_talk_stop))
     return 0
 
 

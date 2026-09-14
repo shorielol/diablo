@@ -107,6 +107,10 @@ class Session:
         self.earlier: str = ""        # the summarised part, if any
         self.last_spoke_at: float = 0.0
         self.last_screen_app: Optional[str] = None
+        # Who is being spoken to. None is Diablo. Set when a job is handed to
+        # one agent, so "and what about the other one" reaches whoever just
+        # answered rather than starting again with the orchestrator.
+        self.focus: Optional[str] = None
 
     def _summarise_oldest(self) -> None:
         """
@@ -145,6 +149,7 @@ class Session:
             self.turns = []
             self.earlier = ""
             self.last_screen_app = None
+            self.focus = None
 
     def remember(self, role: str, content: str) -> None:
         self.turns.append({"role": role, "content": content})
@@ -156,6 +161,7 @@ class Session:
         self.turns = []
         self.earlier = ""
         self.last_screen_app = None
+        self.focus = None
 
     def is_followup(self) -> bool:
         """True if he is still mid-conversation rather than starting one."""
@@ -183,6 +189,19 @@ class Session:
 
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": PERSONA},
+        ]
+        # Whoever is being spoken to. Their manner goes in after the shared
+        # rules, never instead of them: an agent may sound different, but the
+        # part about not inventing things applies to all of them equally.
+        if self.focus:
+            try:
+                from skills import roster
+                manner = roster.voice_of(self.focus)
+                if manner:
+                    messages.append({"role": "system", "content": manner})
+            except Exception:
+                pass
+        messages += [
             {"role": "system", "content": time.strftime(
                 "Background fact, for your own reference only: the current date "
                 "and time is %A %d %B %Y, %H:%M. Do not say the date or the "
@@ -409,8 +428,60 @@ def look_if_asked(text: str) -> Optional[str]:
     return context
 
 
-def talk(text: str) -> str:
-    """One conversational turn, with the screen attached if he pointed at it."""
+def addressed_to(text: str) -> Optional[str]:
+    """
+    Which agent he just named, if he named one.
+
+    Only a leading address or an explicit "ask X" counts. Mentioning Marbas in
+    passing — "what did Marbas say about that" — is a question for whoever he
+    is already talking to, not a request to switch, and treating every mention
+    as a switch makes the conversation hop around under him.
+    """
+    try:
+        from skills import roster
+    except Exception:
+        return None
+    lowered = text.strip().lower()
+    for agent in roster.AGENTS:
+        name = agent["name"].lower()
+        if lowered.startswith(f"{name},") or lowered.startswith(f"{name} "):
+            return agent["id"]
+        for opener in (f"ask {name} ", f"tell {name} ", f"get {name} to ",
+                       f"put {name} on ", f"switch to {name}",
+                       f"talk to {name}", f"speak to {name}"):
+            if lowered.startswith(opener) or f" {opener}" in f" {lowered}":
+                return agent["id"]
+    return None
+
+
+def strip_address(text: str, agent_id: str) -> str:
+    """Take the name off the front, so the agent is not asked about itself."""
+    try:
+        from skills import roster
+        name = roster.BY_ID[agent_id]["name"]
+    except Exception:
+        return text
+    pattern = re.compile(
+        rf"^\s*(?:ask|tell|get|put|switch to|talk to|speak to)?\s*{re.escape(name)}\s*"
+        rf"(?:,|to|on)?\s*", re.IGNORECASE)
+    stripped = pattern.sub("", text, count=1).strip()
+    return stripped or text
+
+
+def talk(text: str, agent: Optional[str] = None) -> str:
+    """
+    One conversational turn, with the screen attached if he pointed at it.
+
+    `agent` is who is being spoken to. Passed explicitly by the window when a
+    name is selected in the rail; worked out from the sentence otherwise.
+    """
+    if agent is not None:
+        session.focus = agent or None
+    else:
+        named = addressed_to(text)
+        if named:
+            session.focus = None if named == "diablo" else named
+            text = strip_address(text, named)
     return session.reply(text, screen=look_if_asked(text))
 
 

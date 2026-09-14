@@ -2,6 +2,7 @@ import subprocess
 import time
 import webbrowser
 from typing import List, Optional
+from skills import browsers  # noqa: E402
 
 def run_applescript(script: str) -> str:
     """Runs an AppleScript and returns the output."""
@@ -25,30 +26,65 @@ def next_track():
 def previous_track():
     return run_applescript('tell application "Music" to previous track')
 
+def resolve_track(query: str, service: str = "youtube") -> Optional[str]:
+    """
+    Turn "play bohemian rhapsody" into a URL that plays bohemian rhapsody.
+
+    This is the whole fix. The old path opened a search page, slept four
+    seconds, and sent Return twice, hoping focus had landed on a result — so
+    "play a specific song" reliably produced a page of search results and the
+    occasional unrelated track. A watch URL autoplays, and there is nothing
+    left to guess at.
+    """
+    import re
+    import urllib.parse
+    import urllib.request
+
+    # YouTube's own results page, not a search engine. Going through
+    # DuckDuckGo worked for about six queries and then returned HTTP 202 with
+    # an "anomaly" page; Mojeek serves a JavaScript captcha. YouTube answers
+    # plainly, has the official video as the first hit, and needs no key.
+    url = ("https://www.youtube.com/results?search_query="
+           + urllib.parse.quote(query))
+    request = urllib.request.Request(url, headers={
+        "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 "
+                       "Safari/537.36"),
+        "Accept-Language": "en-US,en;q=0.9",
+    })
+    try:
+        with urllib.request.urlopen(request, timeout=12) as response:
+            page = response.read().decode("utf-8", "replace")
+    except Exception:
+        return None
+    ids = re.findall(r'"videoId":"([A-Za-z0-9_-]{11})"', page)
+    if not ids:
+        return None
+    first = ids[0]
+    if service == "youtube_music":
+        return f"https://music.youtube.com/watch?v={first}"
+    return f"https://www.youtube.com/watch?v={first}"
+
+
 def play_on_web_service(query: str, service: str = "youtube"):
-    """
-    Alexa-style streaming: Opens preferred web service and triggers playback.
-    """
-    clean_query = query.replace(" ", "+")
+    """Resolve the track, then open it. Falls back to a search page."""
     if service == "spotify":
-        url = f"https://open.spotify.com/search/{clean_query}"
-    else: # YouTube Music default
-        url = f"https://music.youtube.com/search?q={clean_query}"
-    
-    print(f"  [Music Tool] Streaming from {service.title()}: {url}")
-    # Using 'open' command for Zen Browser compatibility via system default
-    subprocess.run(["open", "-a", "Zen Browser", url])
-    
-    # Wait for page load and attempt to trigger 'Play' (service specific)
-    time.sleep(4.0)
-    if service == "youtube":
-        subprocess.run(["osascript", "-e", 'tell application "System Events" to key code 36']) # Enter
-        time.sleep(1.0)
-        subprocess.run(["osascript", "-e", 'tell application "System Events" to key code 36']) # Enter again
-    elif service == "spotify":
-        subprocess.run(["osascript", "-e", 'tell application "System Events" to key code 36']) # Enter
-    
-    return f"streaming on {service}"
+        url = f"https://open.spotify.com/search/{query.replace(' ', '+')}"
+        print(f"  [Music] Spotify search: {url}")
+        browsers.open_url(url)
+        return "opened on spotify"
+
+    url = resolve_track(query)
+    if url:
+        print(f"  [Music] resolved to {url}")
+        browsers.open_url(url)
+        return f"playing {query} on YouTube"
+
+    fallback = f"https://music.youtube.com/search?q={query.replace(' ', '+')}"
+    print(f"  [Music] could not resolve a track; opening {fallback}")
+    browsers.open_url(fallback)
+    return f"could not find a single track for {query}; opened a search instead"
+
 
 def search_and_play(query: str):
     """

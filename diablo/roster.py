@@ -60,6 +60,11 @@ AGENTS: List[Dict[str, Any]] = [
                      "who is", "what is", "news", "wikipedia", "weather", "price of",
                      "online", "website", "article", "read about", "who won",
                      "results", "latest", "how much does", "definition of"],
+        "voice": (
+            "You are Asmo. You find things out. You give the answer first and stop "
+            "— you do not preface it, and you do not offer three more things he did"
+            " not ask about. You are quietly pleased to know it."
+        ),
     },
     {
         "id": "marbas", "name": "Marbas", "role": "Papers and numbers",
@@ -72,6 +77,12 @@ AGENTS: List[Dict[str, Any]] = [
                      "write", "rename", "move", "delete", "total", "sum", "average",
                      "calculate", "count", "deck", "slides", "presentation", "desktop",
                      "downloads", "documents"],
+        "voice": (
+            "You are Marbas. You handle his files and his arithmetic. You are exact"
+            ": file names, paths and numbers come out the way they went in, never r"
+            "ounded and never tidied up. You say plainly when something is not ther"
+            "e."
+        ),
     },
     {
         "id": "vassago", "name": "Vassago", "role": "Watches the screen",
@@ -82,6 +93,11 @@ AGENTS: List[Dict[str, Any]] = [
         "keywords": ["screen", "window", "this page", "on my screen", "show me where",
                      "point at", "highlight", "what am i looking at", "screenshot",
                      "tab", "visible", "in front of me"],
+        "voice": (
+            "You are Vassago. You watch his screen. You describe what is actually v"
+            "isible and nothing behind it, and when you cannot make something out y"
+            "ou say that rather than guessing at it."
+        ),
     },
     {
         "id": "seere", "name": "Seere", "role": "Runs the errands",
@@ -93,6 +109,10 @@ AGENTS: List[Dict[str, Any]] = [
         "keywords": ["open", "launch", "quit", "play", "pause", "skip", "volume",
                      "brightness", "message", "text", "whatsapp", "imessage", "call",
                      "battery", "disk space", "memory", "shell", "terminal"],
+        "voice": (
+            "You are Seere. You run errands on his machine and you are quick. Short"
+            " answers. Usually it is already done by the time you speak."
+        ),
     },
     {
         "id": "levi", "name": "Levi", "role": "The deep one",
@@ -100,6 +120,10 @@ AGENTS: List[Dict[str, Any]] = [
         "blurb": "Wakes the larger model when the small one is out of its depth.",
         "tools": [],
         "keywords": [],
+        "voice": (
+            "You are Levi, the deep one, woken for the hard ones. You take the ques"
+            "tion seriously and answer in fewer words than it deserves."
+        ),
     },
 ]
 
@@ -131,6 +155,19 @@ _TOOL_OWNER: Dict[str, str] = {}
 for _agent in AGENTS:
     for _tool in _agent["tools"]:
         _TOOL_OWNER[_tool] = _agent["id"]
+
+
+def voice_of(agent_id: str) -> str:
+    """
+    How this agent talks. Manner only, never knowledge.
+
+    Nothing in here tells an agent that it knows something, has access to
+    something, or has already done something — every line is about register.
+    That boundary is deliberate: a persona that says "you are an expert
+    researcher" is an invitation to answer from the persona instead of from a
+    tool result, and this project spent three rewrites getting that back out.
+    """
+    return (BY_ID.get(agent_id) or {}).get("voice") or ""
 
 
 def public(agent_id: str) -> Dict[str, Any]:

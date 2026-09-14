@@ -314,6 +314,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": "nothing to say"}, 400)
                 if _handle is None:
                     return self._json({"ok": False, "error": "not connected"}, 503)
+                # The window says who is being spoken to. Typing into Asmo's
+                # page should reach Asmo, the same as saying his name would.
+                who = (data.get("agent") or "").strip().lower()
+                if who:
+                    try:
+                        from skills import conversation, roster
+                        if who in roster.BY_ID:
+                            conversation.session.focus = None if who == "diablo" else who
+                    except Exception:
+                        pass
                 # Off the request thread: a task can take a minute and the UI
                 # must stay responsive while it runs.
                 threading.Thread(target=_handle, args=(text,), daemon=True).start()
@@ -409,6 +419,26 @@ def _control(action: str) -> Dict[str, Any]:
             # is worth telling it about immediately.
             push("permissions", permissions=_manager.check_permissions())
             return result
+        # Push to talk, for the window's own microphone button and for tests.
+        # The same two calls the Control+Option watcher makes, so there is one
+        # code path rather than two that can drift.
+        if action in ("talk_start", "talk_stop"):
+            import voice_bridge
+            if action == "talk_start":
+                started = voice_bridge.push_to_talk_start(
+                    on_text=voice_bridge.process_command)
+                return {"ok": bool(started),
+                        "error": None if started else "the microphone is busy"}
+            voice_bridge.push_to_talk_stop()
+            return {"ok": True}
+        if action.startswith("focus:"):
+            who = action.split(":", 1)[1].strip().lower()
+            from skills import conversation, roster
+            if who and who not in roster.BY_ID:
+                return {"ok": False, "error": f"no agent called {who!r}"}
+            conversation.session.focus = None if who in ("", "diablo") else who
+            push("focus", agent=conversation.session.focus or "diablo")
+            return {"ok": True, "focus": conversation.session.focus or "diablo"}
         if action == "recheck" and _manager is not None:
             perms = _manager.forget_permissions()
             push("permissions", permissions=perms)

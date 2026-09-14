@@ -442,10 +442,16 @@ def run(
     reassured = False
 
     for step in range(1, MAX_STEPS + 1):
-        if step == 7 and not reassured:
+        if step == 4 and not reassured:
             # Long silence on a voice interface reads as a crash. Say something.
+            # Step 4 rather than 7: seven tool calls is fifteen seconds or more,
+            # and by then he has already asked whether it is broken.
             reassured = True
-            speak("Still working on it, Sir.")
+            try:
+                from skills import persona as _p
+                speak(_p.still_working())
+            except Exception:
+                speak("Still working on it, Sir.")
 
         try:
             message = local_brain.chat(messages, tools=tools)

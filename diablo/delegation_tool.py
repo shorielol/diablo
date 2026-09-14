@@ -44,6 +44,7 @@ except Exception:  # pragma: no cover
 from skills import conversation  # noqa: E402
 from skills import local_brain  # noqa: E402
 from skills import roster  # noqa: E402
+from skills import persona  # noqa: E402
 
 BASE_DIR = os.getenv("DIABLO_BASE_DIR", os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo")))
 JOBS_PATH = os.path.join(BASE_DIR, "jobs.json")
@@ -198,6 +199,12 @@ def _worker() -> None:
             # Fold the result into the conversation so a follow-up like "what
             # did you find?" has something to refer back to.
             conversation.session.remember("assistant", summary)
+            # Whoever did the work is now who he is talking to, so "and the
+            # other one?" reaches them rather than starting again with the
+            # orchestrator. A fan-out leaves focus alone: several of them
+            # answered and picking one would be a guess.
+            if not job.get("parts") and job.get("agent") not in (None, "diablo"):
+                conversation.session.focus = job["agent"]
             _push("job_done", id=job["id"], agent=job.get("agent", "diablo"),
                   summary=summary[:400])
             speak(summary)
@@ -303,6 +310,12 @@ def handle(
         trace.event("understand", route=verdict["action"], via="model",
                     question=(verdict.get("question") or "")[:100])
 
+    # A named agent takes the conversation, whatever kind of turn this is.
+    named = conversation.addressed_to(text)
+    if named:
+        conversation.session.focus = None if named == "diablo" else named
+        trace.event("focus", agent=named)
+
     if verdict["action"] == "chat":
         # Not the one-shot reply the classifier produced — a real conversational
         # turn, with the last dozen exchanges behind it and the screen attached
@@ -329,7 +342,13 @@ def handle(
         gathered = f"{gathered}\n(I asked: {verdict['question']} — you said: {answer})"
         verdict = agent_core.understand(gathered,
                                         in_conversation=conversation.session.is_followup())
-        if verdict["action"] == "chat":
+        # A named agent takes the conversation, whatever kind of turn this is.
+    named = conversation.addressed_to(text)
+    if named:
+        conversation.session.focus = None if named == "diablo" else named
+        trace.event("focus", agent=named)
+
+    if verdict["action"] == "chat":
             speak(conversation.talk(gathered))
             return "chat"
 
@@ -367,15 +386,25 @@ def handle(
 
     if depth < LONG_TASK_WORDS and not store.active():
         # Short and nothing else queued: run it here so the reply is immediate.
-        trace.event("route", route="inline", words=depth, task=task[:120])
+        #
+        # "Immediate" still means a model round trip and one or more tools, and
+        # from the other side of a speaker that is several seconds of nothing.
+        # Say something first. It is cached audio, so it costs no latency of
+        # its own and it starts playing while the model is still loading.
+        pieces_inline = [(task, roster.assign(task))]
+        trace.event("route", route="inline", words=depth, task=task[:120],
+                    agent=pieces_inline[0][1])
+        speak(persona.working())
         summary = agent_core.run(task, speak, ask=ask, confirm=confirm)
         trace.event("done", route="inline", summary=summary[:120])
         conversation.session.remember("user", text)
         conversation.session.remember("assistant", summary)
+        if pieces_inline and pieces_inline[0][1] not in (None, "diablo"):
+            conversation.session.focus = pieces_inline[0][1]
         speak(summary)
         job = {"id": uuid.uuid4().hex[:8], "task": task, "status": "done",
                "created_at": time.time(), "finished_at": time.time(),
-               "agent": roster.assign(task), "parts": [], "summary": summary}
+               "agent": pieces_inline[0][1], "parts": [], "summary": summary}
         store.add(job)
         return "inline"
 

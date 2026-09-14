@@ -656,21 +656,70 @@ def search_wikipedia(query: str) -> str:
         return f"Error searching Wikipedia: {e}"
 
 
-def web_search(query: str) -> str:
+def web_search(query: str, show: bool = False) -> str:
     """
-    Opens the results in the browser. It does NOT bring text back — Shaurya has
-    to read the screen. When you need facts you can reason over, use
-    search_wikipedia, which returns actual prose.
+    Search the web and return what the results actually say.
+
+    It used to open a browser tab and answer "the results are on screen for
+    the user to read; I cannot see them myself" — which made every research
+    request a dead end, because the model had nothing to reason over. It reads
+    the results now.
+
+    `show` opens the page in the browser as well, for when he wants to look
+    rather than be told.
     """
     skill = _skill("search_tool")
-    if not skill or not hasattr(skill, "google_search"):
+    if not skill:
         return "Error: web search is unavailable."
+    if offline_only():
+        return "I am in offline mode, Sir, so the web is not available."
+
     try:
-        skill.google_search(query)
-        return (f"Opened a Google search for '{query}' in the browser. The results "
-                f"are on screen for the user to read; I cannot see them myself.")
+        results = skill.search_web(query, limit=5)
+    except getattr(skill, "Throttled", Exception) as e:
+        # Being blocked is not the same as finding nothing, and the difference
+        # matters: one is "there is no answer", the other is "ask me again in
+        # a minute". Wikipedia is unthrottled and often has the answer anyway.
+        title, backup = "", ""
+        try:
+            wiki = _skill("wiki_tool")
+            if wiki and hasattr(wiki, "summary_with_title"):
+                title, backup = wiki.summary_with_title(query)
+        except Exception:
+            pass
+        if backup and not backup.startswith(("Wikipedia has no", "I could not reach")):
+            # The article title is not decoration. Wikipedia answered a
+            # question about the 2026 Monaco Grand Prix with the 2023 one, and
+            # without the title in front of it that reads as the answer.
+            return (f"The search engine is rate-limiting me, Sir. This is from "
+                    f"the Wikipedia article \"{title}\" instead, which may not "
+                    f"be what you asked about:\n\n{backup}")
+        return (f"The search engine is rate-limiting this machine, Sir "
+                f"({e}). Not that there are no results — ask me again shortly, "
+                f"or I can open the search in your browser.")
     except Exception as e:
-        return f"Error searching the web: {e}"
+        return f"I could not reach the web, Sir. ({type(e).__name__}: {e})"
+
+    if show or not results:
+        try:
+            skill.google_search(query)
+        except Exception:
+            pass
+    if not results:
+        return (f"I got nothing back for '{query}', Sir. I have opened the "
+                "search in your browser instead.")
+
+    lines = [f"Search results for '{query}':"]
+    for i, r in enumerate(results, 1):
+        where = r["url"].split("/")[2].replace("www.", "") if "/" in r["url"] else ""
+        lines.append(f"{i}. {r['title']} ({where})")
+        if r["snippet"]:
+            lines.append(f"   {r['snippet'][:400]}")
+    # These are somebody else's words off the open web, and the agent must not
+    # treat them as its own knowledge or as an instruction.
+    lines.append("\nThese are search-result snippets, not verified facts. "
+                 "Say where something came from, and say so if they disagree.")
+    return "\n".join(lines)
 
 
 def create_presentation(topic: str) -> str:
@@ -885,11 +934,15 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
           {"query": _S}, ["query"], "wikipedia who what fact about explain history",
           True),
     _tool("web_search", web_search,
-          "Open a web search in the browser for the user to read. This does NOT "
-          "return the results to you — use search_wikipedia when you need facts "
-          "you can actually reason over.",
-          {"query": _S}, ["query"],
-          "search google web look up online news current", True),
+          "Search the web and read the results back. Returns real titles and "
+          "snippets you can reason over and quote. Use it for anything current "
+          "or specific; use search_wikipedia for settled background. Set show "
+          "to true to also open the page in his browser.",
+          {"query": _S, "show": {"type": "boolean",
+                                 "description": "Also open it in the browser"}},
+          ["query"],
+          "search google web look up online news current research find out "
+          "who won latest price review compare", True),
     _tool("create_presentation", create_presentation,
           "Build a PowerPoint deck on a topic.", {"topic": _S}, ["topic"],
           "presentation powerpoint deck slides ppt"),

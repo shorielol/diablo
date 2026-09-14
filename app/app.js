@@ -243,10 +243,10 @@ function Stage({ turns, state, agent, roster, jobs, liveAgents, address,
   const send = useCallback(() => {
     const text = draft.trim();
     if (!text) return;
-    onSend(text);
+    onSend(text, agent?.id || null);
     setDraft('');
     if (areaRef.current) areaRef.current.style.height = 'auto';
-  }, [draft, onSend]);
+  }, [draft, onSend, agent]);
 
   const onKeyDown = useCallback((event) => {
     // Enter sends, Shift+Enter is a newline. The opposite is always wrong and
@@ -261,13 +261,15 @@ function Stage({ turns, state, agent, roster, jobs, liveAgents, address,
     el.style.height = Math.min(el.scrollHeight, 132) + 'px';
   }, []);
 
-  /* An agent picked in the rail shows that agent's own work instead of the
-     conversation: its jobs, what it is doing now, what it last came back with. */
+  /* An agent picked in the rail is who you are now talking to: their work
+     above, and the composer below aimed at them. Saying their name out loud
+     does the same thing, so the two ways in agree. */
   if (agent && agent.id !== 'diablo') {
     const mine = jobs.filter(j => j.agent === agent.id
       || (j.parts || []).some(p => p.agent === agent.id));
+    const theirs = turns.filter(t => t.agent === agent.id || t.role === 'user');
     return html`
-      <div class="stage">
+      <div class="stage" style=${{ '--accent': agent.accent }}>
         <div class="agenthead" style=${{ '--accent': agent.accent }}>
           <${Mascot} agent=${agent} size=${64} wave=${false} />
           <div>
@@ -292,6 +294,15 @@ function Stage({ turns, state, agent, roster, jobs, liveAgents, address,
                   <span class="pill" data-tone=${job.status === 'done' ? 'ok' : 'warn'}>
                     ${job.status}</span></p>
               </article>`)}
+        </div>
+
+        <div class="composer">
+          <textarea ref=${areaRef} value=${draft} onInput=${grow} onKeyDown=${onKeyDown}
+                    rows="1" placeholder=${`Ask ${agent.name} something…`}
+                    aria-label=${`Message to ${agent.name}`} />
+          <button class="iconbtn" onClick=${send} disabled=${!draft.trim()}
+                  title="Send" aria-label=${`Send to ${agent.name}`}>
+            <${Icon} name="send" /></button>
         </div>
       </div>`;
   }
@@ -662,9 +673,9 @@ function App() {
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const send = useCallback(async (text) => {
+  const send = useCallback(async (text, agent) => {
     setTurns(t => [...t, { role: 'user', content: text }]);
-    await api.post('/api/say', { text });
+    await api.post('/api/say', agent ? { text, agent } : { text });
   }, []);
 
   const interrupt = useCallback(() => api.post('/api/control', { action: 'interrupt' }), []);
