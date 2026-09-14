@@ -1,3 +1,4 @@
+import re
 import subprocess
 import time
 import webbrowser
@@ -16,6 +17,69 @@ def run_applescript(script: str) -> str:
         return result.stdout.strip()
     except Exception as e:
         return f"Error: {str(e)}"
+
+# What a request for "music" with no song in it actually means.
+#
+# "Play music" used to be handed to the track search as the literal query
+# "music", which found nothing in the library, fell through to the web, and
+# opened a random YouTube video. Meanwhile Apple Music was open with 53 tracks
+# in it. Nobody asking for music wants a search for a song called Music.
+# Words that carry no information about *which* music.
+FILLER = {
+    "play", "put", "on", "start", "some", "please", "for", "me", "my", "the",
+    "a", "an", "of", "up", "just", "can", "you", "could", "would", "i", "want",
+    "would", "like", "to", "hear", "listen", "listening", "lets", "let", "us",
+    "something", "anything", "stuff", "now", "go", "ahead", "give",
+}
+
+# What is left when the filler is gone, for a request that names no music.
+GENERIC = {
+    "", "music", "song", "songs", "tune", "tunes", "track", "tracks",
+    "library", "playlist", "playlists", "shuffle", "album", "albums",
+}
+
+
+def wants_shuffle(query: str) -> bool:
+    """
+    True when he asked for music rather than for a particular piece of it.
+
+    Tokenised, not substring-replaced. The first version stripped the filler
+    word "on" from anywhere in the string, which turned "songs" into "s gs"
+    and quietly stopped "play songs" from being recognised at all.
+    """
+    words = re.findall(r"[a-z']+", (query or "").lower())
+    remaining = [w for w in words if w not in FILLER]
+    if not remaining:
+        return True
+    if len(remaining) > 2:
+        return False
+    return all(w in GENERIC for w in remaining)
+
+
+def shuffle_library() -> str:
+    """Shuffle everything in Apple Music and start playing."""
+    script = '''
+    tell application "Music"
+        if (count of tracks of library playlist 1) is 0 then
+            return "EMPTY"
+        end if
+        set shuffle enabled to true
+        play library playlist 1
+        delay 0.6
+        try
+            return (name of current track) & " by " & (artist of current track)
+        on error
+            return "PLAYING"
+        end try
+    end tell
+    '''
+    result = run_applescript(script)
+    if result == "EMPTY":
+        return ""
+    if result.startswith("Error:"):
+        return ""
+    return result
+
 
 def play_pause():
     return run_applescript('tell application "Music" to playpause')

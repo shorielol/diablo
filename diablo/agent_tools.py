@@ -602,15 +602,53 @@ def search_contact(name: str) -> str:
 
 # ─── Media ───────────────────────────────────────────────────────────────────
 
+def music_tool_wants_shuffle(text: str) -> bool:
+    """
+    Whether this sentence is a bare request for music.
+
+    Exposed here so voice_bridge can answer it as a reflex without importing
+    the music skill itself — the skills are loaded by path through the
+    registry, and reaching around that is how two copies of a module with
+    separate globals got created last time.
+    """
+    if not text:
+        return False
+    lowered = text.lower().strip()
+    # Must actually be about music. "play" alone is the transport reflex, and
+    # "put the kettle on" is not a request for anything.
+    if not any(word in lowered for word in
+               ("music", "song", "tune", "shuffle", "playlist", "album")):
+        return False
+    # A named artist or track means a specific request, not a shuffle.
+    skill = _skill("music_tool")
+    if not skill or not hasattr(skill, "wants_shuffle"):
+        return False
+    return bool(skill.wants_shuffle(lowered))
+
+
 def play_music(query: str = "") -> str:
+    """
+    Play something. A named track is searched for; anything else shuffles.
+
+    "Play music" used to arrive here as the literal query "music", get searched
+    for as a song title, find nothing, fall through to the web and open a
+    random YouTube video — with Apple Music open and a library sitting there.
+    A request for music with no music named in it is a request to shuffle.
+    """
     skill = _skill("music_tool")
     if not skill:
         return "Error: music control is unavailable."
     try:
-        if query:
-            return str(skill.search_and_play(query))
-        skill.play_pause()
-        return "Playback toggled."
+        if skill.wants_shuffle(query):
+            now = skill.shuffle_library()
+            if now:
+                return f"Shuffling your library. Playing {now}."
+            # An empty or unreachable library is not a reason to do nothing.
+            if query:
+                return str(skill.search_and_play(query))
+            return ("There is nothing in your Apple Music library to shuffle, "
+                    "Sir. Name something and I will find it.")
+        return str(skill.search_and_play(query))
     except Exception as e:
         return f"Error controlling music: {e}"
 
@@ -948,8 +986,13 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
     _tool("send_imessage", send_imessage, "Send an iMessage. Confirms before sending.",
           {"contact": _S, "message": _S}, ["contact", "message"],
           "message text imessage send tell"),
-    _tool("play_music", play_music, "Play a song or artist, or toggle playback.",
-          {"query": _S}, [], "music song play listen track artist album"),
+    _tool("play_music", play_music,
+          "Play music in Apple Music. Give a song or artist to play that; leave "
+          "query empty, or pass what he said, to shuffle his library — "
+          "'play music', 'put something on' and 'shuffle' all mean shuffle.",
+          {"query": _S}, [],
+          "music song play listen track artist album shuffle songs tunes "
+          "playlist put something on"),
     _tool("music_transport", music_transport,
           "Control playback: 'next', 'previous' or 'toggle'.", {"action": _S},
           ["action"], "next skip previous pause resume stop track music"),

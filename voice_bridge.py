@@ -592,6 +592,21 @@ def process_command(text, is_sub_command=False):
         speak(delegation_tool.status_report())
         return
 
+    # ── "Put some music on" ──
+    #
+    # A reflex rather than a tool call, because it is one of the most common
+    # things anyone asks an assistant and it needs no thought at all. Through
+    # the agent it cost a model round trip and, for a long time, produced a
+    # random YouTube video: "play music" was searched for as a song title.
+    if agent_tools.music_tool_wants_shuffle(stripped):
+        try:
+            now = agent_tools.play_music(query=stripped)
+            speak(now if now.startswith("Shuffling") else "Putting something on, Sir.")
+        except Exception as e:
+            print(f"  [Reflex error] {e}")
+            speak("I could not start the music, Sir.")
+        return
+
     # ── Playback transport ──
     if stripped in TRANSPORT_COMMANDS:
         agent_tools.music_transport(TRANSPORT_COMMANDS[stripped])
