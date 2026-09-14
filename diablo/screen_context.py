@@ -45,6 +45,24 @@ from typing import Any, Dict, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from skills import config  # noqa: E402
+
+# Resolve the Quartz symbols now, on one thread, rather than lazily on
+# whichever thread happens to ask first.
+#
+# PyObjC loads framework functions on first access and its loader is not
+# thread-safe: two threads reaching for CGWindowListCopyWindowInfo at the same
+# moment raced and one of them got KeyError from inside the lazy importer.
+# Diablo reads windows from the voice loop, the tutor and the overlay watcher,
+# so that race is reachable.
+try:
+    import Quartz as _Quartz
+    for _symbol in ("CGWindowListCopyWindowInfo", "CGWindowListCreateImage",
+                    "kCGWindowListOptionOnScreenOnly", "kCGNullWindowID",
+                    "kCGWindowListOptionIncludingWindow",
+                    "kCGWindowImageBoundsIgnoreFraming"):
+        getattr(_Quartz, _symbol, None)
+except Exception:
+    pass
 from skills import local_brain  # noqa: E402
 
 VISION_MODEL = os.getenv("DIABLO_VISION_MODEL", "qwen2.5vl:7b")

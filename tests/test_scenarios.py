@@ -219,6 +219,18 @@ def main() -> int:
             tutor.wants_teaching("teach me how to add skills onto claude"))
 
     r.head("Asking about the screen, continued")
+    # "Can you solve this question on my screen" used to reach the agent,
+    # which read the screen and described it back: "the front window shows a
+    # document with two math problems". The person asking can already see
+    # their own screen.
+    for sentence in ("can you solve this question on my screen right now",
+                     "solve this question for me",
+                     "answer this question",
+                     "work this out for me",
+                     "figure this out"):
+        r.check(f"'{sentence[:40]}' asks to be taught, not told",
+                tutor.wants_teaching(sentence))
+
     r.check("'just tell me the answer' does NOT teach",
             not tutor.wants_teaching("just tell me the answer"))
     r.check("'what is the answer' does NOT teach",
@@ -246,6 +258,33 @@ def main() -> int:
         r.check("it says it found nothing",
                 "no article" in answer.lower() or "couldn't find" in answer.lower(),
                 answer[:70])
+
+    # ── Real research ────────────────────────────────────────────────────
+    #
+    # web_search returns the two-line snippets a results page shows, which is
+    # enough to know a page exists and not enough to answer anything. Asked to
+    # research something, Diablo has to open the pages.
+    r.head("Researching something properly")
+    r.check("'research X' reaches the research tool",
+            picks("research apprenticeships in delhi for finance", "research"))
+    r.check("'find out about X' does too",
+            picks("find out about the new visa rules", "research"))
+    r.check("a bare lookup still uses the quicker search",
+            picks("who won the race last night", "web_search", top=2))
+
+    if os.getenv("DIABLO_TEST_NETWORK", "1") not in ("0", "", "false"):
+        with guard(r, "it opens the pages rather than listing them"):
+            answer = agent_tools.research(
+                topic="what is the capital of Bhutan", depth=2)
+            r.check("an answer comes back", len(answer) > 80, answer[:70])
+            r.check("  naming where it came from",
+                    "(From " in answer or "according to" in answer.lower(),
+                    answer[-60:])
+            r.check("  and not as a numbered list of links",
+                    not answer.lstrip().startswith("Search results"),
+                    answer[:50])
+    else:
+        r.skip("researching something", "needs the network")
 
     # ── The browser ──────────────────────────────────────────────────────
     r.head("Opening things")

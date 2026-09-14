@@ -72,6 +72,17 @@ TEACH_PHRASES = (
     "explain it", "talk me through", "guide me", "step by step", "step-by-step",
     "where do i", "what do i do", "how would i", "how can i", "i don't know how",
     "i dont know how", "im stuck", "i'm stuck", "help me understand",
+    # Asking for a problem on screen to be worked.
+    #
+    # "Can you solve this question on my screen" used to reach the agent,
+    # which read the screen and described it: "the front window shows a
+    # document with two math problems". That is a readback, not an answer, and
+    # the person asking can already see their own screen. Solving something is
+    # a teaching request whether or not the word "teach" is in it.
+    "solve this", "solve that", "solve the", "solve it", "answer this",
+    "answer that", "answer the", "work this out", "work out this",
+    "work through", "do this question", "do question", "figure this out",
+    "what's the answer to this", "whats the answer to this",
 )
 
 # A bare request for a value. "What is the answer" really does want the answer.

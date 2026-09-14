@@ -241,6 +241,8 @@ def audio_callback(block):
     mic.py has already resampled from whatever rate the device actually runs at,
     so everything downstream still sees the chunk size it was written against.
     """
+    if not MIC_LIVE.is_set():
+        MIC_LIVE.set()
     audio_queue.put((block * 32767).astype(np.int16))
     shaped = block.reshape(-1, 1)
     _preroll.append(shaped.copy())
@@ -469,6 +471,16 @@ def capture_speech(duration=5, prompt=None, precision=True):
 #   Nothing is waited for. The wake path must hear silence for 900ms before it
 #   believes you have finished. Letting go of a key is instant and unambiguous.
 
+# Set once the microphone stream is actually delivering blocks.
+#
+# The hotkey is installed the moment the window appears; the microphone comes
+# up on a background thread twenty seconds later, behind the speech model and
+# the MCP servers. Press to talk in that window and the capture queue stays
+# empty however long you hold it — seven and a half seconds of speech produced
+# nothing, and the message said "too short", which was both wrong and the
+# reason it went uninvestigated.
+MIC_LIVE = threading.Event()
+
 _ptt_release = threading.Event()
 _ptt_active = threading.Event()
 _ptt_lock = threading.Lock()
@@ -480,6 +492,7 @@ PTT_MAX_SECONDS = config.env_float("DIABLO_PTT_MAX", 30.0)
 
 
 def _ptt_worker(on_text):
+    """See push_to_talk_start. Runs on its own thread, start to finish."""
     """
     Owns the microphone for one press, start to finish, on one thread.
 
@@ -489,6 +502,12 @@ def _ptt_worker(on_text):
     RuntimeError at the end of every single utterance. The hold lives here
     instead, and the keyboard handler only sets an Event.
     """
+    if not MIC_LIVE.is_set():
+        # Still booting. Say so rather than recording silence.
+        print("  [PTT] the microphone is not up yet")
+        _ptt_active.clear()
+        speak("Still waking up, Sir. Give me a moment.")
+        return
     if not MIC_LOCK.acquire(blocking=False):
         # Something else owns the microphone: a clarifying question, a
         # confirmation. Refusing is right — two listeners on one microphone is
@@ -535,7 +554,14 @@ def _ptt_worker(on_text):
         _ptt_active.clear()
         _ptt_release.clear()
 
-    if held < PTT_MIN_SECONDS or not blocks:
+    if not blocks:
+        # Held for a while and captured nothing. That is a broken microphone or
+        # one that was not running, never a short press, and calling it "too
+        # short" is how this hid for a day.
+        print(f"  [PTT] held {held:.2f}s and captured no audio at all")
+        speak("I got nothing from the microphone, Sir. Run diablo doctor.")
+        return
+    if held < PTT_MIN_SECONDS:
         print(f"  [PTT] too short ({held:.2f}s), ignored")
         return
 
