@@ -51,6 +51,8 @@ def main() -> int:
                         help="stay up and take moves on stdin")
     parser.add_argument("--on-light", action="store_true",
                         help="the screen behind this point is light")
+    parser.add_argument("--watch-clicks", action="store_true",
+                        help="report every click on stdout as JSON")
     args = parser.parse_args()
 
     try:
@@ -238,6 +240,49 @@ def _run_session(args, app, window, view, primary_height,
             window.orderFrontRegardless()
             view.setNeedsDisplay_(True)
         NSOperationQueue.mainQueue().addOperationWithBlock_(apply)
+
+    # Watching for clicks.
+    #
+    # This lives here rather than in the tutor because a global NSEvent
+    # monitor needs an NSApplication run loop on the main thread, and this
+    # process already has one — the assistant's main thread belongs to the
+    # audio queue and cannot host a second one. The overlay was already a
+    # separate process for exactly that reason, so it may as well do both jobs.
+    #
+    # Clicks are reported, never swallowed: the monitor is passive and the
+    # window is click-through, so a step that says "click Export" is followed
+    # by the user actually clicking Export and the application actually
+    # receiving it.
+    if args.watch_clicks:
+        from AppKit import (NSEvent, NSEventMaskLeftMouseDown,
+                            NSEventMaskRightMouseDown)
+
+        def clicked(event):
+            try:
+                # The event's own location, not the cursor's current one.
+                #
+                # NSEvent.mouseLocation() reads where the pointer is *now*,
+                # which is not where the click happened if anything moved in
+                # between — and with synthetic clicks the cursor often has not
+                # caught up at all, so a click at one point was reported at the
+                # previous one. For a global monitor with no window,
+                # locationInWindow is already in screen coordinates.
+                where = event.locationInWindow()
+                print(json.dumps({"click": {"x": float(where.x),
+                                            "y": float(primary_height - where.y)}}),
+                      flush=True)
+            except Exception:
+                pass
+            return event
+
+        try:
+            NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+                NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown, clicked)
+            NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+                NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown, clicked)
+            print(json.dumps({"watching": True}), flush=True)
+        except Exception as e:
+            print(json.dumps({"watching": False, "error": str(e)}), flush=True)
 
     def reader():
         for line in sys.stdin:

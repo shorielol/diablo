@@ -28,6 +28,7 @@ because you will look where it points.
 
 import json
 import os
+import queue
 import re
 import subprocess
 import sys
@@ -476,11 +477,90 @@ def background_is_light(capture: str, window: dict,
         return False
 
 
+# Steps that ask for an action, as opposed to steps that ask you to notice
+# something. Only the first kind is worth waiting on — pausing after "the
+# tempo is shown at the top" just leaves the user wondering what it wants.
+ACTION_VERBS = (
+    "click", "press", "tap", "select", "choose", "open", "pick", "hit",
+    "drag", "type", "enter", "tick", "untick", "check", "switch", "toggle",
+    "double-click", "right-click", "go to",
+)
+
+# How close a click has to be to count as the click that was asked for.
+CLICK_RADIUS = config.env_float("DIABLO_TUTOR_CLICK_RADIUS", 80.0)
+# How long to wait before carrying on without one.
+CLICK_TIMEOUT = config.env_float("DIABLO_TUTOR_CLICK_TIMEOUT", 30.0)
+
+
+def asks_for_an_action(say: str) -> bool:
+    lowered = " " + (say or "").lower() + " "
+    return any(f" {verb}" in lowered for verb in ACTION_VERBS)
+
+
 class Marker:
     """One overlay process, moved from step to step."""
 
-    def __init__(self):
+    def __init__(self, watch_clicks: bool = False):
         self.process: Optional[subprocess.Popen] = None
+        self.watch_clicks = watch_clicks
+        self.clicks: "queue.Queue" = queue.Queue()
+        self._reader: Optional[threading.Thread] = None
+        # Set when the overlay confirms its click monitor is installed. Waiting
+        # on this rather than on a sleep is the difference between a test that
+        # passes and a test that passes most of the time: the monitor takes a
+        # few hundred milliseconds to come up, and a click posted before it
+        # does is simply not seen.
+        self.watching = threading.Event()
+
+    def _start_reader(self) -> None:
+        def read():
+            try:
+                for line in self.process.stdout:
+                    try:
+                        message = json.loads(line.strip())
+                    except Exception:
+                        continue
+                    if message.get("watching"):
+                        self.watching.set()
+                    if "click" in message:
+                        self.clicks.put(message["click"])
+            except Exception:
+                pass
+        self._reader = threading.Thread(target=read, daemon=True)
+        self._reader.start()
+
+    def ready(self, timeout: float = 5.0) -> bool:
+        """Wait until the overlay is actually watching for clicks."""
+        if not self.watch_clicks:
+            return False
+        return self.watching.wait(timeout=timeout)
+
+    def wait_for_click(self, x: float, y: float,
+                       radius: float = CLICK_RADIUS,
+                       timeout: float = CLICK_TIMEOUT,
+                       should_stop=None) -> bool:
+        """
+        Wait until he clicks near the marker. True if he did.
+
+        Clicks anywhere else are ignored rather than counted, because during a
+        walkthrough people click other things — a scrollbar, the window they
+        are being taught about, this very sentence. Only a click on the thing
+        being pointed at means "done, next".
+        """
+        if not self.watch_clicks:
+            return False
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if should_stop and should_stop():
+                return False
+            try:
+                click = self.clicks.get(timeout=0.25)
+            except Exception:
+                continue
+            distance = ((click["x"] - x) ** 2 + (click["y"] - y) ** 2) ** 0.5
+            if distance <= radius:
+                return True
+        return False
 
     def move(self, x: float, y: float, label: str, step: str,
              on_light: bool = False) -> bool:
@@ -491,10 +571,15 @@ class Marker:
                            "--label", label[:60], "--step", step]
                 if on_light:
                     command.append("--on-light")
+                if self.watch_clicks:
+                    command.append("--watch-clicks")
                 self.process = subprocess.Popen(
                     command, stdin=subprocess.PIPE, text=True,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    start_new_session=True)
+                    stdout=(subprocess.PIPE if self.watch_clicks
+                            else subprocess.DEVNULL),
+                    stderr=subprocess.DEVNULL, start_new_session=True)
+                if self.watch_clicks:
+                    self._start_reader()
                 return True
             self.process.stdin.write(json.dumps(
                 {"x": x, "y": y, "label": label[:60], "step": step,
@@ -645,8 +730,12 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
         except TypeError:
             speak(line)
 
-    marker = Marker()
-    spoken = 0
+    # Waiting is for walkthroughs of an interface, not for working through a
+    # problem — there is nothing to click on an equation, and a pause after
+    # "subtract five from both sides" would just look broken.
+    interactive = (plan_result["kind"] == "ui")
+    marker = Marker(watch_clicks=interactive)
+    spoken, waited, done_by_hand = 0, 0, 0
     try:
         for index, step in enumerate(steps, 1):
             if should_stop and should_stop():
@@ -664,6 +753,26 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                 time.sleep(0.25)
             narrate(step["say"])
             spoken += 1
+
+            # Wait for him to actually do it, rather than talking over him.
+            #
+            # This is the difference between a walkthrough and a recitation.
+            # The marker stays on the thing, pulsing, until he clicks it — and
+            # the overlay is click-through and its monitor is passive, so the
+            # click reaches the application underneath exactly as it would
+            # have anyway.
+            if interactive and step.get("found") and asks_for_an_action(step["say"]):
+                waited += 1
+                marker.ready(timeout=3.0)
+                if marker.wait_for_click(step["x"], step["y"],
+                                         should_stop=should_stop):
+                    done_by_hand += 1
+                    continue          # he did it; no pause needed
+                # Thirty seconds and no click. Carrying on is better than
+                # waiting forever, and saying so is better than carrying on
+                # silently.
+                if index < len(steps):
+                    speak("I'll carry on, Sir.")
             time.sleep(STEP_PAUSE)
     finally:
         marker.close()
@@ -676,6 +785,8 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
     missed = [s["missing"] for s in steps if s.get("missing")]
     summary = f"Took him through {spoken} steps in {window['app']}"
     summary += f", pointing at {pointed} of them." if pointed else "."
+    if waited:
+        summary += f" He did {done_by_hand} of {waited} himself."
     if missed:
         # Worth saying out loud. A step that could not be anchored is a step
         # the model may have imagined, and he should know which.
