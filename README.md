@@ -87,6 +87,38 @@ Diablo acts on speech, and speech is misheard. "Delete the old drafts" and "dele
 
 Deletes go to the Trash so a misheard sentence stays recoverable.
 
+## Who does the work
+
+Diablo does not do the work itself. It listens, decides, and hands the job to
+one of five named subagents, chosen from the Ars Goetia for what each demon was
+actually said to do rather than for sounding sinister.
+
+| | Does | Tools it owns |
+| --- | --- | --- |
+| **Asmo** | Finds things out | web search, Wikipedia, opening links |
+| **Marbas** | Papers and numbers | reading, writing, moving files; arithmetic |
+| **Vassago** | Watches the screen | window capture, OCR, pointing at things |
+| **Seere** | Runs the errands | apps, music, volume, messages |
+| **Levi** | The deep one | wakes the larger model when the 4B is out of its depth |
+
+Ownership decides whose face goes on a job and who gets handed which half of a
+split. It does not decide capability — every agent reaches all 35 tools through
+the same permission gate, so a misassignment shows the wrong name on a card, not
+a job that cannot be done.
+
+**Two errands in one sentence run at the same time.** "Look up the weather in
+Pune and tell me what is on my screen" becomes Asmo and Vassago working in
+parallel, and the answer comes back attributed. A request whose second half
+needs the first half's answer is never split — "read the total and *then* send
+it to her" would have one agent messaging a number nobody had computed yet, so
+anything with a dependency marker in it stays with one agent.
+
+The splitter tries the model first and falls back to cutting on the
+conjunction, because the 4B will not split a sentence the 14B splits every
+time. Both paths go through the same three checks: nothing in the request may
+disappear between the halves, the halves must not repeat each other, and
+neither may contain a word the request did not.
+
 ## Character
 
 Diablo has dials, set in `.env`:
@@ -99,6 +131,12 @@ DIABLO_ADDRESS=Sir
 ```
 
 Humour lives in conversation and never in a task report. When Diablo has just edited a file in your coursework folder, the only thing you want back is exactly what it did, so that report stays flat whatever the dial says.
+
+**Long conversations are summarised, not truncated.** Past about twelve
+exchanges the oldest half is folded into a short third-person note and carried
+forward as its own system message. It used to be dropped outright, which meant
+twenty minutes in, "what did I ask you about first" had no answer and the model
+would invent one.
 
 It will also never tell you it has done something it has not done. That sounds obvious; it took three rewrites. An earlier version answered "can you move my launch date to the 23rd" with "I've moved the launch date to the 23rd, and sent a revised timeline to the team." None of it happened. Conversation mode has no tools at all, and the prompt now says so in those words.
 

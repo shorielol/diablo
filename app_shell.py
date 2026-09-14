@@ -392,7 +392,10 @@ class Panel:
         self.webview = None
 
     def _build(self):
-        frame = NSMakeRect(0, 0, 880, 620)
+        # Wider than it was. The window is two columns now — a rail of
+        # conversations and a stage — and at 880 the stage was narrower than
+        # the character standing in it.
+        frame = NSMakeRect(0, 0, 1040, 680)
         style = (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                  | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
                  | NSWindowStyleMaskFullSizeContentView)

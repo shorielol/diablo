@@ -75,27 +75,86 @@ is a lie, because you have no way to open anything from here.
 """
 
 
+# Older turns are summarised rather than dropped.
+#
+# This used to be `self.turns = self.turns[-MAX_TURNS * 2:]` — the oldest half
+# of a long conversation simply vanished, so twenty minutes in, "what did I ask
+# you about that first" had no answer and the model would cheerfully invent
+# one. A one-paragraph note costs about 90 tokens and keeps the thread.
+SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {"summary": {"type": "string"}},
+    "required": ["summary"],
+}
+
+SUMMARY_PROMPT = (
+    "Compress this earlier part of a spoken conversation into at most three "
+    "short sentences, written in the third person: what he asked about, what "
+    "was decided, and anything named that later turns might refer back to — "
+    "files, people, numbers.\n"
+    "Use only what is in the transcript. Do not add, guess or conclude "
+    "anything that is not written there. If there is nothing worth keeping, "
+    "return an empty string.\n"
+    "Reply with JSON only."
+)
+
+
 class Session:
     """One rolling conversation. Not thread-safe by design — there is one voice."""
 
     def __init__(self) -> None:
         self.turns: List[Dict[str, str]] = []
+        self.earlier: str = ""        # the summarised part, if any
         self.last_spoke_at: float = 0.0
         self.last_screen_app: Optional[str] = None
+
+    def _summarise_oldest(self) -> None:
+        """
+        Fold the oldest half of the conversation into `earlier`.
+
+        Runs on the turn that overflows, which is a real cost — measured at
+        about 700ms on the 4B — but it happens once every twelve exchanges and
+        the alternative is losing the first half of a conversation silently.
+        On any failure the old behaviour applies and the turns are dropped,
+        because a conversation that keeps growing is worse than one that
+        forgets.
+        """
+        keep = MAX_TURNS
+        old, self.turns = self.turns[:-keep], self.turns[-keep:]
+        if not old:
+            return
+        transcript = "\n".join(
+            f"{'He' if t['role'] == 'user' else 'You'}: {t['content']}" for t in old)
+        if self.earlier:
+            transcript = f"(Even earlier: {self.earlier})\n{transcript}"
+        try:
+            from skills import local_brain
+            result = local_brain.chat_json(
+                [{"role": "system", "content": SUMMARY_PROMPT},
+                 {"role": "user", "content": transcript[:4000]}],
+                schema=SUMMARY_SCHEMA, num_predict=180)
+            summary = str(result.get("summary") or "").strip()
+        except Exception:
+            summary = ""
+        # A summary longer than what it replaced is not a summary.
+        if summary and len(summary) < len(transcript):
+            self.earlier = summary
 
     def _expire_if_stale(self) -> None:
         if self.last_spoke_at and time.time() - self.last_spoke_at > SESSION_TIMEOUT:
             self.turns = []
+            self.earlier = ""
             self.last_screen_app = None
 
     def remember(self, role: str, content: str) -> None:
         self.turns.append({"role": role, "content": content})
         if len(self.turns) > MAX_TURNS * 2:
-            self.turns = self.turns[-MAX_TURNS * 2:]
+            self._summarise_oldest()
         self.last_spoke_at = time.time()
 
     def reset(self) -> None:
         self.turns = []
+        self.earlier = ""
         self.last_screen_app = None
 
     def is_followup(self) -> bool:
@@ -152,6 +211,15 @@ class Session:
                 "earlier — what he said, what you decided, a file he mentioned "
                 "— you genuinely do not have it. Say so and ask him to remind "
                 "you. Do not reconstruct it."})
+        # The part of the conversation that has already been folded down. It
+        # goes in as its own system message rather than as a fake turn, so the
+        # model cannot quote it back as something one of them actually said.
+        if self.earlier:
+            messages.append({"role": "system", "content":
+                "Earlier in this same conversation, summarised. Treat it as "
+                "your own recollection, not as something he said just now, and "
+                "do not repeat it back to him unless he asks.\n\n"
+                + self.earlier})
         messages.extend(self.turns)
         messages.append({"role": "user", "content": text})
 

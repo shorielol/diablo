@@ -63,7 +63,7 @@ const Mascot = memo(({ agent, size = 96, wave = true }) => {
       dangerouslySetInnerHTML=${{ __html: svg }} />`;
 });
 
-/* ─── Title bar ──────────────────────────────────────────────────────────── */
+/* ─── Chrome ─────────────────────────────────────────────────────────────── */
 
 const STATE_WORDS = {
   cold: 'Asleep', init: 'Waking', idle: 'Listening for you',
@@ -71,29 +71,127 @@ const STATE_WORDS = {
   error: 'Something broke', shutdown: 'Shutting down',
 };
 
-const TABS = [
-  ['talk', 'Talk'], ['agents', 'Agents'], ['trace', 'Trace'], ['health', 'Health'],
-  ['settings', 'Settings'],
-];
+/* The sections that are not a conversation. They used to be tabs across the
+   top, which put five equal-weight destinations in front of someone who came
+   here to say one sentence. They are now three small links at the foot of the
+   rail, where a settings link belongs. */
+const SECTIONS = [['trace', 'Trace'], ['health', 'Health'], ['settings', 'Settings']];
 
-const TitleBar = memo(({ state, tab, setTab, busy }) => html`
-  <header class="titlebar">
-    <span class="wordmark">DIABLO</span>
-    <nav class="tabs" role="tablist" aria-label="Sections">
-      ${TABS.map(([id, label]) => html`
-        <button key=${id} class="tab" role="tab" aria-selected=${tab === id}
-                onClick=${() => setTab(id)}>
-          ${label}
-          ${id === 'agents' && busy > 0
-            ? html`<span class="badge" aria-label=${`${busy} running`}>${busy}</span>` : null}
-        </button>`)}
-    </nav>
-    <span class="spacer" />
-    <div class="state" data-state=${state} role="status" aria-live="polite">
-      <span class="dot" />
-      ${STATE_WORDS[state] || state}
-    </div>
-  </header>`);
+function greeting(hour) {
+  if (hour < 5) return 'Still up';
+  if (hour < 12) return 'Morning';
+  if (hour < 17) return 'Afternoon';
+  if (hour < 22) return 'Evening';
+  return 'Late one';
+}
+
+/* "3m", "2h", "Yesterday". Absolute timestamps in a list of conversations are
+   noise: what you want to know is whether this was just now or a while ago. */
+function ago(seconds) {
+  if (!seconds) return '';
+  const delta = Date.now() / 1000 - seconds;
+  if (delta < 60) return 'now';
+  if (delta < 3600) return `${Math.floor(delta / 60)}m`;
+  if (delta < 86400) return `${Math.floor(delta / 3600)}h`;
+  if (delta < 172800) return 'Yesterday';
+  return `${Math.floor(delta / 86400)}d`;
+}
+
+/* ─── The rail ───────────────────────────────────────────────────────────────
+   Every agent is a conversation: who it is, when it last said something, and
+   what that was. This is the shape a messages app has, and it is the right one
+   — the question you arrive with is "what has it been doing", and a list of
+   names against their last line answers it without a click. */
+
+const RailRow = memo(({ agent, line, when, busy, active, onPick }) => html`
+  <button class="convo" data-active=${active} data-busy=${busy}
+          style=${{ '--accent': agent.accent }} onClick=${onPick}>
+    <span class="unread" aria-hidden="true" />
+    <span class="face"><${Mascot} agent=${agent} size=${38} wave=${false} /></span>
+    <span class="meta">
+      <span class="top">
+        <span class="nm">${agent.name}</span>
+        <span class="when">${busy ? 'now' : when}</span>
+      </span>
+      <span class="line">${line}</span>
+    </span>
+  </button>`);
+
+function Rail({ roster, jobs, liveAgents, picked, onPick, view, setView, state }) {
+  const [query, setQuery] = useState('');
+
+  /* One row per agent, carrying the last thing that agent actually did. Built
+     from the job store rather than kept as separate state, so the rail cannot
+     disagree with the work queue. */
+  const rows = useMemo(() => {
+    const latest = {};
+    for (const job of jobs) {
+      const entries = (job.parts && job.parts.length)
+        ? job.parts.map(p => [p.agent, p.summary || p.task, p.finished_at || job.created_at])
+        : [[job.agent || 'diablo', job.summary || job.task, job.finished_at || job.created_at]];
+      for (const [id, text, when] of entries) {
+        if (!latest[id] || (when || 0) > (latest[id].when || 0)) {
+          latest[id] = { text, when };
+        }
+      }
+    }
+    return roster.map(agent => ({
+      agent,
+      line: liveAgents[agent.id] || latest[agent.id]?.text || agent.blurb,
+      when: ago(latest[agent.id]?.when),
+      busy: !!liveAgents[agent.id],
+      seen: !!latest[agent.id],
+    }));
+  }, [roster, jobs, liveAgents]);
+
+  const shown = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter(r =>
+      r.agent.name.toLowerCase().includes(needle) ||
+      String(r.line).toLowerCase().includes(needle));
+  }, [rows, query]);
+
+  return html`
+    <aside class="rail">
+      <div class="railhead">
+        <span class="wordmark">DIABLO</span>
+        <span class="dot" data-state=${state} title=${STATE_WORDS[state] || state} />
+      </div>
+
+      <div class="searchrow">
+        <label class="search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+          </svg>
+          <input value=${query} onInput=${e => setQuery(e.target.value)}
+                 placeholder="Search" aria-label="Search agents" spellcheck="false" />
+        </label>
+        <button class="plus" onClick=${() => { setQuery(''); onPick(null); }}
+                title="Start fresh" aria-label="Start a new conversation">
+          <svg width="15" height="15" viewBox="0 0 24 24" stroke="currentColor"
+               stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+      </div>
+
+      <div class="convos" role="list">
+        ${shown.length === 0
+          ? html`<p class="railempty">Nobody by that name.</p>`
+          : shown.map(r => html`
+            <${RailRow} key=${r.agent.id} agent=${r.agent} line=${r.line}
+               when=${r.when} busy=${r.busy}
+               active=${picked === r.agent.id && view === 'home'}
+               onPick=${() => { setView('home'); onPick(r.agent.id); }} />`)}
+      </div>
+
+      <nav class="railfoot" aria-label="Sections">
+        ${SECTIONS.map(([id, label]) => html`
+          <button key=${id} class="chip" data-active=${view === id}
+                  onClick=${() => setView(view === id ? 'home' : id)}>${label}</button>`)}
+      </nav>
+    </aside>`;
+}
 
 /* ─── Talk ───────────────────────────────────────────────────────────────── */
 
@@ -105,10 +203,40 @@ const Turn = memo(({ role, content }) => html`
     </div>
   </div>`);
 
-function Talk({ turns, state, onSend, onInterrupt, onReset }) {
+/* ─── The stage ──────────────────────────────────────────────────────────────
+   The character, large, with the last thing he said above him. Before he has
+   said anything there is a greeting and one line telling you how to start,
+   and that is the entire screen — because on the first run the only thing
+   worth knowing is that you can just talk to it. */
+
+/* The greeting arrives a word at a time, each one unblurring as it lands.
+   The idea is reactbits' Blur Text; the implementation is eight lines of CSS
+   rather than a dependency, because this app has no build step and a text
+   effect is not worth acquiring one.
+
+   Justified because of how often it is seen: the greeting shows once, when
+   the window opens on an empty conversation. Anything you look at a hundred
+   times a day should not animate at all — but a first impression can afford
+   240 milliseconds. */
+const BlurIn = memo(({ text }) => html`
+  <span class="blurin" aria-label=${text}>
+    ${text.split(' ').map((word, i) => html`
+      <span key=${i} style=${{ animationDelay: `${i * 70}ms` }} aria-hidden="true">
+        ${word}${i < text.split(' ').length - 1 ? '\u00A0' : ''}</span>`)}
+  </span>`);
+
+const Bubble = memo(({ text, speaking }) => html`
+  <div class="bubble-hero" data-speaking=${speaking}>
+    <span class="bubmic"><${Icon} name="mic" size=${15} /></span>
+    <span class="bubtext">${text}</span>
+  </div>`);
+
+function Stage({ turns, state, agent, roster, jobs, liveAgents, address,
+                 onSend, onInterrupt, onReset }) {
   const [draft, setDraft] = useState('');
   const areaRef = useRef(null);
   const endRef = useRef(null);
+  const speaking = state === 'responding';
 
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [turns.length]);
 
@@ -117,47 +245,80 @@ function Talk({ turns, state, onSend, onInterrupt, onReset }) {
     if (!text) return;
     onSend(text);
     setDraft('');
-    // Reset the auto-grow, or the box stays tall after a long message.
     if (areaRef.current) areaRef.current.style.height = 'auto';
   }, [draft, onSend]);
 
   const onKeyDown = useCallback((event) => {
-    // Enter sends, Shift+Enter is a newline. The opposite of a chat app is
-    // always wrong and people have muscle memory for this one.
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      send();
-    }
+    // Enter sends, Shift+Enter is a newline. The opposite is always wrong and
+    // people have muscle memory for this one.
+    if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); }
   }, [send]);
 
   const grow = useCallback((event) => {
     setDraft(event.target.value);
     const el = event.target;
     el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+    el.style.height = Math.min(el.scrollHeight, 132) + 'px';
   }, []);
 
-  const speaking = state === 'responding';
+  /* An agent picked in the rail shows that agent's own work instead of the
+     conversation: its jobs, what it is doing now, what it last came back with. */
+  if (agent && agent.id !== 'diablo') {
+    const mine = jobs.filter(j => j.agent === agent.id
+      || (j.parts || []).some(p => p.agent === agent.id));
+    return html`
+      <div class="stage">
+        <div class="agenthead" style=${{ '--accent': agent.accent }}>
+          <${Mascot} agent=${agent} size=${64} wave=${false} />
+          <div>
+            <h1>${agent.name}</h1>
+            <p class="role">${agent.role}</p>
+            <p class="blurb">${liveAgents[agent.id] || agent.blurb}</p>
+          </div>
+        </div>
+        <div class="pane">
+          ${mine.length === 0
+            ? html`<p class="quiet">${agent.name} has not been asked for anything yet.
+                     Say something that needs ${agent.role.toLowerCase()} and it will
+                     land here.</p>`
+            : mine.slice(0, 20).map(job => html`
+              <article class="jobcard" key=${job.id}>
+                <p class="task">${job.task}</p>
+                ${(job.parts || []).filter(p => p.agent === agent.id).map((p, i) => html`
+                  <p class="answer" key=${i}>${p.summary || '…'}</p>`)}
+                ${(job.parts || []).length === 0 && job.summary
+                  ? html`<p class="answer">${job.summary}</p>` : null}
+                <p class="stamp">${ago(job.finished_at || job.created_at)}
+                  <span class="pill" data-tone=${job.status === 'done' ? 'ok' : 'warn'}>
+                    ${job.status}</span></p>
+              </article>`)}
+        </div>
+      </div>`;
+  }
+
+  const last = [...turns].reverse().find(t => t.role === 'assistant');
 
   return html`
-    <${React.Fragment}>
-      <div class="pane">
-        ${turns.length === 0
-          ? html`
-            <div class="empty">
-              <${Mascot} agent=${byId.diablo} size=${120} />
-              <div>
-                <h2>At your service.</h2>
-                <p>Say <strong>"Hey Diablo"</strong> out loud, or type below.
-                   Everything runs on this Mac.</p>
-              </div>
-            </div>`
-          : html`
+    <div class="stage">
+      <${Running} jobs=${jobs} roster=${roster.length ? indexRoster(roster) : byId} />
+      ${turns.length === 0
+        ? html`
+          <div class="hero">
+            <${Mascot} agent=${byId.diablo} size=${188} />
+            <${Bubble} speaking=${speaking}
+               text=${last?.content || "Hey Diablo. I'm listening."} />
+            <h1 class="greet"><${BlurIn} text=${`${greeting(new Date().getHours())}, ${address}.`} /></h1>
+            <p class="hint">Say <b>"Hey Diablo"</b> out loud, or type below.
+               Everything runs on this Mac.</p>
+          </div>`
+        : html`
+          <div class="pane">
             <div class="thread">
-              ${turns.map((t, i) => html`<${Turn} key=${i} role=${t.role} content=${t.content} />`)}
+              ${turns.map((t, i) => html`
+                <${Turn} key=${i} role=${t.role} content=${t.content} />`)}
               <div ref=${endRef} />
-            </div>`}
-      </div>
+            </div>
+          </div>`}
 
       <div class="composer">
         <textarea ref=${areaRef} value=${draft} onInput=${grow} onKeyDown=${onKeyDown}
@@ -170,93 +331,47 @@ function Talk({ turns, state, onSend, onInterrupt, onReset }) {
           : html`<button class="iconbtn" onClick=${send} disabled=${!draft.trim()}
                      title="Send" aria-label="Send message">
                    <${Icon} name="send" /></button>`}
-        <button class="iconbtn" onClick=${onReset} title="Forget this conversation"
-                aria-label="Forget this conversation"><${Icon} name="trash" /></button>
+        ${turns.length > 0
+          ? html`<button class="iconbtn" onClick=${onReset}
+                     title="Forget this conversation"
+                     aria-label="Forget this conversation">
+                   <${Icon} name="trash" /></button>`
+          : null}
       </div>
-    <//>`;
-}
-
-/* ─── Agents ─────────────────────────────────────────────────────────────── */
-
-const AgentCard = memo(({ agent, busy, status }) => html`
-  <article class="agent" data-busy=${busy} style=${{ '--accent': agent.accent }}>
-    <div class="av"><${Mascot} agent=${agent} size=${46} wave=${false} /></div>
-    <div>
-      <div class="nm">${agent.name}</div>
-      <div class="rl">${agent.role}</div>
-      <div class="st">${status || agent.blurb}</div>
-    </div>
-  </article>`);
-
-/* A fanned-out job, drawn as its pieces. This is the only place the split is
-   visible, and it is the answer to "what is it actually doing" — three names,
-   three sentences, three states, all moving at once. */
-const JobParts = memo(({ parts, roster }) => html`
-  <div class="parts">
-    ${parts.map((part, i) => {
-      const who = pickAgent(part.agent, roster);
-      return html`
-        <div class="part" key=${i} style=${{ '--accent': who.accent }}
-             data-status=${part.status || 'queued'}>
-          <span class="who">${who.name}</span>
-          <span class="what">${part.task}</span>
-          <span class="pill" data-tone=${
-            part.status === 'done' ? 'ok' : part.status === 'running' ? 'warn' : null}>
-            ${part.status || 'queued'}</span>
-        </div>`;
-    })}
-  </div>`);
-
-function Agents({ jobs, roster, liveAgents, activeTool }) {
-  const list = roster.length ? roster : AGENTS;
-  const rosterById = useMemo(() => indexRoster(list), [list]);
-  const running = jobs.filter(j => j.status === 'running' || j.status === 'queued');
-  const live = Object.keys(liveAgents);
-
-  /* The tool name is only attributable while one agent is working. During a
-     fan-out three of them are calling tools at once and the stream does not
-     say whose is whose, so the card shows the errand instead of guessing. */
-  const status = (id) => {
-    const task = liveAgents[id];
-    if (!task) return null;
-    if (live.length === 1 && activeTool) return `${activeTool} — ${task}`;
-    return task;
-  };
-
-  return html`
-    <div class="pane">
-      <div class="agents">
-        ${list.map(agent => html`
-          <${AgentCard} key=${agent.id} agent=${agent}
-             busy=${!!liveAgents[agent.id]}
-             status=${status(agent.id)} />`)}
-      </div>
-
-      <div class="card" style=${{ marginTop: 'var(--s5)' }}>
-        <h3>Work queue</h3>
-        ${jobs.length === 0
-          ? html`<div class="row"><span class="k">Nothing has been asked of it yet.</span></div>`
-          : jobs.slice(0, 12).map(job => html`
-            <div key=${job.id}>
-              <div class="row">
-                <span class="k">
-                  <b class="owner" style=${{ color: pickAgent(job.agent, rosterById).accent }}>
-                    ${pickAgent(job.agent, rosterById).name}</b>
-                  ${' '}${job.task}</span>
-                <span class="pill" data-tone=${
-                  job.status === 'done' ? 'ok'
-                  : job.status === 'interrupted' || job.status === 'error' ? 'bad' : 'warn'}>
-                  ${job.status}</span>
-              </div>
-              ${(job.parts && job.parts.length)
-                ? html`<${JobParts} parts=${job.parts} roster=${rosterById} />` : null}
-            </div>`)}
-      </div>
-      ${running.length > 0 ? html`
-        <p style=${{ marginTop: 'var(--s3)', fontSize: 12, color: 'var(--faint)' }}>
-          ${running.length} running in the background. You can keep talking.</p>` : null}
     </div>`;
 }
+
+/* ─── Work in flight ─────────────────────────────────────────────────────────
+   A strip above the conversation, only while something is actually running.
+   This is the only place a fan-out is visible as a fan-out — three names, three
+   errands, three states, all moving at once — and it disappears the moment the
+   last one lands, because a queue with nothing in it is not worth a row. */
+
+const Running = memo(({ jobs, roster }) => {
+  const live = jobs.filter(j => j.status === 'running' || j.status === 'queued');
+  if (!live.length) return null;
+  return html`
+    <div class="running" role="status" aria-live="polite">
+      ${live.slice(0, 3).map(job => {
+        const parts = (job.parts && job.parts.length)
+          ? job.parts
+          : [{ agent: job.agent || 'diablo', task: job.task, status: job.status }];
+        return html`
+          <div class="runjob" key=${job.id}>
+            ${parts.map((part, i) => {
+              const who = pickAgent(part.agent, roster);
+              return html`
+                <span class="runpart" key=${i} style=${{ '--accent': who.accent }}
+                      data-status=${part.status || 'queued'}>
+                  <span class="runface"><${Mascot} agent=${who} size=${20} wave=${false} /></span>
+                  <span class="runwho">${who.name}</span>
+                  <span class="runtask">${part.task}</span>
+                </span>`;
+            })}
+          </div>`;
+      })}
+    </div>`;
+});
 
 /* ─── Trace ──────────────────────────────────────────────────────────────── */
 
@@ -430,28 +545,42 @@ function Settings({ settings, onSave }) {
 
 /* ─── App ────────────────────────────────────────────────────────────────── */
 
-const VALID_TABS = ['talk', 'agents', 'trace', 'health', 'settings'];
+/* Two pieces of navigation, not five. `view` is home or one of the three
+   utility sections; `picked` is which agent's work the stage is showing, and
+   null means the conversation itself. Both live in the URL fragment so a
+   reload comes back where you were. */
+const VALID_VIEWS = ['home', 'trace', 'health', 'settings'];
 
 function App() {
-  // The tab lives in the URL fragment, so a particular view can be linked to
-  // and a reload comes back where you were rather than at the start.
-  const [tab, setTabState] = useState(() => {
-    const fromHash = window.location.hash.replace('#', '');
-    return VALID_TABS.includes(fromHash) ? fromHash : 'talk';
+  const [view, setViewState] = useState(() => {
+    const fromHash = (window.location.hash.replace('#', '').split('/')[0]) || 'home';
+    return VALID_VIEWS.includes(fromHash) ? fromHash : 'home';
   });
-  const setTab = useCallback((next) => {
-    setTabState(next);
-    window.location.hash = next;
+  const [picked, setPicked] = useState(() =>
+    window.location.hash.split('/')[1] || null);
+
+  const writeHash = useCallback((nextView, nextPicked) => {
+    window.location.hash = nextPicked ? `${nextView}/${nextPicked}` : nextView;
   }, []);
+  const setView = useCallback((next) => {
+    setViewState(next);
+    setPicked(p => { writeHash(next, next === 'home' ? p : null); return next === 'home' ? p : null; });
+  }, [writeHash]);
+  const onPick = useCallback((id) => {
+    setPicked(id);
+    writeHash('home', id);
+  }, [writeHash]);
 
   useEffect(() => {
     const onHash = () => {
-      const next = window.location.hash.replace('#', '');
-      if (VALID_TABS.includes(next)) setTabState(next);
+      const [v, who] = window.location.hash.replace('#', '').split('/');
+      if (VALID_VIEWS.includes(v || 'home')) setViewState(v || 'home');
+      setPicked(who || null);
     };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+
   const [state, setState] = useState({ state: 'cold', subsystems: {} });
   const [turns, setTurns] = useState([]);
   const [jobs, setJobs] = useState([]);
@@ -548,19 +677,30 @@ function App() {
   const busy = useMemo(
     () => jobs.filter(j => j.status === 'running' || j.status === 'queued').length, [jobs]);
 
+  const address = settings?.address?.value || 'Sir';
+  const rosterById = useMemo(() => indexRoster(roster), [roster]);
+  const agent = picked ? pickAgent(picked, rosterById) : null;
+
   return html`
-    <div class="app">
-      <${TitleBar} state=${state.state} tab=${tab} setTab=${setTab} busy=${busy} />
-      <div class="body">
-        ${tab === 'talk' ? html`<${Talk} turns=${turns} state=${state.state}
-             onSend=${send} onInterrupt=${interrupt} onReset=${reset} />` : null}
-        ${tab === 'agents' ? html`<${Agents} jobs=${jobs} roster=${roster}
-             liveAgents=${liveAgents} activeTool=${activeTool} />` : null}
-        ${tab === 'trace' ? html`<${Trace} turns=${trace} />` : null}
-        ${tab === 'health' ? html`<${Health} state=${state} onPermissions=${refresh} />` : null}
-        ${tab === 'settings' && settings
+    <div class="app" data-view=${view}>
+      <${Rail} roster=${roster.length ? roster : AGENTS} jobs=${jobs}
+         liveAgents=${liveAgents} picked=${picked} onPick=${onPick}
+         view=${view} setView=${setView} state=${state.state} />
+
+      <main class="main">
+        <div class="draghandle" />
+        ${view === 'home'
+          ? html`<${Stage} turns=${turns} state=${state.state} agent=${agent}
+               roster=${roster} jobs=${jobs} liveAgents=${liveAgents}
+               address=${address} onSend=${send} onInterrupt=${interrupt}
+               onReset=${reset} />`
+          : null}
+        ${view === 'trace' ? html`<${Trace} turns=${trace} />` : null}
+        ${view === 'health'
+          ? html`<${Health} state=${state} onPermissions=${refresh} />` : null}
+        ${view === 'settings' && settings
           ? html`<${Settings} settings=${settings} onSave=${saveSettings} />` : null}
-      </div>
+      </main>
     </div>`;
 }
 

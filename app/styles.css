@@ -22,7 +22,12 @@
      non-essential metadata only and never carries meaning alone. */
   --text:        #F2F2F4;
   --dim:         #9B9BA5;
-  --faint:       #6A6A74;
+  /* Lifted from #6A6A74, which measured 3.24:1 against the search field and
+     3.68:1 behind the one line that tells a first-time user how to start the
+     app. "Non-essential metadata" was the intent, but the hint line is the
+     most essential sentence on the screen, and a token that quietly fails
+     4.5:1 will keep being reached for. */
+  --faint:       #848490;
 
   /* The character's palette, used sparingly in the chrome */
   --crimson:     #E0233C;
@@ -108,77 +113,268 @@ button:active:not(:disabled), [role="button"]:active {
 
 ::selection { background: var(--crimson-dim); color: #fff; }
 
-/* ─── Shell ──────────────────────────────────────────────────────────────── */
+/* ─── Shell ──────────────────────────────────────────────────────────────────
+   A rail of conversations and a stage, the shape a messages app has.
 
-.app { display: flex; flex-direction: column; height: 100%; }
+   It used to be five tabs across the top. That put Talk, Agents, Trace, Health
+   and Settings in front of someone at equal weight, when four of the five are
+   things you open twice a month and the fifth is the whole point of the app.
+   The rail answers "what has it been doing" without a click, and the three
+   utility sections sit at its foot where a settings link belongs.
+*/
 
-.titlebar {
-  -webkit-app-region: drag;
-  display: flex; align-items: center; gap: var(--s3);
-  height: 46px; padding: 0 var(--s4) 0 78px;   /* room for the traffic lights */
-  border-bottom: 1px solid var(--line-soft);
+.app {
+  display: grid;
+  grid-template-columns: 292px 1fr;
+  height: 100%;
+  background: var(--bg);
+}
+
+/* ── Rail ─────────────────────────────────────────────────────────────── */
+
+.rail {
+  display: flex; flex-direction: column; min-height: 0;
+  border-right: 1px solid var(--line-soft);
   background: var(--surface);
+  -webkit-app-region: drag;
+}
+.rail input, .rail button { -webkit-app-region: no-drag; }
+
+.railhead {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 46px; padding: 0 var(--s4) 0 80px;   /* room for the traffic lights */
   flex-shrink: 0;
 }
-
-.titlebar .spacer { flex: 1; }
-
 .wordmark {
-  font: 600 12px/1 var(--mono);
-  letter-spacing: 0.22em;
-  color: var(--dim);
+  font: 600 11px/1 var(--mono); letter-spacing: 0.26em; color: var(--dim);
 }
-
-/* ─── State pill ─────────────────────────────────────────────────────────── */
-
-.state {
-  display: inline-flex; align-items: center; gap: var(--s2);
-  padding: 5px 11px 5px 9px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface-2);
-  font-size: 12px; color: var(--dim);
-  transition: border-color var(--t-enter) var(--ease-hover),
-              color var(--t-enter) var(--ease-hover);
+.railhead .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--idle);
+  transition: background var(--t-enter) var(--ease-hover);
 }
-.state[data-state="listening"] { border-color: var(--crimson); color: #FFD9DE; }
-.state[data-state="processing"] { border-color: var(--gold-dim); color: #FFEEBB; }
-.state[data-state="responding"] { border-color: #2B6FA8; color: #CFE8FF; }
-.state[data-state="error"] { border-color: var(--error); color: #FFD0D0; }
-
-.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--idle); flex-shrink: 0; }
-.state[data-state="idle"] .dot { background: var(--idle); }
-.state[data-state="listening"] .dot { background: var(--listening); animation: pulse 1.1s infinite; }
-.state[data-state="processing"] .dot { background: var(--thinking); animation: pulse 0.8s infinite; }
-.state[data-state="responding"] .dot { background: var(--speaking); animation: pulse 1.4s infinite; }
-.state[data-state="error"] .dot { background: var(--error); }
+.railhead .dot[data-state="listening"] { background: var(--listening); animation: pulse 1.1s infinite; }
+.railhead .dot[data-state="processing"] { background: var(--thinking); animation: pulse 0.8s infinite; }
+.railhead .dot[data-state="responding"] { background: var(--speaking); animation: pulse 1.4s infinite; }
+.railhead .dot[data-state="error"] { background: var(--error); }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50%      { opacity: 0.45; transform: scale(0.82); }
 }
 
-/* ─── Tabs ───────────────────────────────────────────────────────────────── */
+.searchrow {
+  display: flex; gap: var(--s2); padding: var(--s1) var(--s3) var(--s3);
+  flex-shrink: 0;
+}
+.search {
+  flex: 1; display: flex; align-items: center; gap: var(--s2);
+  padding: 0 10px; height: 32px; border-radius: 9px;
+  background: var(--surface-2); border: 1px solid transparent;
+  color: var(--faint);
+  transition: border-color var(--t-hover) var(--ease-hover),
+              background var(--t-hover) var(--ease-hover);
+}
+.search:focus-within { border-color: var(--line); background: var(--surface-3); }
+.search input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: none;
+  font: 400 13px/1 var(--font); color: var(--text);
+}
+.search input::placeholder { color: var(--faint); }
 
-.tabs { display: flex; gap: 2px; -webkit-app-region: no-drag; }
-
-.tab {
-  padding: 5px 11px; border-radius: var(--radius-sm);
-  font-size: 12.5px; color: var(--faint);
-  transition: color var(--t-hover) var(--ease-hover),
-              background var(--t-hover) var(--ease-hover),
+.plus {
+  width: 32px; height: 32px; flex-shrink: 0;
+  display: grid; place-items: center; border-radius: 9px;
+  background: var(--surface-2); color: var(--dim);
+  transition: background var(--t-hover) var(--ease-hover),
+              color var(--t-hover) var(--ease-hover),
               transform var(--t-press) var(--ease-out);
 }
 @media (hover: hover) and (pointer: fine) {
-  .tab:hover { color: var(--dim); background: var(--surface-2); }
+  .plus:hover { background: var(--surface-3); color: var(--text); }
 }
-.tab[aria-selected="true"] { color: var(--text); background: var(--surface-3); }
 
-.tab .badge {
-  display: inline-block; margin-left: 6px; padding: 0 5px;
-  border-radius: 999px; background: var(--crimson);
-  font: 600 10px/15px var(--mono); color: #fff;
-  min-width: 15px; text-align: center;
+.convos { flex: 1; overflow-y: auto; padding: 0 var(--s2) var(--s3); min-height: 0; }
+.convos::-webkit-scrollbar { width: 8px; }
+.convos::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 999px; }
+.convos::-webkit-scrollbar-track { background: transparent; }
+
+.railempty { padding: var(--s4) var(--s3); font-size: 12.5px; color: var(--faint); }
+
+.convo {
+  position: relative; width: 100%;
+  display: grid; grid-template-columns: 10px 38px 1fr;
+  align-items: center; gap: var(--s2);
+  padding: 9px 10px 9px 0; border-radius: 10px; text-align: left;
+  transition: background var(--t-hover) var(--ease-hover),
+              transform var(--t-press) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .convo:hover { background: var(--surface-2); }
+}
+.convo[data-active="true"] { background: var(--surface-3); }
+
+/* The unread dot is the agent's own colour, so the rail reads as a roster
+   rather than a list of notifications. It appears only while that agent is
+   working — a permanent dot beside every row tells you nothing. */
+.convo .unread {
+  width: 6px; height: 6px; border-radius: 50%; justify-self: center;
+  background: var(--accent); opacity: 0;
+  transition: opacity var(--t-enter) var(--ease-out);
+}
+.convo[data-busy="true"] .unread { opacity: 1; animation: pulse 1.2s infinite; }
+
+.convo .face {
+  width: 38px; height: 38px; border-radius: 50%; overflow: hidden;
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.convo .meta { min-width: 0; display: block; }
+.convo .top { display: flex; align-items: baseline; gap: var(--s2); }
+.convo .nm {
+  font: 600 13.5px/1.3 var(--font); color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.convo .when {
+  margin-left: auto; flex-shrink: 0;
+  font: 400 11px/1.3 var(--font); color: var(--faint);
+}
+.convo .line {
+  display: block; margin-top: 1px;
+  font: 400 12.5px/1.45 var(--font); color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.convo[data-busy="true"] .line { color: var(--accent); }
+
+.railfoot {
+  display: flex; gap: var(--s1); padding: var(--s2) var(--s3) var(--s3);
+  border-top: 1px solid var(--line-soft); flex-shrink: 0;
+}
+.chip {
+  padding: 5px 10px; border-radius: 8px;
+  font: 500 12px/1 var(--font); color: var(--dim);
+  transition: background var(--t-hover) var(--ease-hover),
+              color var(--t-hover) var(--ease-hover),
+              transform var(--t-press) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .chip:hover { color: var(--dim); background: var(--surface-2); }
+}
+.chip[data-active="true"] { color: var(--text); background: var(--surface-3); }
+
+/* ── Main ─────────────────────────────────────────────────────────────── */
+
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* A strip at the top of the stage that drags the window, since there is no
+   title bar left to grab. */
+.draghandle { height: 22px; flex-shrink: 0; -webkit-app-region: drag; }
+
+.stage { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+/* ── Hero ─────────────────────────────────────────────────────────────── */
+
+.hero {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: var(--s4); padding: var(--s5) var(--s6) var(--s6); text-align: center;
+}
+.hero .mascot {
+  filter: drop-shadow(0 18px 40px rgba(224, 35, 60, 0.18));
+}
+
+/* The speech bubble. Rounded to a capsule with a lit rim, because a rectangle
+   with a tail reads as a comic and this is a person talking to you. */
+.bubble-hero {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  max-width: 78%; padding: 11px 18px 11px 14px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07),
+              0 8px 24px rgba(0, 0, 0, 0.45);
+  font: 400 14px/1.4 var(--font); color: var(--text);
+  transition: box-shadow var(--t-enter) var(--ease-out);
+}
+@starting-style {
+  .bubble-hero { opacity: 0; transform: scale(0.96); }
+}
+.bubble-hero[data-speaking="true"] {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07),
+              0 8px 24px rgba(0, 0, 0, 0.45),
+              0 0 0 1px color-mix(in srgb, var(--speaking) 45%, transparent),
+              0 0 28px color-mix(in srgb, var(--speaking) 22%, transparent);
+}
+.bubmic { color: var(--faint); display: flex; flex-shrink: 0; }
+.bubtext {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  user-select: text; cursor: text;
+}
+
+/* Optical sizing: a 30px greeting needs its tracking pulled in or it reads as
+   loose. Small text needs the opposite. */
+.greet {
+  font: 600 30px/1.2 var(--font); letter-spacing: -0.021em; color: var(--text);
+}
+/* --dim, not --faint: this is the instruction for using the whole app, so it
+   is body text that happens to be quiet, not metadata. */
+.hint {
+  font: 400 13.5px/1.6 var(--font); color: var(--dim); max-width: 42ch;
+}
+.hint b { color: var(--dim); font-weight: 600; }
+
+/* ── Work in flight ───────────────────────────────────────────────────── */
+
+.running {
+  flex-shrink: 0; display: flex; flex-direction: column; gap: 5px;
+  padding: 0 var(--s5) var(--s3);
+}
+.runjob { display: flex; flex-wrap: wrap; gap: 5px; }
+.runpart {
+  display: inline-flex; align-items: center; gap: 7px; min-width: 0;
+  padding: 5px 11px 5px 5px; border-radius: 999px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  font: 400 12px/1 var(--font); color: var(--dim);
+  transition: opacity var(--t-enter) var(--ease-out),
+              transform var(--t-enter) var(--ease-out);
+}
+@starting-style {
+  .runpart { opacity: 0; transform: translateY(4px); }
+}
+.runpart[data-status="queued"] { opacity: 0.5; }
+.runface { width: 20px; height: 20px; border-radius: 50%; overflow: hidden; flex-shrink: 0; }
+.runwho { font-weight: 600; color: var(--accent); flex-shrink: 0; }
+.runtask { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 34ch; }
+
+/* ── An agent's own page ──────────────────────────────────────────────── */
+
+.agenthead {
+  display: flex; gap: var(--s4); align-items: center;
+  padding: var(--s3) var(--s5) var(--s4);
+  border-bottom: 1px solid var(--line-soft); flex-shrink: 0;
+}
+.agenthead .mascot {
+  border-radius: 50%; overflow: hidden; flex-shrink: 0;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.agenthead h1 { font: 600 20px/1.25 var(--font); letter-spacing: -0.015em; }
+.agenthead .role { font-size: 12.5px; color: var(--accent); margin-top: 1px; }
+.agenthead .blurb { font-size: 13px; color: var(--dim); margin-top: 5px; max-width: 56ch; }
+
+.quiet { font-size: 13.5px; line-height: 1.65; color: var(--faint); max-width: 52ch; }
+
+.jobcard {
+  padding: var(--s3) var(--s4); margin-bottom: var(--s3);
+  border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--line-soft);
+}
+.jobcard .task { font-size: 13px; color: var(--dim); }
+.jobcard .answer {
+  margin-top: 6px; font-size: 13.5px; line-height: 1.6; color: var(--text);
+  user-select: text; cursor: text;
+}
+.jobcard .stamp {
+  margin-top: var(--s2); display: flex; align-items: center; gap: var(--s2);
+  font: 400 11px/1 var(--font); color: var(--faint);
 }
 
 /* ─── Body ───────────────────────────────────────────────────────────────── */
@@ -395,11 +591,18 @@ button:active:not(:disabled), [role="button"]:active {
   button:active, [role="button"]:active { transform: none; }
 }
 
-/* The window is small; nothing here should ever scroll sideways. */
-@media (max-width: 560px) {
-  .titlebar { padding-left: var(--s4); }
-  .wordmark { display: none; }
+/* Narrow: the rail collapses to faces only, rather than wrapping names onto
+   two lines or pushing the stage off the edge. Nothing here ever scrolls
+   sideways. */
+@media (max-width: 760px) {
+  .app { grid-template-columns: 64px 1fr; }
+  .wordmark, .searchrow, .convo .meta, .railfoot .chip span { display: none; }
+  .railhead { padding-left: 0; justify-content: center; }
+  .convo { grid-template-columns: 1fr; justify-items: center; padding: 8px 0; }
+  .convo .unread { position: absolute; top: 6px; right: 10px; }
+  .railfoot { flex-direction: column; }
   .pane { padding: var(--s4); }
+  .greet { font-size: 24px; }
 }
 
 /* ─── Delegation ─────────────────────────────────────────────────────────── */
@@ -511,26 +714,18 @@ button:active:not(:disabled), [role="button"]:active {
 
 /* ─── Depth ──────────────────────────────────────────────────────────────── */
 /*
-   The title bar floats over the content rather than sitting beside it, which
-   is what stops a dark window reading as two flat rectangles stacked. The
-   blur is the only expensive thing in this stylesheet and it is on one
+   The composer floats over the conversation rather than sitting below it,
+   which is what stops a dark window reading as two flat rectangles stacked.
+   The blur is the only expensive thing in this stylesheet and it is on one
    element that never scrolls.
 */
-.titlebar {
-  background: color-mix(in srgb, var(--surface) 82%, transparent);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  position: relative;
-  z-index: 2;
-}
-
 .composer {
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 
-.card, .agent {
+.card, .agent, .jobcard {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.32);
 }
 
@@ -540,4 +735,45 @@ button:active:not(:disabled), [role="button"]:active {
   outline: 2px solid var(--gold);
   outline-offset: 2px;
   transition: outline-offset 120ms var(--ease-out);
+}
+
+/* The rail deals itself out on first paint. Short delays — past about 80ms
+   apart a stagger stops feeling considered and starts feeling slow. */
+.convos .convo { animation: arrive 240ms var(--ease-out) both; }
+.convos .convo:nth-child(1) { animation-delay: 0ms; }
+.convos .convo:nth-child(2) { animation-delay: 30ms; }
+.convos .convo:nth-child(3) { animation-delay: 60ms; }
+.convos .convo:nth-child(4) { animation-delay: 90ms; }
+.convos .convo:nth-child(5) { animation-delay: 120ms; }
+.convos .convo:nth-child(6) { animation-delay: 150ms; }
+
+/* The hero's four pieces land in order: him first, then what he said, then
+   the greeting, then the instruction. That order is the sentence the screen
+   is making, and staggering it is the only thing that says so. */
+.hero > * { animation: arrive 320ms var(--ease-out) both; }
+.hero > *:nth-child(1) { animation-delay: 0ms; }
+.hero > *:nth-child(2) { animation-delay: 70ms; }
+.hero > *:nth-child(3) { animation-delay: 130ms; }
+.hero > *:nth-child(4) { animation-delay: 180ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .convos .convo, .hero > * { animation: none !important; opacity: 1 !important; }
+}
+
+/* Blur-in text, after reactbits' Blur Text.
+   Each word starts slightly below, slightly small and out of focus, then
+   lands. Blur is what makes it read as "coming into focus" rather than
+   "sliding in" — and it is kept at 6px because heavy blur is expensive in
+   WebKit and this runs the moment the window opens. */
+.blurin { display: inline-block; }
+.blurin > span {
+  display: inline-block;
+  animation: blurin 420ms var(--ease-out) both;
+}
+@keyframes blurin {
+  from { opacity: 0; filter: blur(6px); transform: translateY(8px) scale(0.985); }
+  to   { opacity: 1; filter: blur(0);   transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .blurin > span { animation: none; opacity: 1; filter: none; transform: none; }
 }
