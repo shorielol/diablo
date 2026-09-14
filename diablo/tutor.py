@@ -27,6 +27,7 @@ because you will look where it points.
 """
 
 import json
+import difflib
 import os
 import queue
 import re
@@ -242,6 +243,30 @@ def shaky_readings(fragments: List[dict]) -> List[dict]:
     return out
 
 
+def _sayable(value) -> str:
+    """
+    A solution in a form worth reading aloud.
+
+    sympy returns 2.5x = 10 as 4.00000000000000, and spoken that is "four point
+    zero zero zero zero zero zero zero zero zero zero zero zero zero zero".
+    Exact values stay exact — 5/3 is said as 5/3, not 1.667 — because the whole
+    point of solving it properly was not to round it.
+    """
+    try:
+        import sympy
+        if getattr(value, "is_Float", False):
+            rounded = sympy.nsimplify(value, rational=True)
+            if abs(float(rounded) - float(value)) < 1e-9:
+                value = rounded
+            else:
+                return f"{float(value):.4g}"
+        if getattr(value, "is_Integer", False):
+            return str(int(value))
+    except Exception:
+        pass
+    return str(value)
+
+
 def verify_equation(text: str):
     """
     Solve it properly, or return None.
@@ -272,7 +297,7 @@ def verify_equation(text: str):
         if not solutions:
             return None
         return {"symbol": str(symbol),
-                "solutions": [str(v) for v in solutions],
+                "solutions": [_sayable(v) for v in solutions],
                 "equation": f"{lhs} = {rhs}"}
     except Exception:
         return None
@@ -317,42 +342,99 @@ def _compact(text: str) -> str:
     return re.sub(r"[^0-9a-zA-Z+\-*/=^().]", "", (text or "")).lower()
 
 
+# How much of an OCR fragment has to turn up inside the model's line before it
+# counts as backing it up. Measured on eleven real readings — six genuine, five
+# hallucinations constructed from them:
+#
+#     lowest genuine reading    0.833   "5x- l?=?3" inside "5x - 12 = 23"
+#     highest hallucination     0.500   "5x" against "2y + 7 = 15"
+#
+# 0.72 sits in that gap with room on both sides.
+COVER = config.env_float("DIABLO_MATHS_COVER", 0.72, low=0.5, high=1.0)
+
+
 def corroborated(line: str, candidates: List[dict]) -> bool:
     """
     Does OCR back up what the vision model says it read?
 
-    OCR's failure mode is dropping characters, not inventing them, so the
-    pieces it did return have to be present in the model's line. "5x" sits
-    inside "5x-12=23"; it does not sit inside an equation the model made up.
+    OCR's failure mode is losing characters, not inventing them, so the pieces
+    it did return have to turn up inside the model's line. Plain substring
+    matching is not enough for that, because OCR garbles as well as drops:
+    "5x - 12 = 23" came back as "5x- l?=?3", which is right at the head and
+    mush at the tail and sits inside nothing. What survives both is how much of
+    the fragment appears IN ORDER within the reading — 0.833 there, against
+    0.5 for a fragment matched to an equation it has nothing to do with.
 
-    A bare number is not corroboration — "18" appears in half the expressions
-    ever written — so a candidate only counts if it carries a letter.
+    A fragment of pure digits is not corroboration whatever it scores. "18"
+    sits inside half the equations ever written.
     """
     reading = _compact(line)
     if not reading:
         return False
     for fragment in candidates:
         piece = _compact(fragment["text"])
-        if len(piece) < 2 or not any(c.isalpha() for c in piece):
+        if len(piece) < 2:
             continue
-        if piece in reading:
+        if not any(c.isalpha() or c in "+-*/=^" for c in piece):
+            continue
+        matched = sum(b.size for b in difflib.SequenceMatcher(
+            None, piece, reading).get_matching_blocks())
+        if matched / len(piece) >= COVER:
             return True
     return False
 
 
-def sharpened_reading(capture: str) -> Optional[dict]:
+def maths_reading(capture: str, fragments: List[dict],
+                  question: str = "") -> Optional[dict]:
     """
-    Read the capture again without the smoothing, and see if the maths parses.
+    Get the question off the screen, and be sure of it before teaching from it.
 
-    Free compared to the vision model — one more OCR pass, about 200ms, no
-    model loaded, no memory. It recovers the common case, which is not that
-    Vision cannot see the equation but that the upscale blurred a 2 into a 7.
-    Tried first for exactly that reason.
+    A fragment that parses is not the same as a fragment that is right, and
+    this is the failure that matters most. Vision read "3(x + 2) = 18" as
+    "31x+21=18", which parses perfectly, so sympy solved it perfectly and got
+    x = -3/31 — a wrong answer with every downstream step correct given it, and
+    nothing anywhere to notice. Trusting the first fragment that parses is how
+    that reaches him in a confident voice.
+
+    So two independent reads have to agree. The capture is read a second time
+    without the upscale smoothing, which is a genuinely different reading —
+    smoothing blurs the strokes that separate a 2 from a 7, so the two passes
+    fail differently. Agreement between them is strong evidence and costs about
+    200ms and no model at all.
+
+    When they disagree, or only one of them managed anything, the vision model
+    arbitrates: it transcribes, sympy still does the arithmetic, and its line
+    has to be corroborated by whatever characters either OCR pass did get.
     """
-    for fragment in screen_context.sharp_fragments(capture):
-        solved = verify_equation(fragment["text"])
-        if solved:
-            return dict(solved, read_as=fragment["text"], corroborated=True)
+    def solved_in(items):
+        out = []
+        for fragment in items:
+            answer = verify_equation(fragment["text"])
+            if answer:
+                out.append((fragment["text"], answer))
+        return out
+
+    sharp_fragments = screen_context.sharp_fragments(capture)
+    plain = solved_in(fragments)
+    sharp = solved_in(sharp_fragments)
+
+    # Two readings, arrived at differently, agreeing. Nothing beats that.
+    for text, answer in plain:
+        for _, other in sharp:
+            if (answer["equation"] == other["equation"]
+                    and answer["solutions"] == other["solutions"]):
+                return dict(answer, read_as=text, corroborated=True)
+
+    seen = vision_reading(capture, list(fragments) + list(sharp_fragments),
+                          question)
+    if seen:
+        return seen
+
+    # No model, or it read nothing usable. A single OCR reading is still
+    # better than refusing outright — but it is the reading that has just
+    # failed to be confirmed, so it gets read back to him before it is used.
+    for text, answer in (plain + sharp):
+        return dict(answer, read_as=text, corroborated=False)
     return None
 
 
@@ -1026,47 +1108,37 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
 
     # Anything that is an equation gets solved properly rather than in the
     # model's head. The working it narrates is then narrating a fact.
-    verified = None
-    for fragment in fragments:
-        verified = verify_equation(fragment["text"])
-        if verified:
-            break
-
-    # Half a question is not a question. Ask rather than fill in the gap.
     #
-    # Apple's OCR reads prose well and mathematical notation badly — it turned
-    # "3x + 5 = 20" into "3x+5" and "4x - 6 = 18" into "4x" and "18", dropping
-    # the relation both times. Nothing downstream can detect that, because
-    # every step after a misread first step is correct given the first. So the
-    # loop is closed the only way it can be: he reads the line out, and the
-    # lesson is built on what he said.
-    # OCR could not parse it. Before troubling him for it, look at the picture
-    # properly — the vision model reads notation that Vision's OCR drops.
-    # The trigger is deliberately wider than the refusal gate. That gate needs
-    # prose on screen saying "Solve for x", because refusing is expensive when
-    # it is wrong. Looking is not: a worksheet that is nothing but equations
-    # carries no such instruction, and the corroboration check below is what
-    # makes it safe to look anyway. If there is no mathematics in the picture
-    # the model says NONE and nothing has been lost but three seconds.
-    read_as = ""
-    worth_looking = asks_about_a_problem(question) and (
-        unreadable_problem(fragments, question)
-        or any(looks_like_a_problem(f) for f in fragments))
-    if not verified and worth_looking:
-        # Cheapest thing that could work, first.
-        seen = sharpened_reading(capture) or vision_reading(capture, fragments,
-                                                            question)
+    # Reading it is a job of its own, and not one the first fragment that
+    # happens to parse can be trusted with — see maths_reading. This only runs
+    # when he is asking about a problem, because it costs a second OCR pass.
+    verified, read_as = None, ""
+    if asks_about_a_problem(question):
+        seen = maths_reading(capture, fragments, question)
         if seen:
             verified = {k: seen[k] for k in ("symbol", "solutions", "equation")}
             read_as = seen["read_as"]
-            screen_text = f"{screen_text}\n(Read from the image as: {read_as})"
+            screen_text = f"{screen_text}\n(Read from the screen as: {read_as})"
             if not seen["corroborated"]:
-                # Nothing on the OCR side to check it against, so he checks it.
+                # One reading, unconfirmed. He is the second opinion.
                 speak(f"I'm reading that as {read_as}, Sir. Stop me if that's "
                       "not it.")
-            print(f"  [Tutor] vision read: {read_as} "
+            print(f"  [Tutor] read {read_as!r} "
                   f"(corroborated={seen['corroborated']})")
+    else:
+        for fragment in fragments:
+            verified = verify_equation(fragment["text"])
+            if verified:
+                break
 
+    # Half a question is not a question. Ask rather than fill in the gap.
+    #
+    # Last resort now rather than first response — two OCR passes and a vision
+    # model have already had a go. What is left is the case where none of them
+    # could read it, and the only remaining source of truth is him. Filling the
+    # gap instead would produce a lesson that is perfectly reasoned, confidently
+    # delivered and wrong, with every step after the first correct given the
+    # first, and nothing anywhere able to notice.
     if not verified:
         partial = unreadable_problem(fragments, question)
         if partial:

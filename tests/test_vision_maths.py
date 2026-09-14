@@ -102,13 +102,22 @@ def main():
 
     # ── 3. Corroboration, on its own ─────────────────────────────────────
     r.head("Corroboration")
+    # Every row here is a reading that really happened, or a hallucination
+    # built from one. The measured separation is 0.833 genuine against 0.500
+    # invented, and the threshold sits at 0.72.
     pairs = [
         ("5x - 12 = 23", ["5x"],          True,  "dropped tail"),
         ("3x + 5 = 20",  ["3x+5"],        True,  "dropped right-hand side"),
         ("4x - 6 = 18",  ["4x", "18"],    True,  "dropped the middle"),
+        ("9a - 4 = 14",  ["9a"],          True,  "a different letter, still matched"),
+        ("5x - 12 = 23", ["5x- l?=?3"],   True,  "garbled tail, and OCR really returned this"),
+        ("x/4 + 3 = 7",  ["4+3=7"],       True,  "OCR dropped the x/ and nothing else"),
+        ("2x - 15 = -3", ["2x-15="],      True,  "dropped a negative right-hand side"),
         ("2y + 7 = 15",  ["5x"],          False, "different unknown entirely"),
         ("x = 18",       ["18"],          False, "a bare number backs up nothing"),
-        ("9a - 4 = 14",  ["9a"],          True,  "a different letter, still matched"),
+        ("9a - 4 = 14",  ["3x+5"],        False, "nothing in common"),
+        ("7x + 9 = 65",  ["4x-6=18"],     False, "a whole different equation"),
+        ("8y + 1 = 9",   ["5x- l?=?3"],   False, "garbled is not a licence to match anything"),
     ]
     for line, ocr, expected, why in pairs:
         got = tutor.corroborated(line, [frag(t) for t in ocr])
