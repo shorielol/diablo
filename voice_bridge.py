@@ -303,8 +303,56 @@ def get_command_audio(duration=None):
 FUZZY_MIN_LENGTH = 4
 FUZZY_LENGTH_SLACK = 2
 
+# How close a word has to be before it counts as a mis-hearing.
+#
+# Raised from 0.6 after "teach me how to add skills onto claude" turned the
+# volume up and answered "Done, Sir": "claude" scores 0.667 against "louder".
+# Measured across real transcription slips and ordinary English words:
+#
+#   genuine slips      volyume 0.92  lowder 0.83  britness 0.89  quiter 0.92
+#   innocent words     claude  0.67  router 0.67  shoulder 0.71  minute 0.80
+#                      loader  0.83  boulder 0.77  commute  0.73  value  0.73
+#
+# The two distributions overlap — "loader" matches "louder" exactly as well as
+# the real slip "lowder" does — so no threshold separates them, and similarity
+# alone cannot be the deciding test. It is raised to 0.8 to remove the worst of
+# it, and the real protection is the sentence shape below.
+# 0.82 rather than 0.8, because "minute" scores exactly 0.80 against "mute"
+# and "remind me in a minute" is not a volume command. Every genuine slip
+# measured sits at 0.83 or above.
+FUZZY_THRESHOLD = config.env_float("DIABLO_FUZZY_THRESHOLD", 0.82)
 
-def fuzzy_match(input_text: str, targets: List[str], threshold: float = 0.6) -> bool:
+# A reflex answers without asking the model, so it must be certain. Certainty
+# here comes from shape, not from vocabulary: the things that deserve a reflex
+# — volume, playback, a screenshot — are all short imperatives. A question, a
+# request to be taught, or anything longer than a phrase is not one of them,
+# whatever words happen to be in it.
+REFLEX_MAX_WORDS = config.env_int("DIABLO_REFLEX_MAX_WORDS", 7)
+_QUESTION_OPENERS = ("what", "why", "how", "when", "where", "who", "which",
+                     "can you", "could you", "do you", "does", "is there",
+                     "tell me", "show me", "explain", "teach")
+
+
+def is_a_command(text: str) -> bool:
+    """
+    Whether this is short and blunt enough for a reflex to answer it.
+
+    This is the guard that "claude" versus "louder" needed. A volume command is
+    "turn it down", not an eight-word question about a code editor, and no
+    amount of tuning a string-similarity threshold will tell those apart —
+    only the shape of the sentence will.
+    """
+    words = (text or "").split()
+    if not words or len(words) > REFLEX_MAX_WORDS:
+        return False
+    lowered = " ".join(words).lower()
+    if lowered.endswith("?"):
+        return False
+    return not any(lowered.startswith(opener) for opener in _QUESTION_OPENERS)
+
+
+def fuzzy_match(input_text: str, targets: List[str],
+                threshold: float = FUZZY_THRESHOLD) -> bool:
     """
     True if some word in the text is a plausible mis-hearing of a target.
 
@@ -583,7 +631,8 @@ def process_command(text, is_sub_command=False):
 
     # ── Power ──
     shutdown_targets = ["shut down diablo", "go to sleep", "deactivate", "power down"]
-    if any(t in lower for t in shutdown_targets) or fuzzy_match(lower, shutdown_targets):
+    if any(t in lower for t in shutdown_targets) or (
+            is_a_command(lower) and fuzzy_match(lower, shutdown_targets)):
         request_confirmation("shut down my systems", shutdown_diablo, [])
         return
 
@@ -614,7 +663,9 @@ def process_command(text, is_sub_command=False):
         return
 
     # ── Volume and brightness ──
-    if fuzzy_match(lower, ["volume", "louder", "quieter", "mute", "brightness"]):
+    if (is_a_command(lower)
+            and fuzzy_match(lower, ["volume", "louder", "quieter", "mute",
+                                    "brightness"])):
         number = re.search(r"\d+", lower)
         try:
             if "mute" in lower:
@@ -633,7 +684,9 @@ def process_command(text, is_sub_command=False):
         return
 
     # ── Screenshot ──
-    if "screenshot" in lower or "screen shot" in lower or "screengrab" in lower:
+    if is_a_command(lower) and (
+            "screenshot" in lower or "screen shot" in lower
+            or "screengrab" in lower):
         agent_tools.take_screenshot()
         speak("Screenshot saved to your Desktop, Sir.", cached_key="ack_2")
         return

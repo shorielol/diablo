@@ -287,7 +287,28 @@ def looks_like_a_problem(fragment: dict) -> bool:
     return False
 
 
-def unreadable_problem(fragments: List[dict]) -> Optional[str]:
+# Does HE want a problem solved? Separate from whether the screen looks like
+# it has one on it.
+#
+# The gate used to ask only the screen, and the screen lies: "show that",
+# "work out", "calculate" and "evaluate" all turn up in ordinary prose. Asked
+# "how do I open a new tab" on a YouTube page, Diablo answered "I can't read
+# the equation". Both halves have to agree now — he has to be asking about a
+# problem, and the screen has to have one that will not parse.
+PROBLEM_REQUESTS = (
+    "question", "equation", "solve", "answer", "sum", "maths", "math",
+    "problem", "work this out", "working", "calculate", "simplify",
+    "differentiate", "integrate", "prove", "this q", "part a", "part b",
+)
+
+
+def asks_about_a_problem(question: str) -> bool:
+    lowered = " " + (question or "").lower() + " "
+    return any(f" {word}" in lowered for word in PROBLEM_REQUESTS)
+
+
+def unreadable_problem(fragments: List[dict],
+                       question: str = "") -> Optional[str]:
     """
     The text of a problem that cannot be read well enough to teach from.
 
@@ -303,6 +324,11 @@ def unreadable_problem(fragments: List[dict]) -> Optional[str]:
     equation under it is symbols, which it does not — so the prose is the
     trustworthy half of the signal and the whole test rests on it.
     """
+    # He has to be asking about a problem. Without this the gate fires on any
+    # screen whose prose happens to contain "show that".
+    if question and not asks_about_a_problem(question):
+        return None
+
     prose = " ".join(f["text"].lower() for f in fragments)
     if not any(cue in prose for cue in SOLVE_CUES):
         return None
@@ -314,6 +340,121 @@ def unreadable_problem(fragments: List[dict]) -> Optional[str]:
     if not candidates:
         return "the equation"
     return " ... ".join(f["text"] for f in candidates[:3])
+
+
+# Things that look like somewhere you can go.
+#
+# A label, not a sentence: buttons, menu entries, tabs and names are one to
+# three words and are usually capitalised. Prose on screen is neither. This is
+# a heuristic and only ever used to make a suggestion, never to point.
+def navigation_labels(fragments: List[dict], limit: int = 8) -> List[str]:
+    seen, out = set(), []
+    for fragment in fragments:
+        text = (fragment.get("text") or "").strip(" .:•+").strip()
+        words = text.split()
+        if not (1 <= len(words) <= 3) or len(text) < 3 or len(text) > 24:
+            continue
+        if fragment.get("confidence", 1.0) < 0.4:
+            continue
+        # Mostly letters, and starting like a label rather than mid-sentence.
+        letters = sum(1 for c in text if c.isalpha())
+        if letters < max(2, len(text) * 0.6):
+            continue
+        if not text[0].isupper():
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def menu_bar_targets(app: str) -> List[dict]:
+    """
+    The app's top-level menus, as things that can be pointed at.
+
+    A window capture cannot see the menu bar, which is where half the answers
+    live: asked how to change the font in TextEdit, the walkthrough invented a
+    "Settings" menu and a "Font" section, because Format > Font is not in the
+    window and there was nothing real to reach for.
+
+    Which screen the bar is on has to be found rather than assumed. The first
+    version captured the top of NSScreen.screens()[0] and got a blank strip —
+    on this machine the primary display is an external 1920x1080 and the menu
+    bar lives on the built-in panel at x=-1512. The bar is identified by the
+    gap between a screen's frame and its visibleFrame, which is what that gap
+    means, and the capture region is converted into the global top-left space
+    screencapture expects.
+
+    Top level only. Submenus need the menu open; pointing at Format and saying
+    "then Font, then Show Fonts" is most of the value for a screenshot.
+    """
+    try:
+        import AppKit
+        front = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+        if not front or front.localizedName() != app:
+            return []                     # its menus are not the ones showing
+        screens = AppKit.NSScreen.screens()
+        primary_height = screens[0].frame().size.height
+    except Exception:
+        return []
+
+    import subprocess
+    import tempfile
+
+    for screen in screens:
+        frame, visible = screen.frame(), screen.visibleFrame()
+        thickness = ((frame.origin.y + frame.size.height)
+                     - (visible.origin.y + visible.size.height))
+        if thickness < 10:
+            continue                      # no menu bar on this one
+        x = frame.origin.x
+        y = primary_height - (frame.origin.y + frame.size.height)
+        handle, path = tempfile.mkstemp(suffix=".png", prefix="diablo_menubar_")
+        os.close(handle)
+        try:
+            result = subprocess.run(
+                ["screencapture", "-x", "-R",
+                 f"{x:.0f},{y:.0f},{frame.size.width:.0f},{thickness:.0f}", path],
+                capture_output=True, timeout=15)
+            if result.returncode != 0 or not os.path.getsize(path):
+                continue
+            strip = {"x": x, "y": y,
+                     "width": frame.size.width, "height": thickness}
+            fragments = screen_context._ocr_fragments(path, strip)
+            if isinstance(fragments, str) or not fragments:
+                continue
+        except Exception:
+            continue
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+        out = []
+        for fragment in fragments:
+            text = (fragment.get("text") or "").strip()
+            # A menu title, not the clock or a battery percentage. OCR often
+            # merges neighbours into "Format View", which still matches and
+            # still lands close enough to be useful.
+            if not text or len(text.split()) > 3 or not text[0].isupper():
+                continue
+            if any(ch.isdigit() for ch in text) or "%" in text:
+                continue
+            out.append({
+                "text": text,
+                "left": fragment["left"], "right": fragment["right"],
+                "top": fragment["top"], "height": fragment["height"],
+                "confidence": fragment.get("confidence", 0.5),
+                "menu": True, "screen": (x, y, frame.size.width, thickness),
+            })
+        if out:
+            return out
+    return []
 
 
 def readable(fragment: dict) -> str:
@@ -377,7 +518,8 @@ def plan(question: str, screen_text: str,
     return {"kind": result.get("kind") or "unclear", "steps": steps}
 
 
-def anchor(steps: List[Step], fragments: List[dict], window: dict) -> List[Step]:
+def anchor(steps: List[Step], fragments: List[dict], window: dict,
+           menus: Optional[List[dict]] = None) -> List[Step]:
     """
     Turn each step's `look_for` into a real screen position, or none at all.
 
@@ -406,7 +548,7 @@ def anchor(steps: List[Step], fragments: List[dict], window: dict) -> List[Step]
 
         best, best_score, used = None, 0.0, wanted
         for needle in candidates:
-            for fragment in fragments:
+            for fragment in list(fragments) + list(menus or []):
                 score = pointing._score(needle, fragment["text"])
                 if score > best_score:
                     best, best_score, used = fragment, score, needle
@@ -424,10 +566,18 @@ def anchor(steps: List[Step], fragments: List[dict], window: dict) -> List[Step]
             step["found"] = False
             step["missing"] = wanted
             continue
-        left = wx + best["left"] * ww
-        right = wx + best["right"] * ww
-        top = wy + best["top"] * wh
-        height = best["height"] * wh
+        # A menu-bar fragment is normalised against the strip across the top
+        # of the screen, not against the window, so it gets the screen's
+        # geometry instead. Using the window's would put the marker on the
+        # wrong monitor entirely.
+        if best.get("menu"):
+            bx, by, bw, bh = best.get("screen", (wx, wy, ww, wh))
+        else:
+            bx, by, bw, bh = wx, wy, ww, wh
+        left = bx + best["left"] * bw
+        right = bx + best["right"] * bw
+        top = by + best["top"] * bh
+        height = best["height"] * bh
         step["x"] = (left + right) / 2.0
         step["y"] = top + height / 2.0
         step["matched"] = best["text"]
@@ -549,6 +699,17 @@ class Marker:
         """
         if not self.watch_clicks:
             return False
+        # Anything that arrived before this step began belongs to the last one.
+        #
+        # Without this, a click on step two can satisfy step three before it
+        # has even been described — and in testing, switching windows between
+        # runs left clicks in the queue that advanced the next step instantly.
+        # A step is answered by a click made after it was asked for.
+        while True:
+            try:
+                self.clicks.get_nowait()
+            except Exception:
+                break
         deadline = time.time() + timeout
         while time.time() < deadline:
             if should_stop and should_stop():
@@ -633,6 +794,13 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
         return (f"I won't read a {window['app']} window, Sir. "
                 "Password managers and banking stay private.")
 
+    # The menu bar first, before anything that takes time. It is only readable
+    # while this app is frontmost, and a window capture plus OCR is a couple of
+    # seconds in which focus can move.
+    menus = menu_bar_targets(window.get("app", ""))
+    if menus:
+        print(f"  [Tutor] menu bar: {', '.join(m['text'] for m in menus)}")
+
     capture = screen_context.capture_window(window["id"])
     if not capture:
         return "I couldn't capture that window, Sir."
@@ -645,7 +813,11 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                 "Sir, so I have nothing to point at.")
 
     fragments = sorted(fragments, key=lambda f: (round(f["top"], 3), f["left"]))
+
     screen_text = "\n".join(readable(f) for f in fragments if readable(f))
+    if menus:
+        screen_text = ("Menu bar: " + "  ".join(m["text"] for m in menus)
+                       + "\n" + screen_text)
 
     # Say what was read, before teaching anything from it.
     #
@@ -677,7 +849,7 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
     # loop is closed the only way it can be: he reads the line out, and the
     # lesson is built on what he said.
     if not verified:
-        partial = unreadable_problem(fragments)
+        partial = unreadable_problem(fragments, question)
         if partial:
             heard = ""
             if ask:
@@ -705,7 +877,7 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                         "Read it out to me and I'll do it properly.")
 
     plan_result = plan(question, screen_text, verified)
-    steps = anchor(plan_result["steps"], fragments, window)
+    steps = anchor(plan_result["steps"], fragments, window, menus)
 
     # The "unclear" label is the model's opinion of its own answer, and this
     # project has been here before: asked for its confidence, the classifier
@@ -719,8 +891,23 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
     # with the answer plainly visible.
     anchored = sum(1 for step in steps if step.get("found"))
     if not steps or (plan_result["kind"] == "unclear" and anchored == 0):
-        return (f"I can see {window['app']}, Sir, but I can't tell which part "
-                "you mean. Point me at it and I'll take you through it.")
+        # A dead end, made useful.
+        #
+        # "I can't tell which part you mean" is true and worthless. Asked how
+        # to add skills to Claude, with a conversation about credit cards on
+        # screen, the honest answer is that the thing asked about is not on
+        # this screen at all — and the useful half of that answer is naming
+        # the few places it could be behind.
+        doors = navigation_labels(fragments)
+        if doors:
+            listed = ", ".join(f'"{d}"' for d in doors[:5])
+            return (f"There's nothing about that on this screen, Sir. "
+                    f"What I can see to click in {window['app']} is {listed}. "
+                    f"Open whichever of those looks right and ask me again — "
+                    f"I'll take you through it from there.")
+        return (f"I can see {window['app']}, Sir, but nothing on this screen "
+                "relates to what you asked. Open the part you mean and ask me "
+                "again.")
     # Not every caller's speak() takes a pace — the agent loop passes its own
     # one-argument version. Probed once rather than guessed, so a walkthrough
     # never dies on a TypeError halfway through step three.
