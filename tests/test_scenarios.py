@@ -451,6 +451,67 @@ def main() -> int:
             r.check("  and Whisper's keyword arguments are tolerated",
                     True, "fp16 and beam_size mean nothing to Parakeet")
 
+    # Both of the ways Diablo went deaf after switching engines. Neither was a
+    # bad answer — both were a failed transcription, which sounds exactly like
+    # not being heard at all.
+    with guard(r, "the tools it shells out to are findable"):
+        from skills import config as diablo_config
+        # An app launched from Finder gets a PATH without /opt/homebrew/bin,
+        # and Parakeet decoded audio by invoking ffmpeg. Every utterance died
+        # with "FFmpeg is not installed" while ffmpeg sat there on disk.
+        r.check("ffmpeg can be found", bool(diablo_config.require("ffmpeg")),
+                diablo_config.require("ffmpeg") or "missing")
+        r.check("ffprobe can be found", bool(diablo_config.require("ffprobe")),
+                diablo_config.require("ffprobe") or "missing")
+        r.check("PATH carries the Homebrew prefix",
+                "/opt/homebrew/bin" in diablo_config.repair_path()
+                or not os.path.isdir("/opt/homebrew/bin"))
+
+    with guard(r, "audio in memory needs no temp file and no ffmpeg"):
+        from skills import stt
+        import wave as wavelib
+        import numpy as np
+        clip = os.path.join(DIABLO_HOME, "command.wav")
+        if not os.path.exists(clip):
+            r.skip("transcribing without ffmpeg", "no sample on disk")
+        else:
+            engine = stt.load()
+            with wavelib.open(clip) as handle:
+                audio = (np.frombuffer(handle.readframes(handle.getnframes()),
+                                       dtype=np.int16).astype(np.float32) / 32768.0)
+            saved = os.environ.get("PATH", "")
+            try:
+                os.environ["PATH"] = "/usr/bin:/bin"      # no homebrew at all
+                text = engine.transcribe(audio)["text"].strip().lower()
+            finally:
+                os.environ["PATH"] = saved
+            r.check("it still transcribes with ffmpeg unreachable",
+                    "instagram" in text, text[:40])
+
+    with guard(r, "the model can be used from another thread"):
+        # MLX keeps its streams per thread. A model loaded during boot and
+        # then used from the push-to-talk worker raised "There is no
+        # Stream(cpu, 1) in current thread", which arrives as a failed
+        # transcription and is indistinguishable from silence.
+        import threading as _threading
+        from skills import stt
+        import wave as wavelib
+        import numpy as np
+        clip = os.path.join(DIABLO_HOME, "command.wav")
+        if os.path.exists(clip):
+            engine = stt.load()
+            with wavelib.open(clip) as handle:
+                audio = (np.frombuffer(handle.readframes(handle.getnframes()),
+                                       dtype=np.int16).astype(np.float32) / 32768.0)
+            got = {}
+            worker = _threading.Thread(
+                target=lambda: got.update(
+                    text=engine.transcribe(audio)["text"].strip().lower()))
+            worker.start()
+            worker.join(timeout=40)
+            r.check("a worker thread transcribes",
+                    "instagram" in got.get("text", ""), got.get("text", "(nothing)"))
+
     with guard(r, "it falls back rather than going deaf"):
         from skills import stt
         fallback = stt.load(prefer="whisper")

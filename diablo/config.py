@@ -69,3 +69,50 @@ def env_bool(name: str, fallback: bool = False) -> bool:
     if raw is None or raw == "":
         return fallback
     return str(raw).strip().lower() not in ("0", "", "false", "no", "off")
+
+
+# ─── PATH ────────────────────────────────────────────────────────────────────
+
+def repair_path() -> str:
+    """
+    Put Homebrew back on PATH, because a .app does not inherit your shell's.
+
+    An application launched from Finder gets PATH=/usr/bin:/bin:/usr/sbin:
+    /sbin:/usr/local/bin and nothing else. Homebrew on Apple Silicon installs
+    to /opt/homebrew/bin, so every tool that shells out by name works in a
+    terminal and fails in the app — silently, because the failures come back
+    as exceptions inside libraries that swallow them.
+
+    This cost a day of "Diablo can't hear me". Parakeet decodes audio by
+    invoking ffmpeg, so every single utterance died with "FFmpeg is not
+    installed or not in your PATH" while ffmpeg sat in /opt/homebrew/bin. The
+    same gap had already turned the slower explaining pace into a no-op, since
+    that runs audio through ffmpeg too and falls back to the original file
+    when it fails.
+
+    Returns the PATH it set, so a caller can log it.
+    """
+    import os as _os
+    extra = [p for p in ("/opt/homebrew/bin", "/opt/homebrew/sbin",
+                         "/usr/local/bin", _os.path.expanduser("~/.local/bin"))
+             if _os.path.isdir(p)]
+    current = _os.environ.get("PATH", "").split(":")
+    missing = [p for p in extra if p not in current]
+    if missing:
+        _os.environ["PATH"] = ":".join(missing + current)
+    return _os.environ["PATH"]
+
+
+def require(tool: str) -> str:
+    """
+    Where a command-line tool actually is, or "".
+
+    Used instead of trusting PATH, so a caller can say plainly that something
+    is missing rather than discovering it three layers down inside a library.
+    """
+    import shutil as _shutil
+    repair_path()
+    return _shutil.which(tool) or ""
+
+
+repair_path()

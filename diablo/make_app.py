@@ -118,6 +118,15 @@ DIABLO_HOME="{home}"
 LOG="$DIABLO_HOME/diablo.log"
 PY="$DIABLO_HOME/venv/bin/python3"
 
+# An app launched from Finder gets PATH=/usr/bin:/bin:/usr/sbin:/sbin:
+# /usr/local/bin and nothing else, so nothing installed by Homebrew is
+# findable. That is not a cosmetic difference: Parakeet decoded audio by
+# invoking ffmpeg, so every utterance died with "FFmpeg is not installed"
+# while ffmpeg sat in /opt/homebrew/bin, and Diablo could not hear a thing.
+# skills/config.py repairs this inside Python as well; both exist because the
+# failure was invisible and cost a day.
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+
 cd "$DIABLO_HOME" || exit 1
 
 if [ -f "$DIABLO_HOME/.env" ]; then

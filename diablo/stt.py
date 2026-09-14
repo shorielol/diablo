@@ -54,40 +54,65 @@ def _write_wav(audio: np.ndarray, path: str) -> None:
 
 
 class Parakeet:
-    """NVIDIA Parakeet TDT through MLX."""
+    """
+    NVIDIA Parakeet TDT through MLX.
+
+    Every call into the model runs on one dedicated thread, always the same
+    one. MLX keeps its streams per thread, so a model loaded during boot and
+    then used from the push-to-talk worker raises "There is no Stream(cpu, 1)
+    in current thread" — which arrives as a failed transcription and looks
+    exactly like not hearing anything. A lock is not enough: it serialises the
+    calls but does not move them onto the thread that owns the streams.
+    """
 
     name = "parakeet"
 
     def __init__(self, model_id: str = PARAKEET_MODEL):
-        from parakeet_mlx import from_pretrained
-        self.model = from_pretrained(model_id)
+        from concurrent.futures import ThreadPoolExecutor
+        self._pool = ThreadPoolExecutor(max_workers=1,
+                                        thread_name_prefix="parakeet")
         self.model_id = model_id
+        self.model = self._pool.submit(self._load, model_id).result()
+
+    @staticmethod
+    def _load(model_id: str):
+        from parakeet_mlx import from_pretrained
+        return from_pretrained(model_id)
+
+    def _run(self, fn):
+        return self._pool.submit(fn).result()
 
     def transcribe(self, audio, **_ignored) -> Dict[str, Any]:
         """
         Whisper's shape, so nothing upstream has to know which engine ran.
 
         `_ignored` swallows fp16, beam_size and the rest of Whisper's keyword
-        arguments. They are meaningless here and the alternative is editing
+        arguments. They are meaningless here, and the alternative is editing
         every call site to ask which engine it is talking to, which is exactly
         the coupling this module exists to prevent.
+
+        Audio already in memory goes straight to the mel spectrogram. The
+        obvious version wrote a temp WAV and handed over the path, which meant
+        Parakeet decoded it by shelling out to ffmpeg — and an application
+        launched from Finder has no /opt/homebrew/bin on PATH, so every single
+        utterance failed with "FFmpeg is not installed" while ffmpeg sat there
+        on disk. Diablo was deaf for a day because of a temp file it did not
+        need to write.
         """
         if isinstance(audio, (str, os.PathLike)):
-            with _lock:
-                return {"text": self.model.transcribe(str(audio)).text}
-        # A temp file per utterance, which costs a few milliseconds against
-        # the 486 this engine saves.
-        handle, path = tempfile.mkstemp(suffix=".wav", prefix="diablo_stt_")
-        os.close(handle)
-        try:
-            _write_wav(audio, path)
-            with _lock:
-                return {"text": self.model.transcribe(path).text}
-        finally:
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
+            return {"text": self._run(
+                lambda: self.model.transcribe(str(audio)).text)}
+
+        samples = np.clip(np.asarray(audio, dtype=np.float32), -1.0, 1.0)
+
+        def work():
+            import mlx.core as mx
+            from parakeet_mlx.audio import get_logmel
+            mel = get_logmel(mx.array(samples), self.model.preprocessor_config)
+            results = self.model.generate(mel)
+            return results[0].text if results else ""
+
+        return {"text": self._run(work)}
 
 
 class Whisper:

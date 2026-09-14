@@ -32,6 +32,7 @@ VOICE_ID = os.getenv("DIABLO_VOICE_PROFILE", os.getenv("DIABLO_VOICE_ID", "Diabl
 VOICEBOX_URL = os.getenv("DIABLO_VOICEBOX_URL", "http://127.0.0.1:17493")
 
 _warned = False
+_warned_ffmpeg = False
 _voice_fingerprint = None
 _voicebox_profile_id = None
 _profile_lock = threading.Lock()
@@ -269,6 +270,16 @@ def repace(path: str, text: str, target_wpm: int) -> str:
     out = path.replace(".wav", f".{target_wpm}wpm.wav")
     if os.path.exists(out):
         return out
+    if not config.require("ffmpeg"):
+        # Said once. This used to fail silently and return the original audio,
+        # which meant the slower explaining pace simply never happened inside
+        # the app bundle and nothing anywhere said so.
+        global _warned_ffmpeg
+        if not _warned_ffmpeg:
+            _warned_ffmpeg = True
+            print("  [Voice] ffmpeg not found, so speech cannot be re-paced. "
+                  "Install it with: brew install ffmpeg")
+        return path
     try:
         result = subprocess.run(
             ["ffmpeg", "-y", "-v", "error", "-i", path, "-filter:a", filters, out],
