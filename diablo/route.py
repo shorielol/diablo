@@ -31,6 +31,8 @@ sentence ambiguous is duller and works.
 """
 
 import os
+
+from skills import config  # noqa: E402
 import re
 import sys
 from dataclasses import dataclass, field, asdict
@@ -41,9 +43,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from skills import agent_core, agent_tools, screen_context, trace  # noqa: E402
 
 # Below this, ask rather than act.
-CLARIFY_BELOW = float(os.getenv("DIABLO_CONFIDENCE_CLARIFY", "0.45"))
+CLARIFY_BELOW = config.env_float("DIABLO_CONFIDENCE_CLARIFY", 0.45)
 # Below this on a task that touches files, hand it to the stronger model.
-ESCALATE_BELOW = float(os.getenv("DIABLO_CONFIDENCE_ESCALATE", "0.70"))
+ESCALATE_BELOW = config.env_float("DIABLO_CONFIDENCE_ESCALATE", 0.70)
 
 
 class Kind:

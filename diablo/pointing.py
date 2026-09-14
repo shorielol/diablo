@@ -38,6 +38,8 @@ will miss. macOS's accessibility API would cover those; that is a later job, and
 
 import difflib
 import os
+
+from skills import config  # noqa: E402
 import re
 import subprocess
 import sys
@@ -54,7 +56,7 @@ from skills import screen_context  # noqa: E402
 # A hit below this is not worth pointing at. Tuned so that a wrong-but-plausible
 # match stays silent rather than confidently marking the wrong thing, because a
 # marker on the wrong button is worse than no marker.
-MIN_SCORE = float(os.getenv("DIABLO_POINT_MIN_SCORE", "0.45"))
+MIN_SCORE = config.env_float("DIABLO_POINT_MIN_SCORE", 0.45)
 
 # Spoken ordinals, for "the third result". Diablo knows reading order because
 # the fragments are sorted; a coordinate guess never does.

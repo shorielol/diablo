@@ -15,6 +15,8 @@ moved to a smaller model.
 
 import json
 import os
+
+from skills import config  # noqa: E402
 import queue
 import sys
 import threading
@@ -44,12 +46,12 @@ from skills import local_brain  # noqa: E402
 
 BASE_DIR = os.getenv("DIABLO_BASE_DIR", os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo")))
 JOBS_PATH = os.path.join(BASE_DIR, "jobs.json")
-MAX_CONCURRENT = int(os.getenv("DIABLO_MAX_CONCURRENT_AGENTS", "1"))
+MAX_CONCURRENT = config.env_int("DIABLO_MAX_CONCURRENT_AGENTS", 1)
 LONG_TASK_WORDS = 4  # anything shorter is answered inline rather than queued
 
 # How many times Diablo may come back with a question before it either commits
 # or gives up. Two is the ceiling that still feels like a conversation.
-CLARIFY_ROUNDS = int(os.getenv("DIABLO_CLARIFY_ROUNDS", "2"))
+CLARIFY_ROUNDS = config.env_int("DIABLO_CLARIFY_ROUNDS", 2)
 # Strict: if it is still ambiguous after those rounds, decline rather than pick.
 # Acting on a sentence nobody managed to pin down is how a voice assistant edits
 # the wrong file. Set to 0 to let it make a best guess instead.

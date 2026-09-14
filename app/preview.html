@@ -1,0 +1,25 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Agents</title>
+<style>
+  body { background:#0B0B0D; color:#F2F2F4; font:14px -apple-system,sans-serif;
+         margin:0; padding:28px; display:flex; gap:28px; flex-wrap:wrap; }
+  figure { margin:0; text-align:center; }
+  .big { background:#121215; border:1px solid #2A2A31; border-radius:14px; padding:10px; }
+  figcaption { margin-top:8px; font-size:12px; color:#9B9BA5; }
+  .small { display:flex; gap:10px; align-items:center; margin-top:10px; justify-content:center; }
+</style></head>
+<body>
+<div id="out" style="display:flex;gap:28px;flex-wrap:wrap"></div>
+<script type="module">
+  import { mascot, AGENTS } from './mascot.js';
+  document.getElementById('out').innerHTML = AGENTS.map(a => `
+    <figure>
+      <div class="big">${mascot({accent:a.accent, eye:a.eye, mouth:a.mouth, size:180})}</div>
+      <div class="small">
+        ${mascot({accent:a.accent, eye:a.eye, mouth:a.mouth, size:46, wave:false})}
+        ${mascot({accent:a.accent, eye:a.eye, mouth:a.mouth, size:24, wave:false})}
+      </div>
+      <figcaption>${a.name} — ${a.role}</figcaption>
+    </figure>`).join('');
+</script>
+</body></html>

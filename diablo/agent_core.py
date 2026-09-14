@@ -21,6 +21,8 @@ A 14B model is not a frontier model, and the whole design leans on that:
 
 import json
 import os
+
+from skills import config  # noqa: E402
 import re  # SIGNOFF_GUARD
 import sys
 import time
@@ -40,7 +42,7 @@ from skills import trace  # noqa: E402
 from skills import local_brain  # noqa: E402
 from skills.local_brain import BrainOffline  # noqa: E402
 
-MAX_STEPS = int(os.getenv("DIABLO_MAX_STEPS", "14"))
+MAX_STEPS = config.env_int("DIABLO_MAX_STEPS", 14)
 PLAN_THRESHOLD_WORDS = 6
 
 Speak = Callable[[str], None]

@@ -20,6 +20,8 @@ Three rules the whole file is built around:
 import glob as globlib
 import json
 import os
+
+from skills import config  # noqa: E402
 import re
 import subprocess
 import time
@@ -871,7 +873,7 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
 CORE_TOOLS = ["ask_user", "list_files", "read_file"]
 
 # How many MCP tools may ride along on one turn.
-MCP_LIMIT = int(os.getenv("DIABLO_MCP_TOOL_LIMIT", "6"))
+MCP_LIMIT = config.env_int("DIABLO_MCP_TOOL_LIMIT", 6)
 
 
 def offline_only() -> bool:

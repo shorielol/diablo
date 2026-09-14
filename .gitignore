@@ -26,3 +26,7 @@ audio_cache/
 
 # macOS
 .DS_Store
+
+# The app's vendored React is committed on purpose — the app must work with no
+# network, and 148 KB of pinned files is a smaller liability than a CDN.
+!app/vendor/*.js

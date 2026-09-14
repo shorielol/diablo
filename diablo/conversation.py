@@ -24,6 +24,8 @@ Three things it does that the command path does not:
 """
 
 import os
+
+from skills import config  # noqa: E402
 import random
 import re  # SIGNOFF_GUARD
 import sys
@@ -42,8 +44,8 @@ from skills import persona  # noqa: E402
 from skills import screen_context  # noqa: E402
 
 ASSISTANT_NAME = os.getenv("DIABLO_NAME", "Diablo")
-MAX_TURNS = int(os.getenv("DIABLO_MEMORY_TURNS", "12"))
-SESSION_TIMEOUT = int(os.getenv("DIABLO_SESSION_TIMEOUT", "900"))  # 15 minutes
+MAX_TURNS = config.env_int("DIABLO_MEMORY_TURNS", 12)
+SESSION_TIMEOUT = config.env_int("DIABLO_SESSION_TIMEOUT", 900)  # 15 minutes
 
 # Character comes from persona.py so it can be retuned from .env without
 # touching code. The mechanics of speaking aloud stay here, because they are not

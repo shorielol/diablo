@@ -21,12 +21,14 @@ Everything is tunable from `.env` without touching code:
 """
 
 import os
+
+from skills import config  # noqa: E402
 import random
 from typing import List
 
-HUMOUR = int(os.getenv("DIABLO_HUMOUR", "2"))
-WARMTH = int(os.getenv("DIABLO_WARMTH", "1"))
-FORMALITY = int(os.getenv("DIABLO_FORMALITY", "2"))
+HUMOUR = config.env_int("DIABLO_HUMOUR", 2)
+WARMTH = config.env_int("DIABLO_WARMTH", 1)
+FORMALITY = config.env_int("DIABLO_FORMALITY", 2)
 ADDRESS = os.getenv("DIABLO_ADDRESS", "Sir")
 
 HUMOUR_STYLE = {

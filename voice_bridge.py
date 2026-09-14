@@ -5,6 +5,7 @@ import numpy as np
 import whisper
 from dotenv import load_dotenv
 load_dotenv()
+from skills import config
 from skills import conversation, screen_context, wake_word, voice, skill_registry, local_brain, mcp_client
 # Added by patch_mic: these are called below but were never imported.
 from skills import delegation_tool, agent_tools, mic, persona, browser_tool  # ─── Diablo persona wiring ───
@@ -165,8 +166,8 @@ def take_screenshot():
 # ─── Diablo microphone layer (mic.py) ───
 
 # Roughly 0.24s of sustained speech above the threshold before Diablo yields.
-BARGE_IN_LEVEL = float(os.getenv("DIABLO_BARGE_IN_LEVEL", "0.22"))
-BARGE_IN_BLOCKS = int(os.getenv("DIABLO_BARGE_IN_BLOCKS", "3"))
+BARGE_IN_LEVEL = config.env_float("DIABLO_BARGE_IN_LEVEL", 0.22)
+BARGE_IN_BLOCKS = config.env_int("DIABLO_BARGE_IN_BLOCKS", 3)
 _barge: list = []
 
 
@@ -624,24 +625,29 @@ def start_listening_loop():
     finally:
         microphone.stop()
 
-if __name__ == "__main__":
+def boot_and_listen():
+    """
+    Load the models, build the wake listener, and listen until stopped.
+
+    Pulled out of __main__ so the GUI can call it. AppKit owns the main thread
+    when the app shell is running, so this has to be callable from a background
+    thread — which it is, because everything it touches is either thread-safe
+    or owned by this loop alone.
+    """
+    global stt_model, wake_listener
+
     print("\n  ╔══════════════════════════════════════════════════╗")
     print("  ║     D.I.A.B.L.O. v8.0 — The Synaptic Core        ║")
     print("  ╚══════════════════════════════════════════════════╝\n")
-    
-    # Context Detection...
-    # (Removed: geocoder.ip('me') phoned an IP-geolocation service on every boot
-    #  and USER_CITY was never read by anything.)
-        
-    # Synaptic Overload: Core hearing using 'base' model with M3 Pro acceleration
+
     print("  [INIT] Calibrating Synaptic Sensors (Base @ MPS)...")
     try:
-        # Force Metal Performance Shaders (MPS) for M3 Pro
-        stt_model = whisper.load_model(os.getenv("DIABLO_STT_MODEL", "base.en"), device="mps")
-    except:
+        stt_model = whisper.load_model(
+            os.getenv("DIABLO_STT_MODEL", "base.en"), device="mps")
+    except Exception:
         print("  ⚠ MPS acceleration fails. Falling back to CPU...")
         stt_model = whisper.load_model(os.getenv("DIABLO_STT_MODEL", "base.en"))
-        
+
     # Wake word without a trained model: silero VAD decides if anyone is
     # speaking, tiny.en transcribes a rolling window, and the phrase is matched
     # fuzzily. Costs about 7ms a second idle. The phrase is a config value now,
@@ -651,8 +657,13 @@ if __name__ == "__main__":
     print(f"  [INIT] Wake phrase: '{wake_word.PHRASE}' "
           f"(detect: {wake_word.WAKE_MODEL}, command: base)")
     wake_listener = wake_word.WakeListener(command_model=stt_model)
+
     try:
         start_listening_loop()
     except KeyboardInterrupt:
         print("\nLogging off, Sir.")
         set_ui_state("idle")
+
+
+if __name__ == "__main__":
+    boot_and_listen()

@@ -28,6 +28,8 @@ Two things this buys that a trained model cannot:
 
 import difflib
 import os
+
+from skills import config  # noqa: E402
 import re
 import sys
 import threading
@@ -43,13 +45,13 @@ WAKE_MODEL = os.getenv("DIABLO_WAKE_MODEL", "tiny.en")
 # In low-memory mode the command transcriber reuses this model rather than
 # loading base.en alongside it, which is about 145 MB of the bridge's 255 MB.
 SHARE_MODEL = os.getenv("DIABLO_LOW_MEMORY", "0") not in ("0", "", "false", "False")
-WINDOW_SECONDS = float(os.getenv("DIABLO_WAKE_WINDOW", "3.0"))
-VAD_THRESHOLD = float(os.getenv("DIABLO_VAD_THRESHOLD", "0.08"))
-MIN_GAP = float(os.getenv("DIABLO_WAKE_MIN_GAP", "0.55"))   # seconds between transcriptions
-COOLDOWN = float(os.getenv("DIABLO_WAKE_COOLDOWN", "2.5"))  # seconds muted after a hit
-FUZZ = float(os.getenv("DIABLO_WAKE_FUZZ", "0.72"))
-END_OF_SPEECH = float(os.getenv("DIABLO_END_OF_SPEECH", "0.9"))   # silence that ends a sentence
-MAX_UTTERANCE = float(os.getenv("DIABLO_MAX_UTTERANCE", "12.0"))  # hard stop on one request
+WINDOW_SECONDS = config.env_float("DIABLO_WAKE_WINDOW", 3.0)
+VAD_THRESHOLD = config.env_float("DIABLO_VAD_THRESHOLD", 0.08)
+MIN_GAP = config.env_float("DIABLO_WAKE_MIN_GAP", 0.55)   # seconds between transcriptions
+COOLDOWN = config.env_float("DIABLO_WAKE_COOLDOWN", 2.5)  # seconds muted after a hit
+FUZZ = config.env_float("DIABLO_WAKE_FUZZ", 0.72)
+END_OF_SPEECH = config.env_float("DIABLO_END_OF_SPEECH", 0.9)   # silence that ends a sentence
+MAX_UTTERANCE = config.env_float("DIABLO_MAX_UTTERANCE", 12.0)  # hard stop on one request
 
 # Diablo hears itself through the speakers. Without this it says its own name
 # during a reply and immediately wakes itself up.

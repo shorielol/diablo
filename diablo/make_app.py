@@ -132,7 +132,13 @@ export PYTHONUNBUFFERED=1
 echo "" >> "$LOG"
 echo "=== Diablo starting $(date) ===" >> "$LOG"
 
-exec "$PY" -u "$DIABLO_HOME/voice_bridge.py" >> "$LOG" 2>&1
+# The app shell owns the main thread (AppKit insists) and starts the voice
+# loop on a background thread. Set DIABLO_HEADLESS=1 to run the old way, with
+# no window and no menu bar item.
+if [ "${{DIABLO_HEADLESS:-0}}" = "1" ]; then
+    exec "$PY" -u "$DIABLO_HOME/voice_bridge.py" >> "$LOG" 2>&1
+fi
+exec "$PY" -u "$DIABLO_HOME/diablo_app.py" >> "$LOG" 2>&1
 """
 
 def real_interpreter() -> str:
@@ -166,8 +172,8 @@ def build(verbose: bool = True) -> str:
         "CFBundleName": "Diablo",
         "CFBundleDisplayName": "Diablo",
         "CFBundleIdentifier": BUNDLE_ID,
-        "CFBundleVersion": "1.1.0",
-        "CFBundleShortVersionString": "1.1",
+        "CFBundleVersion": "2.0.0",
+        "CFBundleShortVersionString": "2.0",
         "CFBundleExecutable": "Diablo",
         "CFBundlePackageType": "APPL",
         "CFBundleInfoDictionaryVersion": "6.0",
@@ -182,9 +188,11 @@ def build(verbose: bool = True) -> str:
         "NSAppleEventsUsageDescription":
             "Diablo controls the apps you ask it to, such as opening a browser "
             "tab or sending a message.",
-        # Deliberately NOT LSUIElement. A background-only agent is the less
-        # reliable place for a permission prompt to appear, and a visible app is
-        # something you can see running and quit with Cmd-Q.
+        # Menu bar only. The microphone prompt still appears reliably because
+        # the bundle is launched by the user and owns its own TCC identity —
+        # that was the original reason for avoiding this, and it no longer
+        # applies now that there is a status item to quit from.
+        "LSUIElement": True,
     }
     with open(os.path.join(contents, "Info.plist"), "wb") as f:
         plistlib.dump(info, f)

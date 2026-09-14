@@ -14,6 +14,8 @@ Measured on this machine (M3 Pro, 2026-09-10):
 
 import json
 import os
+
+from skills import config  # noqa: E402
 import threading
 import re
 import time
@@ -28,7 +30,7 @@ from typing import Any, Dict, List, Optional
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 CHAT_MODEL = os.getenv("DIABLO_MODEL", "qwen3:14b")
 FAST_MODEL = os.getenv("DIABLO_FAST_MODEL", CHAT_MODEL)
-REQUEST_TIMEOUT = int(os.getenv("DIABLO_LLM_TIMEOUT", "180"))
+REQUEST_TIMEOUT = config.env_int("DIABLO_LLM_TIMEOUT", 180)
 
 # Ollama unloads an idle model after five minutes by default, and reloading
 # qwen3:14b costs several seconds on the very command you were waiting on.
@@ -44,11 +46,11 @@ KEEP_ALIVE = os.getenv("DIABLO_KEEP_ALIVE", "0s" if LOW_MEMORY else "10m")
 # qwen3 that is 262,144 tokens — a window Diablo never fills and which costs
 # real memory in KV cache to keep open. 4096 holds the system prompt, the tool
 # schemas and a dozen turns with room to spare.
-NUM_CTX = int(os.getenv("DIABLO_NUM_CTX", "4096"))
+NUM_CTX = config.env_int("DIABLO_NUM_CTX", 4096)
 
 # How much the model may say in one turn. Everything here is read aloud, so a
 # long answer is a long wait with a speaker talking at you.
-NUM_PREDICT = int(os.getenv("DIABLO_NUM_PREDICT", "512"))
+NUM_PREDICT = config.env_int("DIABLO_NUM_PREDICT", 512)
 
 # Thinking is off by default and has to be asked for. The hybrid qwen3 models
 # spend hundreds of tokens inside <think> before answering, which on a voice

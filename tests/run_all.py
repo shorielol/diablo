@@ -27,6 +27,7 @@ SUITES = [
     ("test_safety.py",       False, "shell denylist, confirmations, execute() fuzzing"),
     ("test_mic_wake.py",     False, "endpointer and wake listener under load"),
     ("test_manager.py",      False, "state machine, events, lifecycle, degradation"),
+    ("test_app.py",          False, "the app API, its assets, and what is on screen"),
     ("test_pointing.py",     False, "finding things on screen, and marking them"),
     ("test_system.py",       False, "system tools, offline gating, screen sight"),
     ("test_voice.py",        False, "Voicebox, cache, and every fallback"),

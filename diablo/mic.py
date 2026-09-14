@@ -29,6 +29,8 @@ amount of Python threading will interrupt that.
 
 import json
 import os
+
+from skills import config  # noqa: E402
 import subprocess
 import sys
 import time
@@ -36,14 +38,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 TARGET_RATE = 16000
 CHUNK = 1280                      # samples at TARGET_RATE, as the bridge expects
-PROBE_SECONDS = float(os.getenv("DIABLO_MIC_PROBE_SECONDS", "1.0"))
-PROBE_TIMEOUT = float(os.getenv("DIABLO_MIC_PROBE_TIMEOUT", "12"))
+PROBE_SECONDS = config.env_float("DIABLO_MIC_PROBE_SECONDS", 1.0)
+PROBE_TIMEOUT = config.env_float("DIABLO_MIC_PROBE_TIMEOUT", 12)
 SILENCE_PEAK = 1e-6               # below this a block is bit-for-bit silence
 # Shared with wake_word.py on purpose: one dial for "is this speech", so tuning
 # it does not fix wake detection and quietly break endpointing. The reference
 # below was undefined, and the bare except around it meant the VAD silently
 # never ran — every utterance was endpointed on raw energy instead.
-VAD_THRESHOLD = float(os.getenv("DIABLO_VAD_THRESHOLD", "0.08"))
+VAD_THRESHOLD = config.env_float("DIABLO_VAD_THRESHOLD", 0.08)
 
 HOME = os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo"))
 STATE_PATH = os.path.join(HOME, "mic_device.json")
@@ -103,9 +105,9 @@ class Endpointer:
     """
 
     def __init__(self,
-                 hang_time: float = float(os.getenv("DIABLO_HANG_TIME", "0.55")),
-                 lead_in: float = float(os.getenv("DIABLO_LEAD_IN", "1.8")),
-                 max_seconds: float = float(os.getenv("DIABLO_MAX_UTTERANCE", "12.0")),
+                 hang_time: float = config.env_float("DIABLO_HANG_TIME", 0.55),
+                 lead_in: float = config.env_float("DIABLO_LEAD_IN", 1.8),
+                 max_seconds: float = config.env_float("DIABLO_MAX_UTTERANCE", 12.0),
                  min_speech: float = 0.20):
         self.hang_blocks = max(1, int(hang_time * TARGET_RATE / CHUNK))
         self.lead_in_blocks = max(1, int(lead_in * TARGET_RATE / CHUNK))

@@ -456,6 +456,8 @@ class CompanionManager:
         self._state_history: List[tuple] = []       # (ts, from, to)
         self._started_at: Optional[float] = None
         self._last_error: Optional[str] = None
+        self._perm_cache: Dict[str, bool] = {}
+        self._perm_checked: float = 0.0
 
         self.brain = BrainSubsystem(self)
         self.voice = VoiceSubsystem(self)
@@ -682,15 +684,22 @@ class CompanionManager:
         "may I?" — and a denial is not an error, it is silence: a denied
         microphone returns endless zeros rather than raising.
         """
+        # Cached. This is called on every /api/state, the UI polls that, and
+        # the checks underneath are not cheap: the first version shelled out to
+        # lsof to see who held the microphone and took 5.4 seconds per call,
+        # which made the whole window feel broken. Permissions change when a
+        # person changes them in System Settings, so thirty seconds is plenty.
+        now = time.time()
+        if self._perm_cache and now - self._perm_checked < 30:
+            return dict(self._perm_cache)
+
         result = {"mic": False, "screen": False, "accessibility": False}
 
         try:
             from skills import mic
-            chosen = mic.load_choice()
-            result["mic"] = bool(chosen) and not mic.who_holds_the_input()
-            if chosen and not result["mic"]:
-                # Something else has the device; that is not a permission problem.
-                result["mic"] = True
+            # Whether a device has been chosen and saved. Deliberately not
+            # who_holds_the_input(), which runs lsof across every process.
+            result["mic"] = bool(mic.load_choice())
         except BaseException as e:
             log.debug("[Manager] mic permission check failed: %s", e)
 
@@ -709,6 +718,8 @@ class CompanionManager:
         except BaseException as e:
             log.debug("[Manager] accessibility check failed: %s", e)
 
+        self._perm_cache = dict(result)
+        self._perm_checked = now
         return result
 
     # ── introspection ────────────────────────────────────────────────────────
