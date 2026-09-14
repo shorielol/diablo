@@ -49,6 +49,8 @@ def main() -> int:
     parser.add_argument("--step", default="", help="e.g. '2 of 5'")
     parser.add_argument("--session", action="store_true",
                         help="stay up and take moves on stdin")
+    parser.add_argument("--on-light", action="store_true",
+                        help="the screen behind this point is light")
     args = parser.parse_args()
 
     try:
@@ -81,6 +83,11 @@ def main() -> int:
             self.opacity = 1.0
             self.label = ""
             self.step = ""
+            # What is behind the marker. A white label on a white document is
+            # invisible, and so is a dark one on a dark IDE — the caption has
+            # to be the opposite of whatever it is sitting on, not a fixed
+            # colour that happens to suit half of them.
+            self.on_light = False
             return self
 
         def isOpaque(self):
@@ -136,10 +143,12 @@ def main() -> int:
                     NSPoint(cx - csize.width / 2, cy + 30), counter_attrs)
 
             text = NSString.stringWithString_(self.label)
+            ink = 0.06 if self.on_light else 1.0
+            paper = 0.97 if self.on_light else 0.06
             attributes = {
                 NSFontAttributeName: NSFont.boldSystemFontOfSize_(13.0),
                 NSForegroundColorAttributeName:
-                    NSColor.colorWithCalibratedWhite_alpha_(1.0, self.opacity),
+                    NSColor.colorWithCalibratedWhite_alpha_(ink, self.opacity),
             }
             size = text.sizeWithAttributes_(attributes)
             pad_x, pad_y = 10.0, 6.0
@@ -150,8 +159,14 @@ def main() -> int:
                 box_y = cy + 46
             box = NSMakeRect(cx - size.width / 2 - pad_x, box_y,
                              size.width + pad_x * 2, size.height + pad_y * 2)
-            NSColor.colorWithCalibratedWhite_alpha_(0.06, 0.88 * self.opacity).set()
-            NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(box, 7, 7).fill()
+            NSColor.colorWithCalibratedWhite_alpha_(paper, 0.92 * self.opacity).set()
+            rounded = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(box, 7, 7)
+            rounded.fill()
+            # A hairline in the ink colour, so the caption keeps an edge even
+            # where the background happens to match it.
+            NSColor.colorWithCalibratedWhite_alpha_(ink, 0.22 * self.opacity).set()
+            rounded.setLineWidth_(1.0)
+            rounded.stroke()
             text.drawAtPoint_withAttributes_(
                 NSPoint(cx - size.width / 2, box_y + pad_y), attributes)
 
@@ -172,6 +187,7 @@ def main() -> int:
     view = MarkerView.alloc().initWithFrame_(NSMakeRect(0, 0, WIDTH, HEIGHT))
     view.label = args.label
     view.step = args.step
+    view.on_light = args.on_light
     window.setContentView_(view)
     window.orderFrontRegardless()                 # show without taking focus
 
@@ -208,7 +224,7 @@ def _run_session(args, app, window, view, primary_height,
     """
     from Foundation import NSOperationQueue
 
-    def place(x, y, label, step):
+    def place(x, y, label, step, on_light):
         # AppKit off the main thread is undefined behaviour that usually looks
         # like it works, right up until it draws nothing.
         def apply():
@@ -217,6 +233,7 @@ def _run_session(args, app, window, view, primary_height,
                            WIDTH, HEIGHT), True)
             view.label = label
             view.step = step
+            view.on_light = on_light
             view.opacity = 1.0
             window.orderFrontRegardless()
             view.setNeedsDisplay_(True)
@@ -236,7 +253,8 @@ def _run_session(args, app, window, view, primary_height,
             try:
                 place(float(message["x"]), float(message["y"]),
                       str(message.get("label", ""))[:60],
-                      str(message.get("step", ""))[:12])
+                      str(message.get("step", ""))[:12],
+                      bool(message.get("on_light", False)))
             except Exception:
                 continue
         NSOperationQueue.mainQueue().addOperationWithBlock_(

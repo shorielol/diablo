@@ -40,6 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from skills import config  # noqa: E402
 from skills import pointing  # noqa: E402
 from skills import screen_context  # noqa: E402
+from skills.voice import EXPLAIN_WPM  # noqa: E402
 
 OVERLAY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "overlay.py")
 
@@ -54,8 +55,8 @@ MAX_STEPS = config.env_int("DIABLO_TUTOR_MAX_STEPS", 7, low=2, high=12)
 # scores 0.89 against "tutor test.txt", which is a fine guess for a pointer
 # and a bad basis for a lesson.
 ANCHOR_SCORE = config.env_float("DIABLO_TUTOR_ANCHOR_SCORE", 0.62)
-# How long a step's marker stays before the next one, when nothing is speaking.
-STEP_PAUSE = config.env_float("DIABLO_TUTOR_STEP_PAUSE", 0.6)
+# A beat between steps, so one idea lands before the next arrives.
+STEP_PAUSE = config.env_float("DIABLO_TUTOR_STEP_PAUSE", 0.9)
 
 
 # ─── Is this a request to be taught? ─────────────────────────────────────────
@@ -436,25 +437,68 @@ def anchor(steps: List[Step], fragments: List[dict], window: dict) -> List[Step]
 
 # ─── The marker, across a whole walkthrough ──────────────────────────────────
 
+def background_is_light(capture: str, window: dict,
+                        x: float, y: float, radius: int = 46) -> bool:
+    """
+    Whether the screen around a point is light, so the caption can oppose it.
+
+    Sampled from the capture that was already taken for the OCR, so it costs no
+    extra screenshot. The point is in absolute screen coordinates and the image
+    is the window, so it comes back to window-relative first.
+    """
+    try:
+        from AppKit import NSBitmapImageRep
+        from Foundation import NSData
+        rep = NSBitmapImageRep.imageRepWithData_(
+            NSData.dataWithContentsOfFile_(capture))
+        if rep is None:
+            return False
+        width, height = rep.pixelsWide(), rep.pixelsHigh()
+        px = (x - window["x"]) / max(1.0, window["width"]) * width
+        py = (y - window["y"]) / max(1.0, window["height"]) * height
+        total, count = 0.0, 0
+        for dy in range(-radius, radius + 1, 12):
+            for dx in range(-radius, radius + 1, 12):
+                sx, sy = int(px + dx), int(py + dy)
+                if not (0 <= sx < width and 0 <= sy < height):
+                    continue
+                colour = rep.colorAtX_y_(sx, sy)
+                if colour is None:
+                    continue
+                total += (0.2126 * colour.redComponent()
+                          + 0.7152 * colour.greenComponent()
+                          + 0.0722 * colour.blueComponent())
+                count += 1
+        if not count:
+            return False
+        return (total / count) > 0.5
+    except Exception:
+        return False
+
+
 class Marker:
     """One overlay process, moved from step to step."""
 
     def __init__(self):
         self.process: Optional[subprocess.Popen] = None
 
-    def move(self, x: float, y: float, label: str, step: str) -> bool:
+    def move(self, x: float, y: float, label: str, step: str,
+             on_light: bool = False) -> bool:
         try:
             if self.process is None or self.process.poll() is not None:
+                command = [sys.executable, OVERLAY, "--session",
+                           "--x", f"{x:.1f}", "--y", f"{y:.1f}",
+                           "--label", label[:60], "--step", step]
+                if on_light:
+                    command.append("--on-light")
                 self.process = subprocess.Popen(
-                    [sys.executable, OVERLAY, "--session",
-                     "--x", f"{x:.1f}", "--y", f"{y:.1f}",
-                     "--label", label[:60], "--step", step],
-                    stdin=subprocess.PIPE, text=True,
+                    command, stdin=subprocess.PIPE, text=True,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     start_new_session=True)
                 return True
             self.process.stdin.write(json.dumps(
-                {"x": x, "y": y, "label": label[:60], "step": step}) + "\n")
+                {"x": x, "y": y, "label": label[:60], "step": step,
+                 "on_light": on_light}) + "\n")
             self.process.stdin.flush()
             return True
         except Exception:
@@ -504,16 +548,12 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
         return (f"I won't read a {window['app']} window, Sir. "
                 "Password managers and banking stay private.")
 
-    path = screen_context.capture_window(window["id"])
-    if not path:
+    capture = screen_context.capture_window(window["id"])
+    if not capture:
         return "I couldn't capture that window, Sir."
-    try:
-        fragments = screen_context._ocr_fragments(path, window)
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
+    # Kept until the walkthrough finishes: each step samples it to decide
+    # whether its caption should be dark on light or light on dark.
+    fragments = screen_context._ocr_fragments(capture, window)
 
     if isinstance(fragments, str) or not fragments:
         return (f"I can see {window['app']} but I can't read any text in it, "
@@ -596,6 +636,15 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
     if not steps or (plan_result["kind"] == "unclear" and anchored == 0):
         return (f"I can see {window['app']}, Sir, but I can't tell which part "
                 "you mean. Point me at it and I'll take you through it.")
+    # Not every caller's speak() takes a pace — the agent loop passes its own
+    # one-argument version. Probed once rather than guessed, so a walkthrough
+    # never dies on a TypeError halfway through step three.
+    def narrate(line: str) -> None:
+        try:
+            speak(line, pace=EXPLAIN_WPM)
+        except TypeError:
+            speak(line)
+
     marker = Marker()
     spoken = 0
     try:
@@ -605,13 +654,23 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                 break
             counter = f"{index} of {len(steps)}"
             if step.get("found"):
-                marker.move(step["x"], step["y"], step.get("matched", ""), counter)
-                time.sleep(0.15)          # let it land before the words start
-            speak(step["say"])
+                light = background_is_light(capture, window, step["x"], step["y"])
+                marker.move(step["x"], step["y"], step.get("matched", ""),
+                            counter, on_light=light)
+                # A beat for the eye to find the marker before the sentence
+                # about it starts. The marker stays up for the whole sentence,
+                # because speak() blocks — that is what makes the drawing and
+                # the talking one event rather than two.
+                time.sleep(0.25)
+            narrate(step["say"])
             spoken += 1
             time.sleep(STEP_PAUSE)
     finally:
         marker.close()
+        try:
+            os.unlink(capture)
+        except OSError:
+            pass
 
     pointed = sum(1 for s in steps if s.get("found"))
     missed = [s["missing"] for s in steps if s.get("missing")]

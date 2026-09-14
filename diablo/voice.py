@@ -18,6 +18,8 @@ import subprocess
 import sys
 import threading
 from typing import List, Optional
+
+from skills import config
 import urllib.request
 import json
 
@@ -206,37 +208,161 @@ def synthesize(text: str, force: bool = False) -> Optional[str]:
     return path
 
 
+# ─── Pace ────────────────────────────────────────────────────────────────────
+#
+# Measured: the Kokoro voice delivers 205 words per minute. Ordinary
+# conversational English is about 150, an audiobook about 150, and someone
+# explaining a method to you slows to 110-130. At 205 an explanation is
+# technically audible and useless — you cannot follow a step while the next one
+# is already arriving.
+#
+# Voicebox has no speed parameter, so the rate is changed after synthesis with
+# ffmpeg's atempo, which stretches time without moving pitch. It costs about
+# 55ms per phrase and the result is cached, so a line said twice is slowed
+# once.
+
+EXPLAIN_WPM = config.env_int("DIABLO_EXPLAIN_WPM", 120, low=80, high=200)
+NORMAL_WPM = config.env_int("DIABLO_NORMAL_WPM", 165, low=100, high=260)
+
+
+def _duration(path: str) -> Optional[float]:
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", path],
+            capture_output=True, text=True, timeout=10).stdout.strip()
+        return float(out) if out else None
+    except Exception:
+        return None
+
+
+def repace(path: str, text: str, target_wpm: int) -> str:
+    """
+    The same audio at a given words-per-minute, or the original unchanged.
+
+    The rate is measured from this clip rather than assumed, so it holds if the
+    voice, the engine or the profile changes. Anything already within ten per
+    cent of the target is left alone — a 1.05 stretch is inaudible and not
+    worth a re-encode.
+    """
+    words = len((text or "").split())
+    if words < 3 or not target_wpm:
+        return path
+    seconds = _duration(path)
+    if not seconds or seconds <= 0:
+        return path
+    current = words / seconds * 60.0
+    factor = target_wpm / current
+    if 0.9 < factor < 1.1:
+        return path
+    # atempo handles 0.5 to 2.0 in one pass; chain it for anything beyond.
+    chain, remaining = [], factor
+    while remaining < 0.5:
+        chain.append(0.5)
+        remaining /= 0.5
+    while remaining > 2.0:
+        chain.append(2.0)
+        remaining /= 2.0
+    chain.append(remaining)
+    filters = ",".join(f"atempo={f:.4f}" for f in chain)
+
+    out = path.replace(".wav", f".{target_wpm}wpm.wav")
+    if os.path.exists(out):
+        return out
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-i", path, "-filter:a", filters, out],
+            capture_output=True, timeout=30)
+        if result.returncode != 0 or not os.path.exists(out):
+            return path
+        return out
+    except Exception:
+        # ffmpeg missing or failing is not a reason to go silent.
+        return path
+
+
 # ─── Playback ────────────────────────────────────────────────────────────────
+
+# Called the instant audio actually starts, with no arguments.
+#
+# The orb used to begin its speaking animation the moment speak() was entered,
+# which is before synthesis — a network round trip to Voicebox, or a cache
+# lookup, or a fallback to the system voice. On a cold line that is upwards of
+# a second of a mouth moving in silence, and it reads as a glitch rather than
+# as speech. The state belongs to the sound, so the sound announces it.
+on_audio_start = None
+on_audio_end = None
+
 
 def _play(path: str) -> bool:
     try:
+        if on_audio_start:
+            try:
+                on_audio_start()
+            except Exception:
+                pass
         subprocess.run(["afplay", path], timeout=120)
         return True
     except Exception as e:
         print(f"  [Voice] playback failed: {e}")
         return False
+    finally:
+        if on_audio_end:
+            try:
+                on_audio_end()
+            except Exception:
+                pass
 
 
-def _say_locally(text: str) -> None:
+def _say_locally(text: str, pace: Optional[int] = None) -> None:
     """macOS speech synthesis. Never fails, never leaves the machine."""
-    subprocess.run(["say", "-v", os.getenv("DIABLO_FALLBACK_VOICE", "Daniel"), text],
-                   timeout=120)
+    command = ["say", "-v", os.getenv("DIABLO_FALLBACK_VOICE", "Daniel")]
+    if pace:
+        # `say` takes words per minute directly, so the fallback voice gets the
+        # same pacing without going near ffmpeg.
+        command += ["-r", str(int(pace))]
+    command.append(text)
+    if on_audio_start:
+        try:
+            on_audio_start()
+        except Exception:
+            pass
+    try:
+        subprocess.run(command, timeout=120)
+    finally:
+        if on_audio_end:
+            try:
+                on_audio_end()
+            except Exception:
+                pass
 
 
-def speak(text: str) -> str:
+def speak(text: str, pace: Optional[int] = None) -> str:
+    """
+    Say it. `pace` is a words-per-minute target; None leaves the voice alone.
+
+    Explanations pass EXPLAIN_WPM. Everything else is unchanged, because a
+    one-line acknowledgement does not need slowing down and would sound
+    laboured if it were.
+    """
     text = (text or "").strip()
     if not text:
         return "empty"
 
     hit = cached_path(text)
-    if hit and _play(hit):
-        return "cache"
+    if hit:
+        if pace:
+            hit = repace(hit, text, pace)
+        if _play(hit):
+            return "cache"
 
     path = synthesize(text)
+    if path and pace:
+        path = repace(path, text, pace)
     if path and _play(path):
         return "voicebox"
 
-    _say_locally(text)
+    _say_locally(text, pace)
     return "local"
 
 
@@ -254,7 +380,7 @@ def interrupt() -> None:
     STOP.set()
 
 
-def speak_stream(pieces, should_stop=None) -> str:
+def speak_stream(pieces, should_stop=None, pace: Optional[int] = None) -> str:
     """
     Speak sentence by sentence as they arrive, instead of waiting for the lot.
 
@@ -293,6 +419,8 @@ def speak_stream(pieces, should_stop=None) -> str:
                 path = None
                 try:
                     path = cached_path(piece) or synthesize(piece)
+                    if path and pace:
+                        path = repace(path, piece, pace)
                 except BaseException as e:
                     failed.append(e)
                 ahead.put((piece, path))
@@ -322,7 +450,7 @@ def speak_stream(pieces, should_stop=None) -> str:
             else:
                 # Whatever went wrong with this segment, say it some other way
                 # rather than dropping a sentence out of the middle of an answer.
-                route = speak(piece)
+                route = speak(piece, pace=pace)
     finally:
         STOP.set()          # unblock the renderer if it is mid-queue
         SPEAKING.clear()
@@ -330,7 +458,7 @@ def speak_stream(pieces, should_stop=None) -> str:
         STOP.clear()
 
 
-def say_long(text: str, should_stop=None) -> str:
+def say_long(text: str, should_stop=None, pace: Optional[int] = None) -> str:
     """
     Speak a whole answer, split at sentence boundaries first.
 
@@ -343,9 +471,9 @@ def say_long(text: str, should_stop=None) -> str:
     except Exception:
         pieces = [text]
     if not pieces:
-        return speak(text)
+        return speak(text, pace=pace)
     if len(pieces) == 1:
-        return speak(pieces[0])
+        return speak(pieces[0], pace=pace)
 
     # First sentence alone, then everything else as one block.
     #
@@ -357,7 +485,8 @@ def say_long(text: str, should_stop=None) -> str:
     # Splitting every sentence pays a synthesis round trip per sentence and the
     # look-ahead only hides part of it. Splitting once buys nearly all of the
     # head start and almost none of the tax.
-    return speak_stream([pieces[0], " ".join(pieces[1:])], should_stop=should_stop)
+    return speak_stream([pieces[0], " ".join(pieces[1:])],
+                        should_stop=should_stop, pace=pace)
 
 # ─── Pre-warm ────────────────────────────────────────────────────────────────
 

@@ -106,7 +106,25 @@ def set_ui_state(state):
 
 # ─── Tool Functions ─────────────────────────────────────────────────────────
 
-def speak(text, lang="en", cached_key=None):
+# Anything longer than this is an explanation, whatever it was asked for.
+#
+# The rule is length rather than intent because intent is not reliably
+# knowable at this point, and length is a good proxy: "Done, Sir" is never an
+# explanation and thirty words almost always is. Measured, the voice runs at
+# 205 words per minute, which is half again faster than ordinary speech and
+# well past the point where you can follow a method while hearing it.
+EXPLAIN_ABOVE_WORDS = config.env_int("DIABLO_EXPLAIN_ABOVE_WORDS", 22)
+
+
+def _pace_for(text: str) -> int:
+    """Words per minute for this line."""
+    words = len((text or "").split())
+    if words > EXPLAIN_ABOVE_WORDS:
+        return voice.EXPLAIN_WPM
+    return voice.NORMAL_WPM
+
+
+def speak(text, lang="en", cached_key=None, pace=None):
     """
     Say something out loud.
 
@@ -121,22 +139,44 @@ def speak(text, lang="en", cached_key=None):
     that VOICE_HI used to be needed for.
     """
     barge_in.clear()
-    set_ui_state("speaking")
+    if pace is None:
+        pace = _pace_for(text)
     print(f"\n  Diablo: {text}")
+    # The speaking state is NOT set here. It is set by voice.py the moment
+    # audio actually begins, through the hook installed below, because
+    # everything between this line and the first sound — a cache lookup, a
+    # round trip to Voicebox, a fall back to the system voice — can take over
+    # a second, and the orb was mouthing along to silence for all of it.
     try:
         # Long answers start on the first sentence instead of after the whole
         # thing has been synthesised: 0.95s to the first word rather than
         # 2.79s. say_long falls back to a single call for anything short, so
         # the cached one-liners are unaffected.
         if len(text) > 120:
-            voice.say_long(text, should_stop=lambda: barge_in.is_set())
+            voice.say_long(text, should_stop=lambda: barge_in.is_set(), pace=pace)
         else:
-            voice.speak(text)
+            voice.speak(text, pace=pace)
     except Exception as e:
         print(f"  [TTS fallback: {e}]")
         subprocess.run(["say", "-v", "Daniel", text])
     finally:
         set_ui_state("idle")
+
+
+def _audio_started():
+    """Audio is coming out of the speaker right now."""
+    set_ui_state("speaking")
+
+
+def _audio_stopped():
+    # Deliberately not setting idle here. A long answer is several clips, and
+    # dropping to idle between them makes the orb flicker once a sentence.
+    # speak()'s finally block owns the return to idle.
+    pass
+
+
+voice.on_audio_start = _audio_started
+voice.on_audio_end = _audio_stopped
 
 
 def open_app(app_name):
