@@ -71,7 +71,10 @@ const Mascot = memo(({ agent, size = 96, wave = true, crop = '' }) => {
    telling you the application is running. The empty string is the design. */
 const STATE_WORDS = {
   cold: '', init: 'Waking', idle: '',
-  listening: 'Listening', processing: 'Thinking', responding: 'Speaking',
+  listening: 'Listening', processing: 'Thinking',
+  // The answer exists and the sound has not started. Named, because the
+  // alternative is showing "Speaking" through a synthesis round trip.
+  preparing: 'Thinking', responding: 'Speaking',
   error: 'Something broke', shutdown: 'Closing',
 };
 
@@ -289,7 +292,7 @@ const Empty = memo(() => html`
   <div class="blank"><p>What are we doing?</p></div>`);
 
 function Stage({ turns, state, agent, roster, jobs, liveAgents, address,
-                 onSend, onInterrupt, onReset }) {
+                 permissions, onPermissions, onSend, onInterrupt, onReset }) {
   const [draft, setDraft] = useState('');
   const areaRef = useRef(null);
   const endRef = useRef(null);
@@ -368,7 +371,8 @@ function Stage({ turns, state, agent, roster, jobs, liveAgents, address,
 
   return html`
     <div class="stage">
-      <${Head} state=${state} working=${busy.length ? null : null} />
+      <${Head} state=${state} working=${null} />
+      <${Needs} perms=${permissions || {}} onPermissions=${onPermissions} />
       <${Running} jobs=${jobs} roster=${roster.length ? indexRoster(roster) : byId} />
       ${turns.length === 0
         ? html`<${Empty} />`
@@ -473,9 +477,11 @@ const PERM_LABELS = {
   mic: 'Microphone', screen: 'Screen recording', accessibility: 'Accessibility',
 };
 
-function Health({ state, onPermissions }) {
-  const subsystems = state.subsystems || {};
-  const perms = state.permissions || {};
+/* Asking for a permission, in one place.
+   The compact request in the conversation and the diagnostic page both do
+   exactly this, and two copies of it would drift the moment macOS changes its
+   mind about when it shows a dialog. */
+function useGrant(onPermissions) {
   const [asking, setAsking] = useState(null);
   const [note, setNote] = useState('');
 
@@ -501,6 +507,60 @@ function Health({ state, onPermissions }) {
       setAsking(null);
     }
   }, [onPermissions]);
+
+  return { grant, asking, note, setNote };
+}
+
+/* What Diablo cannot do without each one, said the way he would say it.
+   Not "SCREEN RECORDING: DENIED" — the user does not need the name of the
+   toggle, they need to know what is missing and why he is asking. */
+const PERM_ASK = {
+  screen: 'I need screen access to see what you are seeing.',
+  mic: 'I need the microphone to hear you.',
+  accessibility: 'Accessibility lets me point at buttons that have no text '
+               + 'label. Everything else works without it.',
+};
+
+/* The button says what pressing it does. Built from its own table rather
+   than "Allow " + the diagnostic label, which produced "Allow Screen
+   recording" — a stray capital in the middle of a sentence, which is the
+   kind of detail that makes an interface feel unfinished. */
+const PERM_BUTTON = {
+  screen: 'Allow screen access',
+  mic: 'Allow microphone',
+  accessibility: 'Allow accessibility',
+};
+
+/* The order matters: one request at a time, most blocking first. Three
+   stacked permission prompts on first run is the onboarding clutter the
+   product is supposed to avoid. */
+const PERM_ORDER = ['screen', 'mic', 'accessibility'];
+
+const Needs = memo(({ perms, onPermissions }) => {
+  const { grant, asking, note } = useGrant(onPermissions);
+  /* Strictly false, never merely absent. The snapshot reports null for a
+     permission macOS will not disclose without being asked, and "I cannot
+     tell" is not a reason to interrupt someone with a request. Only a
+     definite denial earns the row. */
+  const missing = PERM_ORDER.find(name => perms[name] === false);
+  if (!missing) return null;
+  return html`
+    <section class="needs" role="status">
+      <p class="why">${PERM_ASK[missing]}</p>
+      <div class="act">
+        <button class="grantbtn" disabled=${asking === missing}
+                onClick=${() => grant(missing)}>
+          ${asking === missing ? 'Asking\u2026' : (PERM_BUTTON[missing] || 'Allow')}
+        </button>
+        ${note ? html`<span class="grantnote">${note}</span>` : null}
+      </div>
+    </section>`;
+});
+
+function Health({ state, onPermissions }) {
+  const subsystems = state.subsystems || {};
+  const perms = state.permissions || {};
+  const { grant, asking, note, setNote } = useGrant(onPermissions);
 
   const recheck = useCallback(async () => {
     setNote('');
@@ -753,7 +813,8 @@ function App() {
         ${view === 'home'
           ? html`<${Stage} turns=${turns} state=${state.state} agent=${agent}
                roster=${roster} jobs=${jobs} liveAgents=${liveAgents}
-               address=${address} onSend=${send} onInterrupt=${interrupt}
+               address=${address} permissions=${state.permissions}
+               onPermissions=${refresh} onSend=${send} onInterrupt=${interrupt}
                onReset=${reset} />`
           : null}
         ${view === 'trace' ? html`<${Trace} turns=${trace} />` : null}

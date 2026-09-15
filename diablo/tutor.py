@@ -754,24 +754,34 @@ CANCELLED = "cancelled"
 
 def read_window(window: dict):
     """
-    Capture one window and read it: (path, fragments).
+    Capture one window and read it: (path, fragments, bounds it was read from).
 
-    The pair travels together on purpose. The fragments are the coordinates and
-    the path is the picture those coordinates describe, and a step that mixes
-    fragments from one capture with a picture from another draws its caption in
-    the wrong colour and marks the wrong place.
+    The three travel together on purpose. The fragments are normalised to the
+    window, the path is the picture those fragments describe, and the bounds
+    are what turns a normalised fragment into a place on the desktop. A step
+    that mixes any two of them from different moments draws its caption in the
+    wrong colour or marks the wrong place.
+
+    The bounds are re-read every time rather than carried from the start of the
+    lesson. Measured: a window dragged 600 points right and 200 down while
+    Diablo was talking put every later marker 632 points from its target —
+    pointing at bare desktop, confidently, with a caption naming a button that
+    was no longer there.
     """
-    path = screen_context.capture_window(window["id"])
+    current = screen_context.window_by_id(window.get("id", 0)) or window
+    path = screen_context.capture_window(current["id"])
     if not path:
-        return None, []
-    fragments = screen_context._ocr_fragments(path, window)
+        return None, [], current
+    fragments = screen_context._ocr_fragments(path, current)
     if isinstance(fragments, str) or not fragments:
         try:
             os.unlink(path)
         except OSError:
             pass
-        return None, []
-    return path, sorted(fragments, key=lambda f: (round(f["top"], 3), f["left"]))
+        return None, [], current
+    return (path,
+            sorted(fragments, key=lambda f: (round(f["top"], 3), f["left"])),
+            current)
 
 
 def step_landed(before: List[dict], after: List[dict], expect: str = ""):
@@ -1336,6 +1346,36 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                 speak("Stopping there, Sir.")
                 break
             counter = f"{index} of {len(steps)}"
+
+            # Has the window moved since the last step was drawn?
+            #
+            # A click is not the only thing that happens between steps. The
+            # user drags the window aside to see something, or resizes it, or
+            # sends it to the other display — and every coordinate anchored
+            # before that is now pointing at whatever moved into the space.
+            # list_windows costs under two milliseconds, so this is checked
+            # before every marker rather than only after a click.
+            shifted = screen_context.has_moved(window)
+            if shifted is not None:
+                print(f"  [Tutor] window moved to "
+                      f"({shifted['x']:.0f},{shifted['y']:.0f}); re-anchoring")
+                window = shifted
+                fresh_path, fresh_fragments, window = read_window(window)
+                if fresh_fragments:
+                    rest = anchor(steps[index - 1:], fresh_fragments, window, menus)
+                    steps = steps[:index - 1] + rest
+                    step = steps[index - 1]
+                    try:
+                        os.unlink(capture)
+                    except OSError:
+                        pass
+                    capture, fragments = fresh_path, fresh_fragments
+                elif fresh_path:
+                    try:
+                        os.unlink(fresh_path)
+                    except OSError:
+                        pass
+
             if step.get("found"):
                 # Sample where the CAPTION will land, not where the ring will.
                 #
@@ -1384,7 +1424,17 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                 # open opened. Telling someone "now click Export" when the last
                 # click silently did nothing is how a walkthrough ends up five
                 # steps deep in an interface that never changed.
-                after_path, after_fragments = read_window(window)
+                gone = screen_context.window_by_id(window.get("id", 0)) is None
+                if gone:
+                    # The application closed, or the window did. Carrying on
+                    # would mark a place on the desktop where something used
+                    # to be, which is worse than stopping.
+                    speak(f"The {window.get('app', 'window')} window has gone, "
+                          "Sir. Stopping there.")
+                    print(f"  [Tutor] {CANCELLED}: target window disappeared")
+                    break
+
+                after_path, after_fragments, window = read_window(window)
                 if after_fragments:
                     changed, appeared, _ = step_landed(
                         fragments, after_fragments,

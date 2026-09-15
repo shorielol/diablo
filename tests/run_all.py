@@ -33,6 +33,7 @@ SUITES = [
     ("test_pointing.py",     False, "finding things on screen, and marking them"),
     ("test_screen.py",       False, "displays, coordinates, cursor, change, permission"),
     ("test_guidance.py",     False, "where Diablo stands when he points at something"),
+    ("test_animation.py",    False, "the animation follows the audio, not the intention"),
     ("test_roster.py",       True,  "delegation: who gets what, and several at once"),
     ("test_scenarios.py",    True,  "what a person says, and what actually happens"),
     ("test_walkthrough.py",  False, "the marker on screen, and waiting for a click"),

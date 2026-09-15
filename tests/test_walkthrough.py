@@ -384,6 +384,89 @@ def main() -> int:
     r.check("no overlay processes survive it either", not stragglers,
             f"{len(stragglers)} still running")
 
+    # ── 8. The desktop is messy ──────────────────────────────────────────
+    #
+    # Real work interrupts a walkthrough constantly: the window gets dragged
+    # aside, resized, sent to the other display, or closed outright. The
+    # coordinates were resolved once at the start of the lesson, so every one
+    # of those silently invalidated every marker after it.
+    r.head("It survives the window moving under it")
+    from skills import screen_context as _sc
+
+    with guard(r, "a window's bounds can be re-read by id"):
+        front = _sc.frontmost_window()
+        if not front:
+            r.skip("a window's bounds can be re-read by id", "no window visible")
+        else:
+            again = _sc.window_by_id(front["id"])
+            r.check("a live window is found by its id",
+                    again is not None and again["app"] == front["app"],
+                    front["app"])
+            r.check("a window that has gone returns nothing, not a guess",
+                    _sc.window_by_id(999999) is None)
+            r.check("a window that has not moved reports no movement",
+                    _sc.has_moved(front) is None)
+
+            dragged = dict(front)
+            dragged["x"] = front["x"] - 400
+            moved = _sc.has_moved(dragged)
+            r.check("a 400 point drag is detected", moved is not None)
+            r.check("  and the current bounds come back with it",
+                    moved is not None and abs(moved["x"] - front["x"]) < 2,
+                    "so the caller can re-anchor without a second lookup")
+
+            jittered = dict(front)
+            jittered["x"] = front["x"] + 1
+            r.check("a one point difference is not treated as a move",
+                    _sc.has_moved(jittered) is None,
+                    "bounds jitter; re-anchoring on noise would thrash the marker")
+
+    with guard(r, "stale bounds put the marker in the wrong place"):
+        fragment = {"left": 0.48, "right": 0.52, "top": 0.48, "height": 0.04,
+                    "text": "Export", "confidence": 0.9}
+        before = {"x": 0.0, "y": 0.0, "width": 1200.0, "height": 800.0}
+        after = {"x": 600.0, "y": 200.0, "width": 1200.0, "height": 800.0}
+        was = tutor._screen_point(fragment, before)
+        now = tutor._screen_point(fragment, after)
+        drift = ((now[0] - was[0]) ** 2 + (now[1] - was[1]) ** 2) ** 0.5
+        r.check("the same fragment moves with its window",
+                drift > 600, f"{drift:.0f} points apart after a (600,200) drag")
+
+    with guard(r, "read_window reports the bounds it actually read"):
+        front = _sc.frontmost_window()
+        if not front:
+            r.skip("read_window reports the bounds it actually read", "no window")
+        else:
+            stale = dict(front)
+            stale["x"] = front["x"] - 500
+            stale["y"] = front["y"] - 500
+            path, fragments, current = tutor.read_window(stale)
+            try:
+                r.check("it hands back three things, not two",
+                        current is not None and isinstance(current, dict))
+                r.check("and the bounds are the live ones, not the ones passed in",
+                        abs(current["x"] - front["x"]) < 2
+                        and abs(current["y"] - front["y"]) < 2,
+                        f"passed x={stale['x']:.0f}, got x={current['x']:.0f}, "
+                        f"live x={front['x']:.0f}")
+            finally:
+                if path:
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+
+    with guard(r, "the walkthrough stops rather than guessing"):
+        import inspect
+        source = inspect.getsource(tutor.walk)
+        r.check("it checks the window is still there before each marker",
+                "has_moved(window)" in source,
+                "a drag mid-lesson invalidates every later coordinate")
+        r.check("it stops if the target window disappears",
+                "window_by_id(window.get(\"id\", 0)) is None" in source
+                and "has gone" in source,
+                "marking where something used to be is worse than stopping")
+
     return r.report("walkthrough")
 
 

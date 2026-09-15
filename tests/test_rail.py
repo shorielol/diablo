@@ -83,6 +83,53 @@ def main():
                     os.path.join(DIABLO_HOME, "app", "app.js")).read(),
                 "the hero mascot was 188px of wallpaper on an empty surface")
 
+    # ── Asking for a permission ─────────────────────────────────────────
+    r.head("Permissions are asked for, not filed under Settings")
+    js = open(os.path.join(DIABLO_HOME, "app", "app.js")).read()
+    css = open(os.path.join(DIABLO_HOME, "app", "styles.css")).read()
+
+    r.check("there is a compact request in the conversation",
+            "const Needs = memo" in js and "<${Needs}" in js,
+            "a settings dashboard is where you check a permission, not where "
+            "you are asked for one")
+    r.check("it speaks rather than naming a toggle",
+            "I need screen access to see what you are seeing." in js,
+            "not 'SCREEN RECORDING: DENIED'")
+    r.check("one request at a time, most blocking first",
+            "const PERM_ORDER = ['screen', 'mic', 'accessibility'];" in js,
+            "three prompts on first run is the onboarding clutter to avoid")
+    r.check("it uses the permission names the backend actually reports",
+            "mic:" in js and "microphone:" not in js.split("PERM_ASK")[1][:300],
+            "permissions.snapshot() returns accessibility, screen and mic")
+    r.check("an undetermined permission does not trigger a request",
+            "perms[name] === false" in js,
+            "snapshot reports null for what macOS will not disclose, and 'I "
+            "cannot tell' is not a reason to interrupt someone")
+    r.check("the grant path is shared with the diagnostic page",
+            "function useGrant(" in js and js.count("action: `grant:${name}`") == 1,
+            "two copies would drift the moment macOS changes when it shows a dialog")
+    r.check("the button says what pressing it does",
+            "'Allow screen access'" in js and "Allow ${PERM_LABELS" not in js,
+            "concatenation produced 'Allow Screen recording'")
+    r.check("the request is styled without a card around it",
+            ".needs {" in css and "grantbtn" in css)
+    r.check("its button has a visible focus ring",
+            ".grantbtn:focus-visible {" in css,
+            "keyboard users need to see where they are")
+
+    # ── One accent, his own ─────────────────────────────────────────────
+    r.head("One palette, and it is his")
+    shell = open(os.path.join(DIABLO_HOME, "app_shell.py")).read()
+    r.check("speaking no longer uses a colour from outside the character",
+            '"responding": (CRIMSON, "speaking")' in shell,
+            "it was a sky blue that belongs to no part of him")
+    r.check("and the web state dot agrees with the orb",
+            "--speaking:    #E0233C;" in css,
+            "two surfaces showing the same state in different colours is two "
+            "products")
+    r.check("blue is no longer used for any state",
+            "(BLUE," not in shell, "BLUE stays defined but unused by STATE_LOOK")
+
     return r.report("rail")
 
 

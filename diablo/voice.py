@@ -15,6 +15,7 @@ import hashlib
 import os
 import queue
 import subprocess
+import time
 import sys
 import threading
 from typing import List, Optional
@@ -304,25 +305,83 @@ def repace(path: str, text: str, target_wpm: int) -> str:
 on_audio_start = None
 on_audio_end = None
 
+# ...and every listener that registered properly.
+#
+# Two modules wanted these: voice_bridge, which gates the wake word, and the
+# companion manager, which owns the state machine the orb follows. Both wrote
+# to the same global, so whichever imported last silently won and the other's
+# handler never ran again. A single assignable callback is a shared mutable
+# global with one slot, which is a race dressed as an API.
+_audio_listeners = []
+
+
+def listen(on_start=None, on_end=None) -> None:
+    """Register for playback events. Every listener is called, in order."""
+    _audio_listeners.append((on_start, on_end))
+
+
+def forget_listeners() -> None:
+    """Drop every registered listener. For tests, and for a clean restart."""
+    _audio_listeners.clear()
+
+
+# The timeline.
+#
+# Section 30 of the brief calls this extremely important, and it is: a
+# synchronisation bug between audio and animation is invisible in a
+# screenshot, hard to catch by eye, and obvious the moment the two are
+# timestamped next to each other. Off unless DIABLO_ANIM_TRACE=1.
+_TRACE = os.getenv("DIABLO_ANIM_TRACE", "0") == "1"
+_timeline = []
+
+
+def mark(event: str, **detail) -> None:
+    """Stamp one moment on the audio/animation timeline."""
+    entry = (time.time(), event, detail)
+    _timeline.append(entry)
+    if len(_timeline) > 400:
+        del _timeline[:200]
+    if _TRACE:
+        stamp = time.strftime("%H:%M:%S", time.localtime(entry[0]))
+        extra = "  " + " ".join(f"{k}={v}" for k, v in detail.items()) if detail else ""
+        print(f"  {stamp}.{int(entry[0] % 1 * 1000):03d}  {event}{extra}", flush=True)
+
+
+def timeline(limit: int = 40):
+    """The last few moments, oldest first."""
+    return [{"at": at, "event": event, **detail}
+            for at, event, detail in _timeline[-limit:]]
+
+
+def _fire(which: str) -> None:
+    """Tell everyone the sound started or stopped. One listener cannot break another."""
+    mark("audio_started" if which == "start" else "audio_ended")
+    legacy = on_audio_start if which == "start" else on_audio_end
+    if legacy:
+        try:
+            legacy()
+        except Exception:
+            pass
+    for start, end in list(_audio_listeners):
+        handler = start if which == "start" else end
+        if not handler:
+            continue
+        try:
+            handler()
+        except Exception:
+            pass
+
 
 def _play(path: str) -> bool:
     try:
-        if on_audio_start:
-            try:
-                on_audio_start()
-            except Exception:
-                pass
+        _fire("start")
         subprocess.run(["afplay", path], timeout=120)
         return True
     except Exception as e:
         print(f"  [Voice] playback failed: {e}")
         return False
     finally:
-        if on_audio_end:
-            try:
-                on_audio_end()
-            except Exception:
-                pass
+        _fire("end")
 
 
 def _say_locally(text: str, pace: Optional[int] = None) -> None:
@@ -333,19 +392,11 @@ def _say_locally(text: str, pace: Optional[int] = None) -> None:
         # same pacing without going near ffmpeg.
         command += ["-r", str(int(pace))]
     command.append(text)
-    if on_audio_start:
-        try:
-            on_audio_start()
-        except Exception:
-            pass
+    _fire("start")
     try:
         subprocess.run(command, timeout=120)
     finally:
-        if on_audio_end:
-            try:
-                on_audio_end()
-            except Exception:
-                pass
+        _fire("end")
 
 
 def speak(text: str, pace: Optional[int] = None) -> str:

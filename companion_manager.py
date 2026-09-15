@@ -94,7 +94,14 @@ class DiabloState(Enum):
     IDLE = "idle"              # Listening for the wake word
     LISTENING = "listening"    # Capturing what was said
     PROCESSING = "processing"  # Thinking, or running the agent
-    RESPONDING = "responding"  # Speaking the answer
+    # The answer exists and the sound does not yet.
+    #
+    # This is the gap the animation used to lie about. Synthesis is a network
+    # round trip to Voicebox or a cache lookup or a fallback to the system
+    # voice, and the orb was showing a moving mouth through all of it. Naming
+    # the gap is what lets the speaking animation wait for the speaker.
+    PREPARING = "preparing"    # Answer ready, audio not started
+    RESPONDING = "responding"  # Sound is actually coming out
     ERROR = "error"            # Broken, but recoverable
     SHUTDOWN = "shutdown"      # Tearing down
 
@@ -108,16 +115,22 @@ TRANSITIONS: Dict[DiabloState, set] = {
     DiabloState.COLD:         {DiabloState.INITIALIZING, DiabloState.SHUTDOWN},
     DiabloState.INITIALIZING: {DiabloState.IDLE, DiabloState.ERROR, DiabloState.SHUTDOWN},
     DiabloState.IDLE:         {DiabloState.LISTENING, DiabloState.PROCESSING,
-                               DiabloState.RESPONDING, DiabloState.ERROR,
-                               DiabloState.SHUTDOWN},
+                               DiabloState.PREPARING, DiabloState.RESPONDING,
+                               DiabloState.ERROR, DiabloState.SHUTDOWN},
     DiabloState.LISTENING:    {DiabloState.PROCESSING, DiabloState.IDLE,
                                DiabloState.ERROR, DiabloState.SHUTDOWN},
-    DiabloState.PROCESSING:   {DiabloState.RESPONDING, DiabloState.LISTENING,
-                               DiabloState.IDLE, DiabloState.ERROR,
-                               DiabloState.SHUTDOWN},
+    DiabloState.PROCESSING:   {DiabloState.PREPARING, DiabloState.RESPONDING,
+                               DiabloState.LISTENING, DiabloState.IDLE,
+                               DiabloState.ERROR, DiabloState.SHUTDOWN},
+    # PREPARING may fall straight back to IDLE or PROCESSING: synthesis can
+    # fail, and the user can interrupt in the half second before the sound
+    # starts. RESPONDING is the only happy exit.
+    DiabloState.PREPARING:    {DiabloState.RESPONDING, DiabloState.IDLE,
+                               DiabloState.LISTENING, DiabloState.PROCESSING,
+                               DiabloState.ERROR, DiabloState.SHUTDOWN},
     DiabloState.RESPONDING:   {DiabloState.IDLE, DiabloState.LISTENING,
-                               DiabloState.PROCESSING, DiabloState.ERROR,
-                               DiabloState.SHUTDOWN},
+                               DiabloState.PROCESSING, DiabloState.PREPARING,
+                               DiabloState.ERROR, DiabloState.SHUTDOWN},
     # ERROR is recoverable on purpose. Ollama comes back, the mic is
     # re-probed, Voicebox is relaunched — none of those should need a restart.
     DiabloState.ERROR:        {DiabloState.IDLE, DiabloState.INITIALIZING,
@@ -216,22 +229,81 @@ class VoiceSubsystem(Subsystem):
         super().__init__(manager)
         self.is_speaking = False
         self.voice_route: Optional[str] = None
+        # Which utterance is currently being spoken. Incremented on every
+        # say(); a playback callback carrying an older number is from a reply
+        # the user has already interrupted, and must not touch the state.
+        self._generation = 0
+        # The utterance say() is currently blocked on, as opposed to the newest
+        # one requested. A playback callback is only honoured when they agree.
+        self._active = 0
+        self._listening_registered = False
 
     def start(self) -> bool:
         try:
             from skills import voice
             self.module = voice
+            self._register(voice)
             self.ready = True            # always usable; `say` is the floor
             self.error = None if voice.available() else "Voicebox unreachable, using macOS voice"
             return True
         except BaseException as e:
             return self._fail(e)
 
+    def _register(self, voice) -> None:
+        """
+        Let the speaker drive the state, once.
+
+        Registered here rather than assigned to voice.on_audio_start, which
+        voice_bridge also writes to — one slot, two writers, and whoever
+        imported last silently won.
+        """
+        if self._listening_registered:
+            return
+
+        def started():
+            # The sound is out of the speaker NOW. This is the only place
+            # RESPONDING is entered.
+            #
+            # `_active` is the utterance say() is currently waiting on and
+            # `_generation` is the newest one anybody has asked for. They
+            # differ only when something has superseded this reply — an
+            # interruption, or a new question — and in that case this callback
+            # belongs to audio that is already being torn down.
+            if self._active != self._generation:
+                self.module and self.module.mark(
+                    "stale_audio_start", utterance=self._active,
+                    current=self._generation)
+                return
+            self.manager.transition(
+                DiabloState.RESPONDING, f"audio started (utterance {self._active})")
+
+        def ended():
+            # Deliberately does not return to IDLE. A long answer is several
+            # clips and dropping to idle between them makes the orb flicker
+            # once a sentence; say() owns the exit, because say() knows when
+            # the whole utterance is finished.
+            pass
+
+        voice.listen(started, ended)
+        self._listening_registered = True
+
     def say(self, text: str) -> str:
-        """Speak, and record which of the three routes actually carried it."""
+        """
+        Speak, and record which of the three routes actually carried it.
+
+        The state moves to PREPARING here and to RESPONDING only when audio
+        actually begins. It used to go straight to RESPONDING before
+        voice.speak() was even called, so the orb mouthed silently through
+        synthesis — a network round trip on a cold line — and the illusion
+        broke every time.
+        """
         from skills import voice
+        self._register(voice)
         self.is_speaking = True
-        self.manager.transition(DiabloState.RESPONDING)
+        self._generation += 1
+        mine = self._active = self._generation
+        voice.mark("say_requested", utterance=mine, chars=len(text or ""))
+        self.manager.transition(DiabloState.PREPARING, f"answer ready ({mine})")
         try:
             self.voice_route = voice.speak(text)
             return self.voice_route
@@ -241,6 +313,27 @@ class VoiceSubsystem(Subsystem):
             return "failed"
         finally:
             self.is_speaking = False
+            voice.mark("say_finished", utterance=mine, route=self.voice_route)
+            # If this utterance was superseded while it was speaking, the newer
+            # one owns the state now and this one says nothing about it.
+            if mine != self._generation:
+                voice.mark("stale_ignored", utterance=mine, current=self._generation)
+
+    def interrupt(self) -> None:
+        """
+        Stop talking immediately, and make every callback still in flight stale.
+
+        Bumping the generation is what stops a late playback event from
+        putting Diablo back into RESPONDING after the user has already started
+        saying something else.
+        """
+        from skills import voice
+        self._generation += 1
+        voice.mark("interrupted", now_at=self._generation)
+        try:
+            voice.interrupt()
+        except BaseException:
+            pass
 
     def health(self) -> Dict[str, Any]:
         base = super().health()

@@ -104,11 +104,32 @@ BLUE = (0.239, 0.663, 0.988)
 GREY = (0.290, 0.290, 0.333)
 RED = (1.0, 0.420, 0.420)
 
+# Two colours, both his own, and red only for a fault.
+#
+# This was five: grey, crimson, gold, a sky blue for speaking and a pale red
+# for errors. Photographed side by side, the blue is the one that looks wrong
+# — it belongs to no part of the character and reads as a generic status
+# indicator bolted to him.
+#
+# Colour was not carrying the distinction anyway. The shapes already do, and
+# they do it unambiguously: listening pushes rings outward on the microphone
+# level, speaking holds a steady halo that breathes with his mouth, thinking
+# sweeps one arc. Two of those are crimson now and nobody will confuse them,
+# because one travels and one does not — and his mouth moves for exactly one
+# of them.
+#
+# Gold stays for thinking. It is his eye colour, so it is still him, and it
+# separates "working on it" from anything to do with the voice.
 STATE_LOOK = {
     "idle":       (GREY,    "ready"),
     "listening":  (CRIMSON, "listening"),
     "processing": (GOLD,    "thinking"),
-    "responding": (BLUE,    "speaking"),
+    # Answer ready, speaker silent. Deliberately no new drawing: it falls
+    # through to the plain static ring the draw code already has, in the same
+    # gold as thinking. Thinking sweeps, preparing holds still — which is
+    # exactly the difference, and it costs nothing to say it that way.
+    "preparing":  (GOLD,    "ready"),
+    "responding": (CRIMSON, "speaking"),
     "error":      (RED,     "something broke"),
     "init":       (GREY,    "waking"),
     "cold":       (GREY,    "asleep"),
@@ -126,9 +147,61 @@ STATE_LOOK = {
 # ring around him and by his own face — the mouth moves while he talks, which
 # is the one animation that says "this is speaking to you" without a caption.
 
-ORB = 62.0          # the character's circle
-HALO = 15.0         # room around it for the ring to breathe into
+# ── Orb geometry: one source of truth ───────────────────────────────────────
+#
+# Everything about the presence's size and alignment is derived from these
+# eight numbers. Nothing here is a guess: the mascot figures were measured by
+# rendering draw_head into a 480px buffer and finding its actual ink.
+#
+# What the measurement found, and why the old orb looked off-centre:
+#
+#   draw_head works in a 120-unit square and does NOT fill it. The ink runs
+#   x 28.0..91.5 and y 23.0..84.8, which leaves 23.0 units of empty space
+#   above the drawing and 35.2 below it. The canvas is symmetric; the artwork
+#   inside it is not. Centring the canvas therefore centres the padding.
+#
+#   Worse, the old code centred mascot y=49 — neither the canvas centre (60)
+#   nor the ink centre (53.9) nor the eye line (59.5). The eyes landed 10.5
+#   mascot units below the orb's centre, which at the old scale was 7.5 points
+#   in a 62 point circle. Twelve per cent of the diameter, which is exactly
+#   how far off it looked.
+
+ORB = 44.0          # the visible disc, in points
+HALO = 11.0         # room outside it for the state ring to breathe into
 CANVAS = ORB + HALO * 2
+
+# The mascot's real ink, in its own 120-unit space. Measured, not assumed.
+MASCOT_INK_X = (28.0, 91.5)
+MASCOT_INK_Y = (23.0, 84.8)
+MASCOT_EYE_X = 59.9       # midpoint between the irises; the canvas centre is 60
+MASCOT_EYE_LINE = 59.5    # the irises sit here, well below the ink centre of 53.9
+
+# How much of the disc the artwork spans. He is contained by the circle rather
+# than pressed against it, so there is a ring of quiet between his hair and the
+# rim on every side.
+FACE_FILL = 0.70
+
+# The one optical correction, and the only one.
+#
+# The ink is centred in the disc, which gives equal breathing room above and
+# below. That alone leaves the eyes 2.7 points low, because the drawing is
+# top-heavy — there is more hair above the eyes than jaw below them. Lifting
+# the whole figure by three per cent of the diameter puts the eye line within
+# 1.4 points of the true centre while keeping the breathing room close to even
+# (5.7 points above, 8.3 below), which reads correctly because a top-heavy
+# shape wants slightly less air above it.
+#
+# Tuned by photographing the result, not by arithmetic. At 0.03 the eyes
+# measured 3.6% of the diameter below the disc's centre; at 0.045, 2.3%; at
+# 0.060, 0.4% — which is under a fifth of a point at this size. The ink is
+# then 4.4 points from the rim above and 9.6 below, and that asymmetry is
+# invisible because the hair occupying the top is within a few per cent of
+# the disc's own colour. What the eye reads as "the character" is the pale
+# face and the two streaks, and those sit centred.
+#
+# It is a fraction of ORB rather than a pixel count so it survives any size
+# change, and it is the single place any such nudge belongs.
+OPTICAL_LIFT = 0.060
 
 
 def _colour(rgb, alpha=1.0):
@@ -237,12 +310,19 @@ class OrbView(NSView):
 
         # The character, drawn from make_icon so that the orb, the app icon and
         # the window are one drawing rather than three that drift apart.
-        # Framed with room around him. The first version scaled the head to
-        # 1.58 of the circle and cropped the top of his eyes against the rim,
-        # which made every state look faintly alarmed.
-        scale = ORB * 1.38 / 120.0
+        #
+        # Scaled and placed from the measured ink, never from the 120-unit
+        # canvas. The scale fits the ink's WIDTH because that is the wider of
+        # the two dimensions (63.5 against 61.8), so fitting width guarantees
+        # the height fits too and the aspect ratio is never touched.
+        ink_w = MASCOT_INK_X[1] - MASCOT_INK_X[0]
+        ink_mid_x = (MASCOT_INK_X[0] + MASCOT_INK_X[1]) / 2.0
+        ink_mid_y = (MASCOT_INK_Y[0] + MASCOT_INK_Y[1]) / 2.0
+        scale = ORB * FACE_FILL / ink_w
         transform = NSAffineTransform.transform()
-        transform.translateXBy_yBy_(cx - 60 * scale, cy + 49 * scale)
+        transform.translateXBy_yBy_(
+            cx - ink_mid_x * scale,
+            cy + ORB * OPTICAL_LIFT + ink_mid_y * scale)
         transform.scaleXBy_yBy_(scale, -scale)
         context.saveGraphicsState()
         transform.concat()

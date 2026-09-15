@@ -49,6 +49,20 @@ def _seed(what: str) -> None:
                         "where most people look first. I will walk you through "
                         "it \u2014 watch the screen."},
         ])
+    if what in ("perm", "both"):
+        # A denied permission, so the compact request can be photographed.
+        # This machine has them all granted, which is the state that cannot
+        # be photographed by waiting.
+        from skills import server as _server
+        _original = _server._state
+
+        def _denied():
+            state = dict(_original())
+            perms = dict(state.get("permissions") or {})
+            perms["screen"] = False
+            state["permissions"] = perms
+            return state
+        _server._state = _denied
     if what in ("work", "both"):
         from skills import delegation_tool
         delegation_tool.store._jobs.append({

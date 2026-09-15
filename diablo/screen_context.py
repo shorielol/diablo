@@ -190,6 +190,41 @@ def list_windows(min_width: int = 200, min_height: int = 120) -> List[Dict[str, 
     return windows
 
 
+def window_by_id(window_id: int) -> Optional[Dict[str, Any]]:
+    """
+    A window's bounds as they are NOW, by the id you already hold.
+
+    Needed because a window is not a fixed rectangle. A walkthrough resolves
+    one window at the start and then talks for a minute, and in that minute the
+    user can drag it, resize it, or move it to the other display. Every marker
+    after that is drawn from the bounds it had when the lesson began.
+    """
+    if not window_id:
+        return None
+    for window in list_windows():
+        if window["id"] == int(window_id):
+            return window
+    return None
+
+
+def has_moved(window: Dict[str, Any], slack: float = 2.0) -> Optional[Dict[str, Any]]:
+    """
+    The window's current bounds if it has shifted, None if it is where it was.
+
+    Returns the whole window rather than a boolean so the caller can re-anchor
+    from it without a second lookup.
+    """
+    now = window_by_id(window.get("id", 0))
+    if now is None:
+        return None
+    if (abs(now["x"] - window.get("x", 0)) > slack
+            or abs(now["y"] - window.get("y", 0)) > slack
+            or abs(now["width"] - window.get("width", 0)) > slack
+            or abs(now["height"] - window.get("height", 0)) > slack):
+        return now
+    return None
+
+
 def frontmost_window() -> Optional[Dict[str, Any]]:
     """The window you are actually looking at. Quartz returns them front to back."""
     windows = list_windows()
