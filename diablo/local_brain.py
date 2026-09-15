@@ -44,9 +44,24 @@ KEEP_ALIVE = os.getenv("DIABLO_KEEP_ALIVE", "0s" if LOW_MEMORY else "10m")
 
 # The context window. Left unset, Ollama uses the model's own default, and for
 # qwen3 that is 262,144 tokens — a window Diablo never fills and which costs
-# real memory in KV cache to keep open. 4096 holds the system prompt, the tool
-# schemas and a dozen turns with room to spare.
-NUM_CTX = config.env_int("DIABLO_NUM_CTX", 4096)
+# real memory in KV cache to keep open.
+#
+# This said 4096, on the grounds that it held "the system prompt, the tool
+# schemas and a dozen turns with room to spare". It did not. A real turn came
+# to 4168 tokens and Ollama refused it with a 400, which Diablo then read out
+# as JSON. The system prompt and 37 tool schemas are most of that before a
+# single word is said.
+#
+# Measured on this machine, resident size of qwen3:4b-instruct:
+#
+#      4096   3.2 GB
+#      8192   3.9 GB
+#     16384   5.1 GB
+#
+# 8192 for 0.7 GB. 16384 was rejected rather than unsupported: the vision model
+# is another 6 GB, and 5.1 + 6 leaves too little of 18 GB for the editor and a
+# browser. DIABLO_NUM_CTX raises it on a machine with more to spare.
+NUM_CTX = config.env_int("DIABLO_NUM_CTX", 8192)
 
 # How much the model may say in one turn. Everything here is read aloud, so a
 # long answer is a long wait with a speaker talking at you.
@@ -60,7 +75,60 @@ THINK_DEFAULT = os.getenv("DIABLO_THINK", "0") not in ("0", "", "false", "False"
 
 
 class BrainOffline(Exception):
-    """Ollama is not answering."""
+    """
+    Ollama is not answering, or refused.
+
+    Carries two messages on purpose. str(e) keeps every detail, for the log and
+    the trace, where detail is what you want. `spoken` is the only thing that
+    may reach him, and it never contains a status code, a body or a path.
+
+    This split exists because the raw one was reaching him. The message used to
+    be f"Ollama returned {code}: {body}", and agent_core interpolated it
+    straight into its reply, so a context overflow was read out as
+    'Ollama returned 400: {"error":{"code":400,"message":"request (4168
+    tokens) exceeds the available context size...'. Fixing the callers one at a
+    time would leave the next caller to rediscover it, so the safe form lives
+    on the exception.
+    """
+
+    SPOKEN = "My local brain stopped responding, Sir."
+
+    def __init__(self, detail: str, spoken: Optional[str] = None):
+        super().__init__(detail)
+        self.spoken = spoken or self.SPOKEN
+
+
+class ContextFull(BrainOffline):
+    """The prompt was longer than the window it had to fit in."""
+
+    # "start over" and not "start again" — the first is in RESET_PHRASES and
+    # the second is not, and advice that does not work is worse than none.
+    SPOKEN = ("My short-term memory is full, Sir. Say \"start over\" and "
+              "I'll clear it.")
+
+    def __init__(self, detail: str, used: int = 0, limit: int = 0):
+        super().__init__(detail, self.SPOKEN)
+        self.used, self.limit = used, limit
+
+
+# Ollama says this several ways depending on version and endpoint, so the test
+# is on the words rather than on a code — a 400 can also mean a malformed
+# request, which is a different sentence and a different fix.
+_CONTEXT_SIGNS = ("exceeds the available context", "context size",
+                  "context length", "too many tokens", "maximum context")
+
+
+def _refusal(code: int, body: str) -> BrainOffline:
+    """Turn an HTTP error body into something safe to say."""
+    lowered = (body or "").lower()
+    if any(sign in lowered for sign in _CONTEXT_SIGNS):
+        # Anchored on the word "tokens". Matching bare numbers picked up the
+        # 400 out of '"code":400' and reported a 400-token prompt.
+        counts = [int(n) for n in re.findall(r"(\d+)\s*tokens", body or "")]
+        used = counts[0] if counts else 0
+        limit = counts[1] if len(counts) > 1 else 0
+        return ContextFull(f"Ollama returned {code}: {body[:200]}", used, limit)
+    return BrainOffline(f"Ollama returned {code}: {body[:200]}")
 
 
 def _get_json(path: str, timeout: int) -> Any:
@@ -131,12 +199,16 @@ def chat(
     try:
         body = _post_json("/api/chat", payload, timeout or REQUEST_TIMEOUT)
     except urllib.error.HTTPError as e:
-        raise BrainOffline(f"Ollama returned {e.code}: {e.read().decode()[:200]}")
+        try:
+            detail = e.read().decode("utf-8", "replace")
+        except Exception:
+            detail = ""
+        raise _refusal(e.code, detail)
     except Exception as e:
         raise BrainOffline(f"Ollama unreachable at {OLLAMA_HOST}: {e}")
 
     if "error" in body:
-        raise BrainOffline(body["error"])
+        raise _refusal(200, str(body["error"]))
     return body.get("message", {"role": "assistant", "content": ""})
 
 
@@ -191,6 +263,12 @@ def chat_stream(
 
     try:
         response = urllib.request.urlopen(request, timeout=timeout or REQUEST_TIMEOUT)
+    except urllib.error.HTTPError as e:
+        try:
+            detail = e.read().decode("utf-8", "replace")
+        except Exception:
+            detail = ""
+        raise _refusal(e.code, detail)
     except Exception as e:
         raise BrainOffline(f"Ollama unreachable at {OLLAMA_HOST}: {e}")
 
@@ -203,7 +281,7 @@ def chat_stream(
             except ValueError:
                 continue
             if "error" in chunk:
-                raise BrainOffline(chunk["error"])
+                raise _refusal(200, str(chunk["error"]))
             piece = (chunk.get("message") or {}).get("content") or ""
             if piece:
                 yield piece

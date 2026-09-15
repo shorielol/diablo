@@ -327,8 +327,12 @@ class Session:
 
         try:
             message = local_brain.chat(messages, num_predict=400, temperature=0.5)
-        except local_brain.BrainOffline:
-            return "My brain is offline, Sir. Ollama has stopped responding."
+        except local_brain.BrainOffline as e:
+            # e.spoken says which of the two it was. "Ollama has stopped
+            # responding" is a lie when the daemon answered perfectly and
+            # refused the prompt for being too long — and it sends him looking
+            # at the wrong thing.
+            return e.spoken
 
         answer = _speakable((message.get("content") or "").strip())
         if not answer:

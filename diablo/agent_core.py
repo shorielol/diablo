@@ -466,7 +466,10 @@ def run(
         try:
             message = local_brain.chat(messages, tools=tools)
         except BrainOffline as e:
-            return f"My local brain stopped responding, Sir. {e}"
+            # e.spoken, never str(e). The raw message carries the status code
+            # and the response body, and this line used to read them out.
+            trace.event("brain", error=str(e)[:200])
+            return e.spoken
 
         calls = message.get("tool_calls") or []
 

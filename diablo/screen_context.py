@@ -634,7 +634,10 @@ def read_image(path: str, instruction: str, num_predict: int = 300) -> str:
         with open(path, "rb") as f:
             encoded = base64.b64encode(f.read()).decode()
     except OSError as e:
-        return f"Error: could not read the capture ({e})."
+        # Not interpolated: an OSError carries the full path, and this string
+        # is read out loud.
+        print(f"  [Vision] could not read {path}: {e}")
+        return "Error: I could not read the screen capture."
     try:
         message = local_brain.chat(
             [{"role": "user", "content": instruction, "images": [encoded]}],
@@ -642,7 +645,7 @@ def read_image(path: str, instruction: str, num_predict: int = 300) -> str:
         )
         return (message.get("content") or "").strip()
     except local_brain.BrainOffline as e:
-        return f"Error: vision model unavailable ({e})."
+        return f"Error: {e.spoken}"
 
 
 def describe_visually(question: str, target: str = "") -> str:
@@ -684,7 +687,7 @@ def describe_visually(question: str, target: str = "") -> str:
         )
         return (message.get("content") or "").strip() or "The vision model returned nothing."
     except local_brain.BrainOffline as e:
-        return f"Error: vision model unavailable ({e})."
+        return f"Error: {e.spoken}"
 
 
 # ─── Understanding it, not just reading it ──────────────────────────────────
@@ -830,7 +833,7 @@ def explain(question: str = "", target: str = "") -> str:
             num_predict=220, temperature=0.3,
         )
     except local_brain.BrainOffline as e:
-        return f"Error: my local model is not responding ({e})."
+        return f"Error: {e.spoken}"
 
     answer = (message.get("content") or "").strip()
     return answer or "I could not make sense of what is on screen, Sir."
