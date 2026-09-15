@@ -179,6 +179,42 @@ def main():
             "research" in agent_tools_select("what time is it"),
             "it is — which is why membership cannot be the test")
 
+    # ── 8. Emptying the sidebar ──────────────────────────────────────────
+    # The store is disk-backed but memory-authoritative: _flush writes
+    # self._jobs, so emptying jobs.json by hand is undone by the next add().
+    r.head("Clearing the job store")
+    import json as _json, tempfile
+    from skills.delegation_tool import JobStore
+
+    path = tempfile.mktemp(suffix=".json")
+    _json.dump([{"id": "a", "task": "decrease the system volume", "status": "done"},
+                {"id": "b", "task": "play 'Ransom' by Lil Tecca", "status": "done"},
+                {"id": "c", "task": "research apprenticeships", "status": "running"}],
+               open(path, "w"))
+
+    store = JobStore(path)
+    r.check("work left running by a dead process is marked interrupted",
+            [j["status"] for j in store._jobs].count("interrupted") == 1,
+            "its thread died with the process; it is not still going")
+    dropped = store.clear(keep_active=True)
+    r.check("everything finished is dropped", dropped == 3, f"dropped {dropped}")
+    r.check("and the file is emptied with it",
+            len(_json.load(open(path))) == 0)
+    r.check("so a restart does not bring them back",
+            len(JobStore(path)._jobs) == 0,
+            "the purge has to survive a reload or it was cosmetic")
+
+    _json.dump([{"id": "d", "task": "research something long", "status": "done"}],
+               open(path, "w"))
+    live = JobStore(path)
+    live._jobs[0]["status"] = "running"          # as if this process started it
+    r.check("work still running in THIS process is kept",
+            live.clear(keep_active=True) == 0 and len(live._jobs) == 1,
+            "its thread carries on, and the row is the only sign of it")
+    r.check("unless the caller says otherwise",
+            live.clear(keep_active=False) == 1 and len(live._jobs) == 0)
+    os.unlink(path)
+
     return r.report("working notes")
 
 

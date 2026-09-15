@@ -124,6 +124,31 @@ class JobStore:
             self._jobs.append(job)
             self._flush()
 
+    def clear(self, keep_active: bool = True) -> int:
+        """
+        Forget finished work. Returns how many were dropped.
+
+        Needed because the store is disk-backed but memory-authoritative:
+        _flush writes self._jobs, so emptying jobs.json by hand is undone by
+        the very next add() or update(). Anything that purges the store has to
+        go through here, in the running process.
+
+        Active work is kept by default. A research job that is still going is
+        the one thing in here worth looking at, and dropping its row while its
+        thread carries on would leave work running with nothing on screen
+        saying so.
+        """
+        with self._lock:
+            before = len(self._jobs)
+            if keep_active:
+                self._jobs = [j for j in self._jobs
+                              if j.get("status") in ("running", "queued")]
+            else:
+                self._jobs = []
+            self._flush()
+            return before - len(self._jobs)
+
+
     def update(self, job_id: str, **fields) -> None:
         with self._lock:
             for job in self._jobs:

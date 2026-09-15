@@ -396,6 +396,13 @@ def _control(action: str) -> Dict[str, Any]:
             from skills import voice
             voice.interrupt()
             return {"ok": True}
+        if action == "clear_jobs":
+            # The sidebar, emptied. Anything still running stays, because its
+            # thread carries on regardless and a row is the only sign of it.
+            from skills import delegation_tool
+            dropped = delegation_tool.store.clear(keep_active=True)
+            push("jobs_cleared", dropped=dropped)
+            return {"ok": True, "dropped": dropped}
         if action == "reset":
             from skills import conversation
             conversation.session.reset()
