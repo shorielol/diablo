@@ -121,28 +121,44 @@ def _blocked(page: str) -> bool:
             or "captcha" in lowered) and "result__a" not in page
 
 
-def search_web(query: str, limit: int = MAX_RESULTS) -> List[dict]:
+def _via_ddgs(query: str, limit: int) -> List[dict]:
     """
-    Real results, as a list of {title, url, snippet}.
+    Search through the ddgs package, or raise.
 
-    Raises Throttled when the engine is refusing. Returns [] only when there
-    genuinely are no results. Callers must tell those two apart out loud.
+    The package is the maintained continuation of duckduckgo-search, which
+    stopped at 8.1.1 and was renamed at version 9 when it became a metasearch
+    library — it aggregates several engines rather than only DuckDuckGo, which
+    is most of why it is harder to rate-limit than scraping one HTML endpoint.
+
+    It returns {title, href, body}. That gets mapped to {title, url, snippet}
+    here rather than anywhere else, because three callers and every test in the
+    suite already read those names, and a search result is not worth a breaking
+    change across the codebase.
     """
-    query = (query or "").strip()
-    if not query:
-        return []
+    from ddgs import DDGS
+    from ddgs.exceptions import RatelimitException, TimeoutException
 
-    cached = _cache.get(query)
-    if cached and time.time() - cached[0] < CACHE_SECONDS:
-        return cached[1][:max(1, limit)]
+    try:
+        with DDGS() as engine:
+            rows = engine.text(query, max_results=max(1, limit))
+    except RatelimitException as e:
+        raise Throttled(f"the search engine is rate-limiting this machine ({e})")
+    except TimeoutException as e:
+        raise Throttled(f"the search engine timed out ({e})")
 
-    # Self-throttle. Most of the blocking this ran into was self-inflicted:
-    # several searches fired back to back inside one agent turn.
-    gap = time.time() - _last_call[0]
-    if gap < MIN_GAP:
-        time.sleep(MIN_GAP - gap)
-    _last_call[0] = time.time()
+    out = []
+    for row in rows or []:
+        title = (row.get("title") or "").strip()
+        url = (row.get("href") or "").strip()
+        if not title or not url:
+            continue
+        out.append({"title": title, "url": url,
+                    "snippet": (row.get("body") or "").strip()})
+    return out
 
+
+def _via_scraping(query: str, limit: int) -> List[dict]:
+    """The old HTML-endpoint scrape, kept as the fallback it now is."""
     body = urllib.parse.urlencode({"q": query}).encode()
     request = urllib.request.Request(DDG, data=body, headers={
         "User-Agent": AGENT,
@@ -163,7 +179,62 @@ def search_web(query: str, limit: int = MAX_RESULTS) -> List[dict]:
         parser.feed(page)
     except Exception:
         pass
-    out = [r for r in parser.results if r["title"] and r["url"]]
+    return [r for r in parser.results if r["title"] and r["url"]]
+
+
+def search_web(query: str, limit: int = MAX_RESULTS) -> List[dict]:
+    """
+    Real results, as a list of {title, url, snippet}.
+
+    Raises Throttled when the engine is refusing. Returns [] only when there
+    genuinely are no results. Callers must tell those two apart out loud.
+
+    Two ways of getting them, in order. The ddgs package queries the engines'
+    own JSON endpoints across several backends; the scrape reads one HTML page
+    and gets an "anomaly" page after about half a dozen queries in a row. The
+    scrape stays as the fallback because it needs nothing installed, and a
+    search tool whose only path is a dependency is a search tool that breaks on
+    an upgrade.
+    """
+    query = (query or "").strip()
+    if not query:
+        return []
+
+    cached = _cache.get(query)
+    if cached and time.time() - cached[0] < CACHE_SECONDS:
+        return cached[1][:max(1, limit)]
+
+    # Self-throttle, kept. Most of the blocking this ran into was self-
+    # inflicted — several searches fired back to back inside one agent turn —
+    # and that is just as true through a package as through a scrape. Asking
+    # politely is what keeps the endpoint answering.
+    gap = time.time() - _last_call[0]
+    if gap < MIN_GAP:
+        time.sleep(MIN_GAP - gap)
+    _last_call[0] = time.time()
+
+    out: List[dict] = []
+    throttled: Optional[Throttled] = None
+    try:
+        out = _via_ddgs(query, limit)
+    except Throttled as e:
+        throttled = e
+    except ImportError:
+        pass                      # not installed; the scrape still works
+    except Exception as e:
+        print(f"  [Search] ddgs failed ({type(e).__name__}: {e}), scraping instead")
+
+    if not out:
+        try:
+            out = _via_scraping(query, limit)
+        except Throttled as e:
+            throttled = throttled or e
+
+    # Both refused, and nothing came back. Say that, rather than "no results" —
+    # they are different sentences and only one of them is true.
+    if not out and throttled is not None:
+        raise throttled
+
     if out:
         _cache[query] = (time.time(), out)
     return out[:max(1, limit)]

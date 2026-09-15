@@ -162,7 +162,14 @@ def _fan_out(job: dict, ask, confirm) -> str:
     attention = roster.Attention(ask, confirm)
 
     def runner(subtask, agent_id, quiet, sub_ask, sub_confirm):
-        return agent_core.run(subtask, quiet, ask=sub_ask, confirm=sub_confirm)
+        # One list per agent, created here inside its own thread. Shared state
+        # across sub-agents has bitten this project before: CONTEXT used to be
+        # module-level and the last agent to start owned everyone's callbacks.
+        working: list = []
+        answer = agent_core.run(subtask, quiet, ask=sub_ask,
+                                confirm=sub_confirm, working=working)
+        conversation.session.remember_working(agent_id, working)
+        return answer
 
     def started(agent_id, subtask):
         i = index_of.get((subtask, agent_id), 0)
@@ -194,7 +201,14 @@ def _worker() -> None:
             if job.get("parts"):
                 summary = _fan_out(job, ask, confirm)
             else:
-                summary = agent_core.run(job["task"], speak, ask=ask, confirm=confirm)
+                # One agent is the common path, not the fan-out, so the working
+                # has to be kept here too — a fix that only covered fan-outs
+                # would miss almost every research request he actually makes.
+                working: list = []
+                summary = agent_core.run(job["task"], speak, ask=ask,
+                                         confirm=confirm, working=working)
+                conversation.session.remember_working(
+                    job.get("agent") or "diablo", working)
             store.update(job["id"], status="done", finished_at=time.time(),
                          summary=summary)
             # Fold the result into the conversation so a follow-up like "what
@@ -320,10 +334,15 @@ def handle(
     if tutor.wants_teaching(text) and ask is not None:
         trace.event("route", route="teach", task=text[:120])
         speak(persona.working())
-        summary = tutor.walk(text, speak, ask=ask)
+        working: list = []
+        summary = tutor.walk(text, speak, ask=ask, working=working)
         conversation.session.remember("user", text)
         conversation.session.remember("assistant", summary)
         conversation.session.focus = "vassago"
+        # What was read off the screen and what sympy did with it, so "walk me
+        # through your maths" is answered from the record instead of the model
+        # reconstructing a plausible method backwards from the answer.
+        conversation.session.remember_working("vassago", working)
         trace.event("done", route="teach", summary=summary[:120])
         return "taught"
 
@@ -359,21 +378,6 @@ def handle(
         gathered = f"{gathered}\n(I asked: {verdict['question']} — you said: {answer})"
         verdict = agent_core.understand(gathered,
                                         in_conversation=conversation.session.is_followup())
-        # Being asked to be shown, rather than told.
-    #
-    # Routed before anything else because the two are easy to confuse and the
-    # cost of confusing them is exactly what prompted this: asked to help with
-    # a maths question, Diablo read the screen, worked out the answer, and said
-    # the answer. The request had been "help me with this".
-    if tutor.wants_teaching(text) and ask is not None:
-        trace.event("route", route="teach", task=text[:120])
-        speak(persona.working())
-        summary = tutor.walk(text, speak, ask=ask)
-        conversation.session.remember("user", text)
-        conversation.session.remember("assistant", summary)
-        conversation.session.focus = "vassago"
-        trace.event("done", route="teach", summary=summary[:120])
-        return "taught"
 
     # A named agent takes the conversation, whatever kind of turn this is.
     named = conversation.addressed_to(text)

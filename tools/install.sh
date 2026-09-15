@@ -53,6 +53,19 @@ else
 fi
 
 echo
+echo "[2b/6] Web search (ddgs)"
+# The maintained continuation of duckduckgo-search, which stopped at 8.1.1.
+# Optional: search_tool falls back to scraping DuckDuckGo's HTML endpoint
+# without it, which works but gets an "anomaly" page after about six queries
+# in a row. With it, ten in a row came back clean.
+if "$VENV_PY" -c "import ddgs" 2>/dev/null; then
+    echo "  ✓ already installed"
+else
+    "$BRIDGE_DIR/venv/bin/pip" install -q ddgs && echo "  ✓ installed" \
+        || echo "  – not installed; search falls back to scraping"
+fi
+
+echo
 echo "[3/6] Running the offline test suites"
 python3 "$HERE/test_diablo.py" | tail -1
 python3 "$HERE/test_mcp.py" | tail -1

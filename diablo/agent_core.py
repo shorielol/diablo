@@ -411,12 +411,19 @@ def run(
     ask: Ask = None,
     confirm: Confirm = None,
     on_step: Optional[Callable[[int, str, str], None]] = None,
+    working: Optional[List[Dict[str, str]]] = None,
 ) -> str:
     """
     Work the task to completion. Returns the spoken summary.
 
     `ask` is handed to the ask_user tool, `confirm` guards the destructive ones.
     Both come from voice_bridge and reach back out to the microphone.
+
+    `working` is a list the caller owns and this appends to: one entry per tool
+    call, with what was asked and what came back. It is how "where did you get
+    that?" gets an answer later. A list passed in rather than a return value or
+    a global, because several agents run this at once in their own threads and
+    each one needs its own; sharing it was already a bug in this project once.
     """
     agent_tools.CONTEXT["ask"] = ask
     agent_tools.CONTEXT["confirm"] = confirm
@@ -592,6 +599,10 @@ def run(
                     saw.append(result)
                     if name == "read_file":
                         file_reads.append(result)
+                if working is not None:
+                    working.append({"tool": name,
+                                    "args": json.dumps(args)[:200],
+                                    "result": result[:600]})
                 trace.event("tool", tool=name,
                             ok=not result.startswith(("Error", "Refused", "Cancelled")),
                             ms_call=round((time.time() - began_call) * 1000, 1),

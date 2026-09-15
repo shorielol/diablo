@@ -1042,7 +1042,8 @@ class Marker:
 
 def walk(question: str, speak: Callable[[str], None], target: str = "",
          should_stop: Optional[Callable[[], bool]] = None,
-         ask: Optional[Callable[[str], str]] = None) -> str:
+         ask: Optional[Callable[[str], str]] = None,
+         working: Optional[List[Dict[str, str]]] = None) -> str:
     """
     Teach him how, pointing at the screen as it goes.
 
@@ -1125,6 +1126,22 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                       "not it.")
             print(f"  [Tutor] read {read_as!r} "
                   f"(corroborated={seen['corroborated']})")
+            # Kept so "walk me through your maths" can be answered afterwards
+            # with what was really read and really solved, rather than the
+            # model reconstructing a plausible method from the answer.
+            if working is not None:
+                how = ("two OCR passes agreed" if seen["corroborated"]
+                       else "one unconfirmed reading")
+                working.append({
+                    "tool": "read_the_question",
+                    "args": window.get("app", ""),
+                    "result": f"Read {read_as!r} from the screen ({how})."})
+                working.append({
+                    "tool": "solve",
+                    "args": verified["equation"],
+                    "result": (f"sympy solved {verified['equation']} for "
+                               f"{verified['symbol']} = "
+                               + ", ".join(verified["solutions"]))})
     else:
         for fragment in fragments:
             verified = verify_equation(fragment["text"])

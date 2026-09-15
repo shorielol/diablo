@@ -47,6 +47,18 @@ ASSISTANT_NAME = os.getenv("DIABLO_NAME", "Diablo")
 MAX_TURNS = config.env_int("DIABLO_MEMORY_TURNS", 12)
 SESSION_TIMEOUT = config.env_int("DIABLO_SESSION_TIMEOUT", 900)  # 15 minutes
 
+# How much of an agent's working is kept, and how much of it reaches a prompt.
+#
+# The context is 4096 tokens and read_page returns whole articles, so none of
+# this can be unbounded. The numbers are chosen against what the tools really
+# return: a search result is a couple of hundred characters, a page read is
+# capped at 600 here, and twelve calls covers a two-source research run with
+# room over. The prompt budget is smaller again, because the working goes in
+# alongside the conversation rather than instead of it.
+WORKING_STEPS = config.env_int("DIABLO_WORKING_STEPS", 12, low=2, high=40)
+WORKING_RESULT = config.env_int("DIABLO_WORKING_RESULT", 600, low=100, high=4000)
+WORKING_BUDGET = config.env_int("DIABLO_WORKING_BUDGET", 1800, low=200, high=8000)
+
 # Character comes from persona.py so it can be retuned from .env without
 # touching code. The mechanics of speaking aloud stay here, because they are not
 # a matter of taste — they are what makes a reply usable through a speaker.
@@ -111,6 +123,15 @@ class Session:
         # one agent, so "and what about the other one" reaches whoever just
         # answered rather than starting again with the orchestrator.
         self.focus: Optional[str] = None
+        # What each agent actually did to get its answer, keyed by agent id.
+        #
+        # Deliberately not in `turns`. Turns are sent to the model on every
+        # single exchange and rendered in the window, and a research task's
+        # working is thousands of characters against a 4096-token context — it
+        # would push the conversation itself out of the window to answer a
+        # question he has not asked yet. This sits to one side and is pulled in
+        # only when he asks how the answer was reached.
+        self.working: Dict[str, List[Dict[str, str]]] = {}
 
     def _summarise_oldest(self) -> None:
         """
@@ -150,6 +171,7 @@ class Session:
             self.earlier = ""
             self.last_screen_app = None
             self.focus = None
+            self.working = {}
 
     def remember(self, role: str, content: str) -> None:
         self.turns.append({"role": role, "content": content})
@@ -157,11 +179,49 @@ class Session:
             self._summarise_oldest()
         self.last_spoke_at = time.time()
 
+    def remember_working(self, agent_id: str,
+                         steps: List[Dict[str, str]]) -> None:
+        """
+        Keep what an agent actually did, so it can be asked about afterwards.
+
+        This used to be thrown away on purpose. run_parallel collected every
+        sub-agent's narration and then discarded it whenever the final answer
+        came back non-empty, which is every time it worked. So "where did you
+        find that?" had nothing behind it — not because the agent was a
+        separate thread, but because the sources were deleted the moment they
+        stopped being needed for the answer.
+        """
+        if not agent_id or not steps:
+            return
+        kept = []
+        for step in steps[-WORKING_STEPS:]:
+            kept.append({"tool": str(step.get("tool", ""))[:60],
+                         "args": str(step.get("args", ""))[:200],
+                         "result": str(step.get("result", ""))[:WORKING_RESULT]})
+        self.working[agent_id] = kept
+        self.last_spoke_at = time.time()
+
+    def working_for(self, agent_id: Optional[str]) -> str:
+        """That agent's working, written out for a prompt, or empty."""
+        steps = self.working.get(agent_id or "", [])
+        if not steps:
+            return ""
+        lines, budget = [], WORKING_BUDGET
+        for step in steps:
+            line = f"{step['tool']}({step['args']}) returned: {step['result']}"
+            if budget - len(line) < 0:
+                break
+            budget -= len(line)
+            lines.append(line)
+        return "\n".join(lines)
+
+
     def reset(self) -> None:
         self.turns = []
         self.earlier = ""
         self.last_screen_app = None
         self.focus = None
+        self.working = {}
 
     def is_followup(self) -> bool:
         """True if he is still mid-conversation rather than starting one."""
@@ -230,6 +290,29 @@ class Session:
                 "earlier — what he said, what you decided, a file he mentioned "
                 "— you genuinely do not have it. Say so and ask him to remind "
                 "you. Do not reconstruct it."})
+        # How the last answer was actually arrived at, when he is asking about
+        # that and not about something new.
+        #
+        # Pulled in on the question rather than kept in the history, which is
+        # what makes it affordable: a research run's working is thousands of
+        # characters and the context is 4096 tokens, so carrying it on every
+        # turn would evict the conversation to answer a question he may never
+        # ask. Here it costs nothing until he asks, and then it is the only
+        # thing he wants.
+        if self.focus and asks_how_you_know(text):
+            notes = self.working_for(self.focus)
+            if notes:
+                messages.append({"role": "system", "content":
+                    "He is asking how you reached your answer. This is what you "
+                    "actually did — the calls you made and what came back. Answer "
+                    "from it and name the real sources. Anything not here, you did "
+                    "not do, so say so rather than filling the gap.\n\n" + notes})
+            else:
+                messages.append({"role": "system", "content":
+                    "He is asking how you reached your answer and you have no "
+                    "record of the working. Say plainly that you cannot retrace "
+                    "it rather than reconstructing something plausible."})
+
         # The part of the conversation that has already been folded down. It
         # goes in as its own system message rather than as a fake turn, so the
         # model cannot quote it back as something one of them actually said.
@@ -426,6 +509,32 @@ def look_if_asked(text: str) -> Optional[str]:
         return context
     session.last_screen_app = context.splitlines()[0] if context else None
     return context
+
+
+# Him asking how an answer was reached, rather than asking something new.
+#
+# Kept narrow on purpose. Every phrase here has to be about the provenance of
+# something already said — "where did you get that", "what did you read". A
+# looser list would pull a research task's whole working into the prompt on any
+# turn containing the word "how", which is most of them.
+HOW_YOU_KNOW = (
+    "where did you get", "where did that come from", "where does that come from",
+    "where did you find", "how do you know", "how did you know",
+    "what makes you say", "what are your sources", "what was your source",
+    "what did you read", "what did you look at", "which sites",
+    "what did you search", "how did you work that out", "how did you get that",
+    "walk me through your", "show your working", "show me your working",
+    "show me how you", "what did you do to", "how did you do that",
+    "can you back that up", "prove it", "says who", "source for that",
+    "cite that", "how sure are you", "did you check",
+)
+
+
+def asks_how_you_know(text: str) -> bool:
+    """True when he is asking about the working, not asking a new question."""
+    lowered = " " + re.sub(r"[^a-z0-9 ]+", " ", (text or "").lower()) + " "
+    lowered = re.sub(r"\s+", " ", lowered)
+    return any(phrase in lowered for phrase in HOW_YOU_KNOW)
 
 
 def addressed_to(text: str) -> Optional[str]:
