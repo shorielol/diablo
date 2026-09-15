@@ -733,6 +733,72 @@ def plan(question: str, screen_text: str,
     return {"kind": result.get("kind") or "unclear", "steps": steps}
 
 
+# ─── The states a walkthrough moves through ──────────────────────────────────
+# Named because "it stopped somewhere in the middle" is not a debuggable
+# report, and because a step that was narrated is a different thing from a step
+# that was verified. The transitions are logged, so a walkthrough that goes
+# wrong leaves a trail saying which step it went wrong on and what the screen
+# did.
+
+STARTED = "guidance_started"
+PRESENTED = "step_presented"
+WAITING = "waiting_for_user"
+SCREEN_CHANGED = "screen_changed"
+VERIFIED = "step_verified"
+NOT_VERIFIED = "step_not_verified"
+NEXT = "next_step"
+COMPLETED = "completed"
+CANCELLED = "cancelled"
+
+
+def read_window(window: dict):
+    """
+    Capture one window and read it: (path, fragments).
+
+    The pair travels together on purpose. The fragments are the coordinates and
+    the path is the picture those coordinates describe, and a step that mixes
+    fragments from one capture with a picture from another draws its caption in
+    the wrong colour and marks the wrong place.
+    """
+    path = screen_context.capture_window(window["id"])
+    if not path:
+        return None, []
+    fragments = screen_context._ocr_fragments(path, window)
+    if isinstance(fragments, str) or not fragments:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        return None, []
+    return path, sorted(fragments, key=lambda f: (round(f["top"], 3), f["left"]))
+
+
+def step_landed(before: List[dict], after: List[dict], expect: str = ""):
+    """
+    Whether a step actually did something, and what.
+
+    Returns (changed, appeared, vanished). Text sets rather than pixels: a
+    caret blinking in a text field changes the pixels of every screen with a
+    text field on it, and reporting that as "the export dialog opened" is
+    exactly the confident-wrong failure this is here to catch.
+
+    `expect` tightens it from "something happened" to "the right thing
+    happened" when the step said what to look for.
+    """
+    was = {f["text"].strip() for f in before if f.get("text", "").strip()}
+    now = {f["text"].strip() for f in after if f.get("text", "").strip()}
+    appeared = sorted(t for t in (now - was) if len(t) > 3)
+    vanished = sorted(t for t in (was - now) if len(t) > 3)
+    if expect:
+        wanted = expect.strip().lower()
+        if any(wanted in t.lower() for t in appeared):
+            return True, appeared, vanished
+        # The expectation was named and is not there. Movement alone is not
+        # success, because clicking the wrong control also moves the screen.
+        return False, appeared, vanished
+    return bool(appeared or vanished), appeared, vanished
+
+
 def anchor(steps: List[Step], fragments: List[dict], window: dict,
            menus: Optional[List[dict]] = None) -> List[Step]:
     """
@@ -1260,6 +1326,9 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
     interactive = waits_for_clicks(plan_result["kind"], pinned)
     marker = Marker(watch_clicks=interactive)
     spoken, waited, done_by_hand = 0, 0, 0
+    verified, unverified = 0, 0
+    print(f"  [Tutor] {STARTED}: {len(steps)} steps in {window.get('app','')}, "
+          f"interactive={interactive}")
     try:
         for index, step in enumerate(steps, 1):
             if should_stop and should_stop():
@@ -1287,10 +1356,59 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
             # have anyway.
             if interactive and step.get("found") and asks_for_an_action(step["say"]):
                 waited += 1
+                print(f"  [Tutor] {WAITING} step {counter}")
                 marker.ready(timeout=3.0)
-                if marker.wait_for_click(step["x"], step["y"],
-                                         should_stop=should_stop):
+                clicked = marker.wait_for_click(step["x"], step["y"],
+                                                should_stop=should_stop)
+                if clicked:
                     done_by_hand += 1
+
+                # Did it do anything? Ask the screen, not the click.
+                #
+                # A registered click means a mouse went down inside the marker,
+                # nothing more. It does not mean the button took it, that the
+                # button was enabled, or that the thing the step promised would
+                # open opened. Telling someone "now click Export" when the last
+                # click silently did nothing is how a walkthrough ends up five
+                # steps deep in an interface that never changed.
+                after_path, after_fragments = read_window(window)
+                if after_fragments:
+                    changed, appeared, _ = step_landed(
+                        fragments, after_fragments,
+                        expect=(steps[index]["look_for"] if index < len(steps) else ""))
+                    if changed:
+                        print(f"  [Tutor] {SCREEN_CHANGED} -> {VERIFIED} "
+                              f"({len(appeared)} new)")
+                        # The screen moved, so every coordinate after this one
+                        # belongs to a screen that no longer exists. Re-anchor
+                        # the rest against what is there now — this is what
+                        # makes step three point at a menu item that only
+                        # appeared when step two opened the menu.
+                        rest = anchor(steps[index:], after_fragments, window, menus)
+                        steps = steps[:index] + rest
+                        try:
+                            os.unlink(capture)
+                        except OSError:
+                            pass
+                        capture, fragments = after_path, after_fragments
+                        verified += 1
+                        after_path = None
+                    elif clicked:
+                        print(f"  [Tutor] {NOT_VERIFIED} step {counter}")
+                        unverified += 1
+                        wanted = steps[index].get("look_for", "") if index < len(steps) else ""
+                        if wanted and appeared:
+                            speak(f"That opened something, Sir, but I can't see "
+                                  f"{wanted} in it. Check it's the right one.")
+                        elif not appeared:
+                            speak("That doesn't seem to have changed anything, "
+                                  "Sir. It may not have taken the click.")
+                if after_path:
+                    try:
+                        os.unlink(after_path)
+                    except OSError:
+                        pass
+                if clicked:
                     continue          # he did it; no pause needed
                 # Thirty seconds and no click. Carrying on is better than
                 # waiting forever, and saying so is better than carrying on

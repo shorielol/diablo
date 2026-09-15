@@ -75,6 +75,46 @@ CHROME_IGNORE = {
     "Wallpaper", "Screenshot", "universalaccessd",
 }
 
+# Diablo's own windows, which are never what "what am I looking at" means.
+#
+# Measured, not theorised: with Diablo's own NSWindow frontmost,
+# frontmost_window() returned it, so "what's on my screen" read Diablo's own
+# interface back to the user. The panel escapes by accident — it sits at window
+# layer 25 and the layer filter drops it — but the main window is an ordinary
+# titled NSWindow at layer 0 and did not.
+#
+# Two mechanisms, because one process is not the whole of Diablo: the owner PID
+# catches the process doing the asking, and the names catch the UI when it runs
+# as a separate process from the agent.
+DIABLO_APPS = {"diablo", "diablo.app"}
+
+
+def _own_pids() -> set:
+    """This process and its parent, whose windows are Diablo's own."""
+    pids = {os.getpid()}
+    try:
+        pids.add(os.getppid())
+    except Exception:
+        pass
+    return pids
+
+
+def is_own_window(entry_owner: str, entry_pid: int, title: str = "") -> bool:
+    """Whether a window belongs to Diablo itself."""
+    if entry_pid and entry_pid in _own_pids():
+        return True
+    name = (entry_owner or "").strip().lower()
+    if name in DIABLO_APPS:
+        return True
+    # The development case: run from a venv, the owner is "Python" and only the
+    # window title says Diablo. Narrow on purpose — a browser tab called
+    # "Improve Diablo GUI" is a real window the user may well be asking about,
+    # so the title only counts when the owner is a bare interpreter.
+    if name in ("python", "python3", "python3.11", "python3.12", "python3.13"):
+        return (title or "").strip().lower() in DIABLO_APPS
+    return False
+
+
 # Never capture these, whatever is asked. A screenshot of a password manager is
 # a screenshot of a password. clicky does this too and it is the right call.
 SENSITIVE_APPS = {
@@ -111,6 +151,9 @@ def list_windows(min_width: int = 200, min_height: int = 120) -> List[Dict[str, 
         owner = entry.get("kCGWindowOwnerName") or ""
         if not owner or owner in CHROME_IGNORE:
             continue
+        title = entry.get("kCGWindowName") or ""
+        if is_own_window(owner, int(entry.get("kCGWindowOwnerPID") or 0), title):
+            continue
         bounds = entry.get("kCGWindowBounds") or {}
         width, height = int(bounds.get("Width", 0)), int(bounds.get("Height", 0))
         if width < min_width or height < min_height:
@@ -129,6 +172,21 @@ def list_windows(min_width: int = 200, min_height: int = 120) -> List[Dict[str, 
             "height": height,
             "sensitive": owner.lower() in SENSITIVE_APPS,
         })
+
+    # Which screen each window is on. Attached here rather than looked up by
+    # callers because every spatial consumer needs it and none of them should
+    # be re-deriving display geometry.
+    try:
+        from skills import display as _display
+        for window in windows:
+            screen = _display.for_window(window)
+            if screen:
+                window["display_id"] = screen.id
+                window["display_index"] = screen.index
+                window["display_scale"] = screen.scale
+                window["display"] = screen.describe()
+    except Exception:
+        pass
     return windows
 
 
@@ -136,6 +194,18 @@ def frontmost_window() -> Optional[Dict[str, Any]]:
     """The window you are actually looking at. Quartz returns them front to back."""
     windows = list_windows()
     return windows[0] if windows else None
+
+
+# Words too common to identify a window on their own. Not a spelling list —
+# each one of these was a real substring of a real application name.
+_WEAK_WORDS = {
+    "not", "and", "the", "for", "with", "you", "your", "was", "are", "has",
+    "had", "can", "one", "two", "all", "any", "out", "off", "own", "new",
+    "old", "how", "why", "who", "but", "its", "see", "get", "got", "now",
+    "open", "close", "show", "find", "look", "read", "that", "this", "there",
+    "here", "what", "which", "where", "when", "definitely", "really", "just",
+    "some", "thing", "stuff", "screen", "display", "please",
+}
 
 
 def find_window(query: str) -> Optional[Dict[str, Any]]:
@@ -182,11 +252,23 @@ def find_window(query: str) -> Optional[Dict[str, Any]]:
                 for window in windows:
                     if hit(window, candidate):
                         return window
+    # Last resort: one distinctive word, matched at a word boundary.
+    #
+    # This pass used to take any word of three characters or more and look for
+    # it anywhere inside an app name or title. Measured: "a window that is
+    # definitely not open" returned Notes, because "not" is a substring of
+    # "Notes". A question about a window that is not open came back as a
+    # confident reading of an unrelated application — the worst available
+    # outcome, and indistinguishable from a correct answer.
+    #
+    # So common words cannot carry a match on their own, and a match has to
+    # begin at a word boundary rather than land in the middle of one.
     for word in needle.split():
-        if len(word) < 3:
+        if len(word) < 3 or word in _WEAK_WORDS:
             continue
+        pattern = re.compile(r"\b" + re.escape(word), re.IGNORECASE)
         for window in windows:
-            if hit(window, word):
+            if pattern.search(window["app"]) or pattern.search(window["title"]):
                 return window
     return None
 
@@ -204,11 +286,22 @@ def capture_window(window_id: int) -> Optional[str]:
 
 
 def capture_screen() -> Optional[str]:
-    path = os.path.join(tempfile.gettempdir(), f"diablo_screen_{int(time.time())}.png")
-    proc = subprocess.run(["screencapture", "-x", path], capture_output=True, timeout=30)
-    if proc.returncode != 0 or not os.path.exists(path):
+    """
+    The main display, and only the main display. Named so on purpose.
+
+    This used to be called as though it captured "the screen". Measured on a
+    two-display machine, `screencapture -x out.png` writes ONE file containing
+    the main display, exits 0, and says nothing about the display it dropped.
+    Anything built on it lost half the desktop and could not tell.
+
+    For the whole desktop use `display.capture_everything()`, which returns one
+    capture per display with each display's own scale factor intact.
+    """
+    from skills import display as _display
+    main = _display.main_display()
+    if main is None:
         return None
-    return path
+    return _display.capture_display(main)
 
 
 # ─── Reading the pixels ──────────────────────────────────────────────────────
@@ -620,6 +713,46 @@ def vision_available() -> bool:
         return False
 
 
+# The longest edge a capture is sent to the vision model at.
+#
+# Measured on both displays of this machine, same question, same model:
+#
+#     window          native             at 1280px        answer
+#     1920x1080       23.8s              10.6s            same
+#     3024x1766       37.0s              10.4s            same
+#
+# The Retina capture is the striking one: a 3.6x speedup for a description
+# that came back word for word the same. Going further does cost accuracy —
+# at a 633px edge the model called a dark theme "white background" — so this
+# sits where the time stops falling and before the reading starts breaking.
+VISION_MAX_EDGE = config.env_int("DIABLO_VISION_MAX_EDGE", 1280, low=320, high=4096)
+
+
+def _for_vision(path: str) -> tuple:
+    """
+    The capture at a size the vision model is quick on: (path, temporary).
+
+    Returns the original path untouched when it is already small enough, so
+    the common case costs nothing and no caller has to know which happened —
+    the second element says whether there is a file to clean up.
+    """
+    if VISION_MAX_EDGE <= 0:
+        return path, False
+    try:
+        from AppKit import NSBitmapImageRep
+        from Foundation import NSData
+        rep = NSBitmapImageRep.imageRepWithData_(NSData.dataWithContentsOfFile_(path))
+        if rep is None:
+            return path, False
+        longest = max(int(rep.pixelsWide()), int(rep.pixelsHigh()))
+    except Exception:
+        return path, False
+    if longest <= VISION_MAX_EDGE:
+        return path, False
+    smaller = _enlarge(path, VISION_MAX_EDGE / float(longest), smooth=True)
+    return (smaller, True) if smaller else (path, False)
+
+
 def read_image(path: str, instruction: str, num_predict: int = 300) -> str:
     """
     Ask the vision model about an image already on disk.
@@ -630,14 +763,21 @@ def read_image(path: str, instruction: str, num_predict: int = 300) -> str:
     different screen — the user has had two seconds to move something — and
     the fragments it already anchored to would no longer match the picture.
     """
+    sized, temporary = _for_vision(path)
     try:
-        with open(path, "rb") as f:
+        with open(sized, "rb") as f:
             encoded = base64.b64encode(f.read()).decode()
     except OSError as e:
         # Not interpolated: an OSError carries the full path, and this string
         # is read out loud.
         print(f"  [Vision] could not read {path}: {e}")
         return "Error: I could not read the screen capture."
+    finally:
+        if temporary:
+            try:
+                os.unlink(sized)
+            except OSError:
+                pass
     try:
         message = local_brain.chat(
             [{"role": "user", "content": instruction, "images": [encoded]}],
@@ -669,14 +809,16 @@ def describe_visually(question: str, target: str = "") -> str:
     path = capture_window(window["id"])
     if not path:
         return "Error: could not capture that window."
+    sized, temporary = _for_vision(path)
     try:
-        with open(path, "rb") as f:
+        with open(sized, "rb") as f:
             encoded = base64.b64encode(f.read()).decode()
     finally:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
+        for leftover in ([sized] if temporary else []) + [path]:
+            try:
+                os.unlink(leftover)
+            except OSError:
+                pass
 
     try:
         message = local_brain.chat(
@@ -757,15 +899,38 @@ def structured(target: str = "") -> Dict[str, Any]:
     if not path:
         info["error"] = "Could not capture that window."
         return info
+
+    # Blank-frame check before anything reads it. A window on another Space
+    # captures as valid, well-formed, solid black, and OCR then reports no text
+    # — which reads exactly like an empty window and is not one.
     try:
-        regions = ocr_regions(path, window)
-    finally:
+        from skills import screen as _screen
+        good, why = _screen.validity(path)
+        if not good:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            info["error"] = why.capitalize() + "."
+            return info
+    except Exception:
+        pass
+
+    regions = ocr_regions(path, window)
+    # Kept, not deleted, so a question the text cannot answer can be put to the
+    # vision model against THIS capture. Re-capturing for the second attempt
+    # would ask about a screen a second older than the one just described.
+    # Whoever pops it owns deleting it; explain() always does.
+    info["_capture"] = path
+
+    if isinstance(regions, str):
+        # OCR itself failed. The capture is of no further use and nothing
+        # downstream will pop it, so it goes now rather than sitting in /tmp.
+        info.pop("_capture", None)
         try:
             os.unlink(path)
         except OSError:
             pass
-
-    if isinstance(regions, str):
         info["error"] = regions
         return info
 
@@ -813,6 +978,52 @@ is there. You are speaking out loud, so:
 - Never invent anything that is not in the text you were given."""
 
 
+# Questions OCR cannot answer, however good the OCR is.
+#
+# Text extraction returns what a screen SAYS. These ask what it LOOKS like —
+# shape, colour, position, state, imagery — and no amount of reading the words
+# answers them. A chart with no data labels OCRs to its axis titles and a
+# legend, and a confident paragraph written from that is a description of a
+# chart nobody has looked at.
+VISUAL_QUESTIONS = (
+    "graph", "chart", "plot", "diagram", "figure", "image", "picture", "photo",
+    "icon", "colour", "color", "layout", "look like", "looks like", "design",
+    "greyed", "grayed", "disabled", "highlighted", "selected", "ticked",
+    "checked", "shaded", "arrow", "shape", "drawing", "screenshot", "thumbnail",
+    "dark mode", "light mode", "which button", "what does this show",
+)
+
+# Below this many characters, a window of any size is not mostly text. A
+# video player, a design tool, a photo, a rendered chart: all of them OCR to
+# almost nothing, and "there is no text in this window" is a true statement
+# that answers no question anyone asked.
+THIN_TEXT = config.env_int("DIABLO_SCREEN_THIN_TEXT", 140, low=0, high=4000)
+
+
+def needs_vision(question: str, info: Dict[str, Any]) -> bool:
+    """
+    Whether this question needs the vision model rather than the text.
+
+    Two independent triggers, because either alone misses half the cases: the
+    question can be visual about a text-heavy screen ("which button is greyed
+    out" in a dialog), and the question can be ordinary about a screen with no
+    text in it ("what is this?" pointed at a photograph).
+    """
+    lowered = (question or "").lower()
+    if any(cue in lowered for cue in VISUAL_QUESTIONS):
+        return True
+    characters = sum(len(line) for region in info.get("regions", [])
+                     for line in region.get("lines", []))
+    return characters < THIN_TEXT
+
+
+VISION_EXPLAIN = """Look at this screenshot and answer the question about it.
+
+You are speaking out loud, so two or three sentences, no lists and no markdown.
+Lead with the answer. Describe only what is actually visible — if you cannot
+see something clearly enough to be sure, say so rather than guessing at it."""
+
+
 def explain(question: str = "", target: str = "") -> str:
     """
     Say what is on screen, in a sentence or two, out loud.
@@ -824,6 +1035,38 @@ def explain(question: str = "", target: str = "") -> str:
     info = structured(target)
     if info.get("error"):
         return f"Error: {info['error']}"
+
+    # Route to whichever model can actually answer, rather than sending
+    # everything through the cheapest one and hoping.
+    #
+    # The text path is the default because it is ten times faster and exact
+    # where it applies. The vision model is not a better version of it — it is
+    # a different instrument, and it is the only one that can answer a question
+    # about a picture.
+    if needs_vision(question, info) and vision_available():
+        capture = info.pop("_capture", None)
+        if capture and os.path.exists(capture):
+            try:
+                context = _as_prompt(info, budget=600)
+                seen = read_image(
+                    capture,
+                    f"{VISION_EXPLAIN}\n\nThis is {info['app']}"
+                    + (f", showing {info['title'][:80]}" if info.get("title") else "")
+                    + f".\n\nQuestion: {question.strip() or 'What am I looking at?'}",
+                    num_predict=320)
+            finally:
+                try:
+                    os.unlink(capture)
+                except OSError:
+                    pass
+            if seen and not seen.startswith("Error:"):
+                return seen
+    capture = info.pop("_capture", None)
+    if capture:
+        try:
+            os.unlink(capture)
+        except OSError:
+            pass
 
     ask = question.strip() or "What is on this screen? Say what he is looking at and what matters about it."
     try:
@@ -848,12 +1091,42 @@ SCREEN_REFERENCES = [
     "see my", "what's this", "whats this", "what does this say", "in front of me",
     "this error", "this code", "this article", "this window", "my browser",
     "my chrome", "the browser", "currently open", "right now on",
+    # Pointing at something with the mouse rather than naming it.
+    "under my cursor", "under the cursor", "my cursor", "my pointer",
+    "under my mouse", "hovering over", "this icon", "this button",
+    # Asking about a change, which is only meaningful about a screen.
+    "what changed", "what's changed", "whats changed", "did that work",
+    "did it work", "did that open", "did the", "has it changed",
+    "what happened", "anything change",
+    # Asking to be shown where, which needs somewhere to point.
+    "where do i click", "where should i click", "what do i click",
+    "which button", "what button", "point it out", "show me where",
+    "walk me through", "what's next", "whats next", "what do i press",
+    # Stuck, in front of something.
+    "what am i doing", "what am i working on", "where am i stuck",
+    "what's wrong here", "whats wrong here", "why isn't this working",
+    "why isnt this working", "what am i doing wrong",
+    # The displays themselves.
+    "my monitor", "my monitors", "my display", "my displays",
+    "second screen", "other screen", "external monitor",
 ]
+
+# Sentences that mention a screen word but are not about this screen. Checked
+# first, because "this" is doing different work in "what does this error mean"
+# and "what does this word mean in French" — and the second must not trigger a
+# capture, which costs a second and puts the wrong context in front of the
+# model.
+NOT_THE_SCREEN = (
+    "on screen actors", "screen time", "screenplay", "screen printing",
+    "sunscreen", "screen door", "silver screen",
+)
 
 
 def wants_screen(text: str) -> bool:
     """Cheap pre-filter for whether to attach screen context to a reply."""
-    lowered = text.lower()
+    lowered = (text or "").lower()
+    if any(phrase in lowered for phrase in NOT_THE_SCREEN):
+        return False
     return any(phrase in lowered for phrase in SCREEN_REFERENCES)
 
 

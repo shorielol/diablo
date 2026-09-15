@@ -768,10 +768,40 @@ def open_url(url: str) -> str:
 
 
 def take_screenshot() -> str:
+    """
+    A screenshot of every display, not just one.
+
+    The previous version ran bare `screencapture`, which on a multi-display
+    machine captures the main display alone and reports success. Someone asking
+    for a screenshot of what is on their second monitor got a picture of their
+    first and no indication anything was missing.
+    """
+    import shutil
     import time
-    path = os.path.join(DESKTOP, f"DIABLO_Screenshot_{int(time.time())}.png")
-    subprocess.run(["screencapture", "-t", "png", path], capture_output=True)
-    return f"Screenshot saved to {path}."
+    try:
+        display = _skill("display")
+        if display is None:
+            raise RuntimeError("no display module")
+        screens = display.displays()
+        stamp = int(time.time())
+        saved = []
+        for one in screens:
+            captured = display.capture_display(one)
+            if not captured:
+                continue
+            suffix = "" if len(screens) == 1 else f"_{one.describe().split(' ')[0]}"
+            destination = os.path.join(DESKTOP, f"DIABLO_Screenshot_{stamp}{suffix}.png")
+            shutil.move(captured, destination)
+            saved.append(os.path.basename(destination))
+        if not saved:
+            return "I could not capture the screen. Diablo needs Screen Recording " \
+                   "permission in System Settings."
+        if len(saved) == 1:
+            return f"Screenshot saved to the Desktop as {saved[0]}."
+        return (f"Saved {len(saved)} screenshots to the Desktop, one per display: "
+                + ", ".join(saved) + ".")
+    except Exception as e:
+        return _failed("take a screenshot", "", e)
 
 
 def set_volume(level: int) -> str:
@@ -874,6 +904,177 @@ def find_on_screen(description: str, target: str = "") -> str:
         return _clip("\n".join(lines))
     except Exception as e:
         return _failed("search the screen", "", e)
+
+
+def whats_under_cursor() -> str:
+    """The nearest readable thing to the pointer, measured rather than guessed."""
+    try:
+        screen = _skill("screen")
+        if screen is None:
+            return "Error: screen reading is unavailable."
+        hit = screen.under_cursor()
+        if not hit:
+            where = _skill("display")
+            spot = where.cursor() if where else None
+            if not spot:
+                return "I cannot tell where your pointer is, Sir."
+            return ("There is nothing I can read right under your pointer, Sir. "
+                    "I can only find text, so an unlabelled icon will not show up.")
+        near = "right under your pointer" if hit["near"] else \
+               f"about {int(hit['distance'])} points away"
+        hedge = "" if hit["confidence"] >= 0.7 else ", though I am not certain I read it correctly"
+        return (f"'{hit['text'][:80]}' — {near}, in {hit['app']}{hedge}.")
+    except Exception as e:
+        return _failed("see what is under the cursor", "", e)
+
+
+def what_changed(target: str = "") -> str:
+    """What is different on screen since Diablo last looked at it."""
+    try:
+        screen = _skill("screen")
+        if screen is None:
+            return "Error: screen reading is unavailable."
+        return _clip(screen.what_changed(target))
+    except Exception as e:
+        return _failed("see what changed", "", e)
+
+
+def look_near_cursor(question: str = "") -> str:
+    """Read just the part of the screen around the pointer, not the whole desktop."""
+    try:
+        screen = _skill("screen")
+        screen_context = _skill("screen_context")
+        if screen is None or screen_context is None:
+            return "Error: screen reading is unavailable."
+        frame = screen.capture_around_cursor()
+        if not frame.ok:
+            return frame.problem.capitalize() + "."
+        try:
+            text = screen_context.ocr_image(frame.path)
+        finally:
+            frame.release()
+        if not text.strip():
+            return "There is no readable text around your pointer, Sir."
+        return _clip(f"Around your pointer, in {frame.app or 'that window'}:\n{text}")
+    except Exception as e:
+        return _failed("read around the cursor", "", e)
+
+
+def screen_layout() -> str:
+    """The displays, their arrangement and which window is on which."""
+    try:
+        where = _skill("display")
+        screen_context = _skill("screen_context")
+        if where is None:
+            return "Error: display information is unavailable."
+        screens = where.displays()
+        if not screens:
+            return "I cannot see any displays, Sir."
+        lines = [where.describe_arrangement()]
+        for one in screens:
+            lines.append(f"  {one.describe()} — origin ({int(one.x)}, {int(one.y)}), "
+                         f"{one.scale:g}x scaling")
+        if screen_context is not None:
+            for one in screens:
+                on_it = [w["app"] for w in screen_context.list_windows()
+                         if w.get("display_id") == one.id]
+                if on_it:
+                    lines.append(f"  On the {one.describe().split(' (')[0]}: "
+                                 + ", ".join(sorted(set(on_it))))
+        return _clip("\n".join(lines))
+    except Exception as e:
+        return _failed("describe the displays", "", e)
+
+
+def screen_privacy() -> str:
+    """What Diablo is and is not allowed to do with the screen, stated plainly."""
+    try:
+        screen_context = _skill("screen_context")
+        screen = _skill("screen")
+        use = _skill("computer_use")
+        lines = [
+            "Screen capture happens only when you ask — there is no background "
+            "capture and no screenshot archive.",
+            "Captures are deleted as soon as they have been read. What is kept "
+            "is the text and which app it came from, never the image.",
+        ]
+        if screen is not None:
+            moment = screen.last_moment()
+            lines.append(f"Remembered from last time I looked: "
+                         + (f"{moment.app or 'one window'}, {int(moment.age())} seconds ago"
+                            if moment else "nothing"))
+        if screen_context is not None:
+            lines.append("Never captured at all: password managers and banking "
+                         "windows, and Diablo's own interface.")
+        if use is not None:
+            state = use.state()
+            lines.append("Controlling the computer (clicking, typing): "
+                         + ("on, " + state["level"] if state["enabled"] else "off"))
+        return _clip("\n".join(lines))
+    except Exception as e:
+        return _failed("describe the screen privacy settings", "", e)
+
+
+def whole_document(target: str = "") -> str:
+    """Whether the window is a view of a document that can be read in full."""
+    try:
+        screen = _skill("screen")
+        if screen is None:
+            return "Error: screen reading is unavailable."
+        return _clip(screen.visible_or_whole(target))
+    except Exception as e:
+        return _failed("tell what is behind that window", "", e)
+
+
+def research_whats_on_screen(question: str, target: str = "") -> str:
+    """
+    Work out what is on screen, then go and find out about it.
+
+    One workflow rather than two, because the two halves fail separately in
+    ways the user has to repair by hand. Asked "is this a good deal?" on a
+    product page, reading alone answers nothing and researching alone does not
+    know what "this" is. The screen supplies the subject; the web supplies the
+    facts; the subject is named in the answer so a wrong reading is visible
+    rather than buried.
+    """
+    try:
+        screen_context = _skill("screen_context")
+        if screen_context is None:
+            return "Error: screen reading is unavailable."
+        info = screen_context.structured(target)
+        capture = info.pop("_capture", None)
+        if capture:
+            try:
+                os.unlink(capture)
+            except OSError:
+                pass
+        if info.get("error"):
+            return f"I could not read the screen, so I have nothing to look up. {info['error']}"
+
+        # The subject, built from what was measured rather than from what a
+        # model thought the screen was about. Ordered by how reliable each
+        # source is: a URL and a page title come from the application itself,
+        # headings and error lines come from OCR.
+        subject = []
+        if info.get("page"):
+            subject.append(info["page"])
+        elif info.get("title"):
+            subject.append(info["title"])
+        if info.get("problems"):
+            subject.append(info["problems"][0])
+        subject.extend(info.get("headings", [])[:3])
+        subject = [s.strip() for s in subject if s and len(s.strip()) > 2]
+        if not subject:
+            return (f"I can see {info.get('app', 'that window')} but there is "
+                    f"nothing in it specific enough to look up. Tell me what "
+                    f"you want me to find out about.")
+
+        topic = f"{question.strip()} — {'; '.join(subject[:3])}"[:300]
+        found = research(topic)
+        seen = subject[0][:80]
+        return _clip(f"Going on what is on screen — {seen} — {found}")
+    except Exception as e:
+        return _failed("research what is on screen", "", e)
 
 
 def list_windows() -> str:
@@ -1374,6 +1575,64 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
           {"question": _S, "target": _S}, ["question"],
           "explain teach show how walk through guide help me with step by step "
           "how do i tutorial learn understand stuck", True),
+    _tool("whole_document", whole_document,
+          "Whether the window the user is looking at is a view of a document or "
+          "web page that can be read in full, rather than only the part that is "
+          "visible. Use before answering questions about a PDF, a long page or a "
+          "file, so you do not treat one screenful as the whole thing.",
+          {"target": dict(_S, description="Window or app, or empty for frontmost")},
+          [],
+          "document pdf whole file page entire rest full read all behind"),
+    _tool("research_whats_on_screen", research_whats_on_screen,
+          "Work out what is on the user's screen and then look it up on the web. "
+          "Use for 'is this a good deal?', 'what does this error mean?', 'is this "
+          "true?' and 'research this' — anything where the subject is on screen "
+          "but the answer is not.",
+          {"question": dict(_S, description="What the user wants to know about it"),
+           "target": _S},
+          ["question"],
+          "research this look up find out about deal price worth error means "
+          "verify check true product company", True),
+    _tool("whats_under_cursor", whats_under_cursor,
+          "What the user's mouse pointer is hovering over. Use this for 'what is "
+          "this?', 'what's under my cursor?', 'what is this button?' and 'what "
+          "does this icon do?' — anything where they are pointing at something "
+          "rather than describing it.",
+          {}, [],
+          # "this" and "here" on their own are too generic to claim — they
+          # appear in half of everything the user says, screen or not.
+          "cursor pointer mouse hover hovering underneath icon"),
+    _tool("what_changed", what_changed,
+          "What is different on screen since the last time you looked at it. Use "
+          "for 'what changed?', 'did that work?', 'did the dialog open?' and 'did "
+          "the error go away?'. Say plainly if there is nothing to compare to.",
+          {"target": dict(_S, description="Window or app, or empty for frontmost")},
+          [],
+          "changed change different update did it work dialog opened disappeared "
+          "since before after"),
+    _tool("look_near_cursor", look_near_cursor,
+          "Read only the part of the screen around the pointer, rather than the "
+          "whole window. Faster and more precise when the user is pointing at one "
+          "small thing.",
+          {"question": _S}, [],
+          "cursor pointer nearby around region zoom"),
+    _tool("screen_layout", screen_layout,
+          "The user's displays: how many, how they are arranged, their scaling, "
+          "and which windows are on which. Use for questions about monitors and "
+          "screens as hardware.",
+          {}, [],
+          # Deliberately no bare "screen": that word belongs to read_screen,
+          # and claiming it here pushed "what's on my screen" off the top of
+          # the list and into a description of the user's monitor setup.
+          "display displays monitor monitors external arrangement resolution "
+          "retina scaling multiple dual second"),
+    _tool("screen_privacy", screen_privacy,
+          "What Diablo is and is not permitted to do with the screen, and what it "
+          "has remembered. Use whenever the user asks about privacy, what is "
+          "stored, what is recorded, or whether Diablo is watching.",
+          {}, [],
+          "privacy private recording watching stored kept remember screenshot "
+          "permission allowed settings"),
     _tool("point_at", point_at,
           "Put a marker on the user's screen over a thing they are looking for, and "
           "say where it is. Use this whenever he asks where something is, how to "

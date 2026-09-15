@@ -1,55 +1,42 @@
-import pyautogui
-import os
-import time
-from PIL import Image
-try:
-    import easyocr
-    READER = easyocr.Reader(['en'])
-except ImportError:
-    READER = None
+"""
+D.I.A.B.L.O. — retired.
+
+This module used to take a full-screen pyautogui screenshot, run easyocr over
+it, and click the first text that matched — with no permission check, no window
+scoping, no staleness check and no verification that the click did anything.
+It was never wired into the tool registry, which is the only reason it never
+fired. Left as it was, it was one import away from being the hole every other
+guard in Diablo exists to prevent.
+
+Everything it tried to do now exists properly:
+
+    reading the screen      screen_context.look / screen.capture_window
+                            Apple Vision rather than easyocr, per window
+                            rather than the whole desktop, so one app's text
+                            never lands in another's context
+
+    finding something       pointing.locate — measured boxes, a match score,
+                            and silence rather than a guess below it
+
+    clicking it             computer_use.click — off by default, needs an
+                            explicit grant, re-checks the screen has not moved
+                            since the coordinate was chosen, asks again for
+                            anything destructive, and verifies afterwards that
+                            the click actually changed something
+
+The functions stay, refusing, so that anything still importing them fails
+loudly and in a safe direction rather than silently doing the old thing.
+"""
+
 
 def capture_and_ocr():
-    """Captures a screenshot and performs OCR on the entire screen."""
-    print("  [OCR Tool] Capturing screen for OCR...")
-    screenshot_path = "temp_ocr.png"
-    pyautogui.screenshot(screenshot_path)
-    
-    if not READER:
-        return "Error: easyocr not installed. Please install it to use OCR features."
-    
-    results = READER.readtext(screenshot_path)
-    os.remove(screenshot_path)
-    
-    # Combine results
-    full_text = " ".join([res[1] for res in results])
-    return full_text
+    """Retired. Use screen_context.look() or screen.capture_window()."""
+    return ("Error: this OCR path was retired. Screen reading goes through "
+            "screen_context.look(), which reads one window with Apple Vision.")
+
 
 def find_and_click_text(target_text: str):
-    """Finds specific text on screen and clicks it."""
-    print(f"  [OCR Tool] Searching for '{target_text}' on screen...")
-    screenshot_path = "temp_click.png"
-    pyautogui.screenshot(screenshot_path)
-    
-    if not READER:
-        return "Error: easyocr not installed."
-        
-    results = READER.readtext(screenshot_path)
-    os.remove(screenshot_path)
-    
-    for (bbox, text, prob) in results:
-        if target_text.lower() in text.lower():
-            # Calculate center of bbox
-            # bbox is [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
-            center_x = (bbox[0][0] + bbox[1][0]) / 2
-            center_y = (bbox[0][1] + bbox[2][1]) / 2
-            
-            print(f"  [OCR Tool] Found '{text}' at ({center_x}, {center_y}). Clicking...")
-            pyautogui.click(center_x, center_y)
-            return f"Clicked on '{text}', Sir."
-            
-    return f"Could not find '{target_text}' on screen, Sir."
-
-if __name__ == "__main__":
-    # Test
-    # print(capture_and_ocr())
-    pass
+    """Retired. Clicking requires a permission grant — see computer_use.click."""
+    return ("Error: this click path was retired because it clicked without "
+            "asking. Use pointing.locate() to find the target, then "
+            "computer_use.click(), which requires explicit permission.")

@@ -71,7 +71,11 @@ Say "Hey Diablo" and then your request, or say the whole thing in one breath. On
 
 **Real work.** Shell commands, Python snippets, spreadsheets through pandas and openpyxl. Arithmetic always goes through Python, never through the model, because a 14B asked to total three rows in its head returned 350 for a figure that was 115.
 
-**Your screen.** Diablo reads one window at a time using Apple's Vision framework, with a 2D occupancy grid that finds the real column boundaries. Reading per-window rather than whole-screen is what keeps the browser's text out of the editor's, which is the difference between screen context being useful and being noise. Password managers and banking windows are refused outright.
+**Your screen.** Diablo reads one window at a time using Apple's Vision framework, with a 2D occupancy grid that finds the real column boundaries. Reading per-window rather than whole-screen is what keeps the browser's text out of the editor's, which is the difference between screen context being useful and being noise. Password managers and banking windows are refused outright, and so is Diablo's own interface.
+
+Every capture carries where it came from and when: which display, at what scale factor, how many seconds ago. That is what makes the rest possible. It knows which of your monitors a window is on and maps a coordinate correctly onto a Retina panel sitting at a negative x. It checks each capture is a screen at all before reading it, because a window on another desktop captures as a well-formed PNG of solid black and "there is no text in this window" is a confident, wrong answer nobody can see is wrong. It can read just the patch around your pointer rather than the whole desktop, tell you what is under the cursor, and say what has changed since it last looked. Ask it something the words cannot answer — what a chart shows, which button is greyed out — and it routes to a vision model instead of the text path, at a capped resolution that cut a Retina window's answer from 37 seconds to 10 with the same answer coming back.
+
+Looking is not touching. Clicking and typing live behind a separate switch that is off by default, need an explicit grant that is scoped to one task and expires, re-check that the screen has not moved since the coordinate was chosen, ask again for anything that cannot be undone, and verify afterwards that the click actually changed something. No agent can reach them.
 
 **Conversation.** It holds a thread while you work, remembers twelve turns, and knows what is on your screen when you refer to it.
 
@@ -143,14 +147,14 @@ It will also never tell you it has done something it has not done. That sounds o
 ## Tests
 
 ```bash
-diablo test        # 14 suites
+diablo test        # 27 suites
 diablo eval        # score it on clear, ambiguous, risky and impossible asks
 diablo bench       # latency, throughput and memory, per model
 diablo trace       # why it decided what it decided, turn by turn
 diablo state       # what every subsystem is doing right now
 ```
 
-Fourteen suites, 470 checks. They use the real model, the real filesystem and a real Trash rather than mocks, because the failures worth catching are the ones a 14B produces and a scripted stand-in never will: narrating a plan instead of running it, calling the same tool forever, or reporting success having done nothing.
+Twenty-seven suites, 1,071 checks. They use the real model, the real filesystem and a real Trash rather than mocks, because the failures worth catching are the ones a 14B produces and a scripted stand-in never will: narrating a plan instead of running it, calling the same tool forever, or reporting success having done nothing.
 
 Every agent test checks the disk afterwards, not what Diablo said about the disk.
 
@@ -204,7 +208,10 @@ diablo/
   agent_tools.py     the 33 tools, path confinement, denylist
   local_brain.py     Ollama client, stdlib only
   mcp_client.py      JSON-RPC 2.0 over stdio, no SDK
-  screen_context.py  per-window OCR, column detection
+  screen_context.py  per-window OCR, column detection, vision routing
+  display.py         the monitors, and the arithmetic between coordinate spaces
+  screen.py          captures that know their own provenance, and what changed
+  computer_use.py    permission to click, and the four gates before one happens
   conversation.py    rolling memory, anti-fabrication
   persona.py         the character dials
   voice.py           Voicebox, disk cache, system fallback

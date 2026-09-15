@@ -90,7 +90,9 @@ AGENTS: List[Dict[str, Any]] = [
         "blurb": "Reads the glass, points at things, and walks you through them.",
         "tools": ["read_screen", "explain_screen", "describe_visually", "list_windows",
                   "take_screenshot", "point_at", "find_on_screen",
-                  "walk_me_through"],
+                  "walk_me_through", "whats_under_cursor", "what_changed",
+                  "look_near_cursor", "screen_layout", "screen_privacy",
+                  "whole_document", "research_whats_on_screen"],
         "keywords": ["screen", "window", "this page", "on my screen", "show me where",
                      "point at", "highlight", "what am i looking at", "screenshot",
                      "tab", "visible", "in front of me", "help me with",
@@ -142,7 +144,14 @@ DEFAULT = "marbas"
 # this is a description of the permission gate, not a routing decision.
 SAFETY_CLASS: Dict[str, str] = {}
 for _tool in ("read_screen", "explain_screen", "describe_visually", "list_windows",
-              "take_screenshot", "point_at", "find_on_screen", "read_file",
+              "take_screenshot", "point_at", "find_on_screen",
+              # Every screen capability reads and nothing more. Clicking and
+              # typing are deliberately absent: they are not tools an agent can
+              # reach, they go through computer_use, which is off by default and
+              # asks every time. Looking never implies touching.
+              "whats_under_cursor", "what_changed", "look_near_cursor",
+              "screen_layout", "screen_privacy", "whole_document",
+              "research_whats_on_screen", "read_file",
               "list_files", "find_files", "search_text", "web_search",
               "search_wikipedia", "system_status", "search_contact"):
     SAFETY_CLASS[_tool] = "reads"

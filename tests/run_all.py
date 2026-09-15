@@ -31,6 +31,7 @@ SUITES = [
     ("test_manager.py",      False, "state machine, events, lifecycle, degradation"),
     ("test_app.py",          False, "the app API, its assets, and what is on screen"),
     ("test_pointing.py",     False, "finding things on screen, and marking them"),
+    ("test_screen.py",       False, "displays, coordinates, cursor, change, permission"),
     ("test_roster.py",       True,  "delegation: who gets what, and several at once"),
     ("test_scenarios.py",    True,  "what a person says, and what actually happens"),
     ("test_walkthrough.py",  False, "the marker on screen, and waiting for a click"),
