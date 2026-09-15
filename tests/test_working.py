@@ -24,7 +24,11 @@ from harness import Results  # noqa: E402
 DIABLO_HOME = os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo"))
 sys.path.insert(0, DIABLO_HOME)
 
-from skills import conversation, speech  # noqa: E402
+from skills import agent_tools, conversation, speech  # noqa: E402
+
+
+def agent_tools_select(text):
+    return agent_tools.select(text)
 
 RESEARCH = [
     {"tool": "search_web",
@@ -131,6 +135,49 @@ def main():
     r.check("and neither can see the other's",
             "40 lakh" not in both.working_for("vassago")
             and "Manoj" not in both.working_for("marbas"))
+
+    # ── 7. Who does the work ─────────────────────────────────────────────
+    # "Decrease the system volume" is four words. The old gate was a word
+    # count at four, so turning the volume down spawned an agent, announced
+    # it, and left a row in the sidebar for a single AppleScript call.
+    r.head("Trivial things do not get their own agent")
+    from skills import delegation_tool  # noqa: E402
+
+    direct = ["decrease the system volume", "turn the volume down", "mute",
+              "play some music", "pause the music", "next track",
+              "what time is it", "take a screenshot", "set brightness to fifty",
+              "open my downloads folder", "what is on my screen",
+              "send a message to mum", "what is the capital of peru",
+              "turn the volume down and play music"]
+    for task in direct:
+        r.check(f"{task!r} runs on the main thread",
+                not delegation_tool.needs_its_own_agent(task, task))
+
+    r.head("Real research still does")
+    deep = ["research apprenticeships in delhi for finance",
+            "look into the best noise cancelling headphones",
+            "compare the options for studying economics abroad",
+            "find out about the new tax rules in india",
+            "what are the best universities for finance"]
+    for task in deep:
+        r.check(f"{task[:44]!r} gets an agent",
+                delegation_tool.needs_its_own_agent(task, task))
+
+    r.head("And so does asking for one")
+    asked = ["spin up an agent to research this", "get vassago to look into that",
+             "put someone on the apprenticeship search",
+             "delegate this to someone", "work on it in the background"]
+    for task in asked:
+        r.check(f"{task[:40]!r} is an explicit request",
+                delegation_tool.needs_its_own_agent(task, task),
+                "explicit instruction wins however small the task")
+
+    # The trap the first attempt fell into: agent_tools.select() returns a
+    # ranked menu, and the research tool's tags include "the", "what", "are",
+    # "out" and "about", so it is in nearly every menu.
+    r.check("routing does not just ask whether research is on the tool menu",
+            "research" in agent_tools_select("what time is it"),
+            "it is — which is why membership cannot be the test")
 
     return r.report("working notes")
 

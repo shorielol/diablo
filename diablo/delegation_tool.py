@@ -15,6 +15,7 @@ moved to a smaller model.
 
 import json
 import os
+import re
 
 from skills import config  # noqa: E402
 import queue
@@ -34,6 +35,7 @@ from typing import Callable, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from skills import agent_core  # noqa: E402
+from skills import agent_tools  # noqa: E402
 from skills import trace  # noqa: E402
 try:
     from skills import route  # noqa: E402
@@ -50,7 +52,34 @@ from skills import tutor  # noqa: E402
 BASE_DIR = os.getenv("DIABLO_BASE_DIR", os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo")))
 JOBS_PATH = os.path.join(BASE_DIR, "jobs.json")
 MAX_CONCURRENT = config.env_int("DIABLO_MAX_CONCURRENT_AGENTS", 1)
-LONG_TASK_WORDS = 4  # anything shorter is answered inline rather than queued
+# What makes a task worth its own agent.
+#
+# This used to be a word count: four words or more went to the queue. "Decrease
+# the system volume" is four words, so turning the volume down spawned an
+# agent, announced it, and left a row in the sidebar — for something that is
+# one AppleScript call and over before the announcement finishes. Length was
+# never the question. What the task actually needs is.
+#
+# Matched on phrases rather than on agent_tools.select(). That was the first
+# attempt and it was wrong: select() returns a ranked MENU of up to twelve
+# tools, and the research tool's tags include "the", "what", "are", "out" and
+# "about", so it appears in nearly every menu. Membership meant "what time is
+# it" and "pause the music" both wanted their own agent. A phrase says what a
+# single word cannot — "look into" is research, "look at my screen" is not.
+RESEARCH_CUES = (
+    "research", "look into", "looking into", "read up on", "dig into",
+    "find out about", "find out what", "investigate", "compare the",
+    "compare these", "what are the best", "which are the best",
+    "options for", "gather", "summarise everything", "summarize everything",
+    "go through the", "shortlist", "pros and cons of", "review the options",
+)
+
+AGENT_REQUESTS = (
+    "spin up", "spawn", "assign an agent", "assign someone", "put someone on",
+    "get someone on", "put an agent on", "delegate", "hand this to",
+    "hand it to", "in the background", "work on it in the background",
+    "while i", "go away and", "take your time on",
+)
 
 # How many times Diablo may come back with a question before it either commits
 # or gives up. Two is the ceiling that still feels like a conversation.
@@ -421,8 +450,15 @@ def handle(
             trace.event("route", route="escalate_failed", reason=str(e)[:100])
             # Fall through and let the small model try rather than giving up.
 
-    if depth < LONG_TASK_WORDS and not store.active():
-        # Short and nothing else queued: run it here so the reply is immediate.
+    if not needs_its_own_agent(task, text):
+        # Diablo does it, here, now.
+        #
+        # The old condition was `depth < LONG_TASK_WORDS and not store.active()`
+        # — a word count, plus a rule that any queued work pushed everything
+        # else into the queue behind it. So asking for the volume down while a
+        # research job ran spawned a second agent for a one-line AppleScript
+        # call. Running inline during other work is safe: the tool context is
+        # thread-local and the sub-agents are on their own threads.
         #
         # "Immediate" still means a model round trip and one or more tools, and
         # from the other side of a speaker that is several seconds of nothing.
@@ -439,10 +475,12 @@ def handle(
         if pieces_inline and pieces_inline[0][1] not in (None, "diablo"):
             conversation.session.focus = pieces_inline[0][1]
         speak(summary)
-        job = {"id": uuid.uuid4().hex[:8], "task": task, "status": "done",
-               "created_at": time.time(), "finished_at": time.time(),
-               "agent": pieces_inline[0][1], "parts": [], "summary": summary}
-        store.add(job)
+        # Nothing goes in the job store. It did before, which is the other half
+        # of the cluttered sidebar: even correctly-inlined actions left a row
+        # behind, so every "volume down" became a permanent entry in a list
+        # meant for work you might want to go back to. A finished one-liner is
+        # not something to go back to — it is in the conversation, which is
+        # where it belongs.
         return "inline"
 
     # Several errands in one sentence, and none of them waiting on another.
@@ -464,6 +502,39 @@ def handle(
 
 
 # ─── Voice status ────────────────────────────────────────────────────────────
+
+def asks_for_an_agent(text: str) -> bool:
+    """He said to put someone on it."""
+    lowered = " " + re.sub(r"[^a-z0-9 ]+", " ", (text or "").lower()) + " "
+    lowered = re.sub(r"\s+", " ", lowered)
+    if any(phrase in lowered for phrase in AGENT_REQUESTS):
+        return True
+    # Naming a worker and giving it a job. conversation.addressed_to() finds
+    # the same openers — "ask Vassago to", "get Marbas to" — and by the time
+    # this is reached the turn has already been classified as an action rather
+    # than chat, so this is an assignment and not a follow-up question.
+    named = conversation.addressed_to(text)
+    return bool(named and named != "diablo")
+
+
+def needs_its_own_agent(task: str, text: str = "") -> bool:
+    """
+    Whether this is worth spawning for, or whether Diablo should just do it.
+
+    Diablo holds every capability the others do, so handing work over buys
+    nothing unless the work is long enough to be worth watching separately.
+    Two things qualify and nothing else does: he asked for an agent, or the
+    task is real research — several pages opened and read, minutes rather than
+    seconds. A volume change, a track, a window read and a one-line lookup all
+    finish here, before an announcement about them would have played.
+    """
+    if asks_for_an_agent(text or task):
+        return True
+    both = f" {(task or '')} {(text or '')} ".lower()
+    both = re.sub(r"[^a-z0-9 ]+", " ", both)
+    both = re.sub(r"\s+", " ", both)
+    return any(f" {cue}" in both for cue in RESEARCH_CUES)
+
 
 def status_report() -> str:
     active = store.active()
