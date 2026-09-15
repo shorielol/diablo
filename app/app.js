@@ -98,57 +98,102 @@ function ago(seconds) {
 }
 
 /* ─── The rail ───────────────────────────────────────────────────────────────
-   Every agent is a conversation: who it is, when it last said something, and
-   what that was. This is the shape a messages app has, and it is the right one
-   — the question you arrive with is "what has it been doing", and a list of
-   names against their last line answers it without a click. */
+   Diablo, and whatever is actually going on.
 
-const RailRow = memo(({ agent, line, when, busy, active, onPick }) => html`
+   This used to be one row per agent, always, whether that agent had ever done
+   anything or not — six names sitting there looking like a cast list. The
+   question you arrive with is "what has it been doing", and a fixed list of
+   characters cannot answer it: five of the six rows are furniture, and the one
+   that matters looks exactly like the other five.
+
+   So Diablo is the only permanent row, because Diablo is the only permanent
+   entity — it has every capability the others do and is always there to talk
+   to. Everything below it is work: one row per dispatched task, newest first,
+   labelled with the task rather than the character, because "Research Delhi
+   apprenticeships" tells you what happened and "Vassago" does not. The demon
+   is still there in the face and the colour, which is where identity belongs
+   when the text has a job to do. */
+
+export const RailRow = memo(({ agent, title, line, when, busy, active, onPick }) => html`
   <button class="convo" data-active=${active} data-busy=${busy}
           style=${{ '--accent': agent.accent }} onClick=${onPick}>
     <span class="unread" aria-hidden="true" />
     <span class="face"><${Mascot} agent=${agent} size=${38} wave=${false} /></span>
     <span class="meta">
       <span class="top">
-        <span class="nm">${agent.name}</span>
+        <span class="nm">${title}</span>
         <span class="when">${busy ? 'now' : when}</span>
       </span>
       <span class="line">${line}</span>
     </span>
   </button>`);
 
+/* Pulled out of the component and exported so it can be tested against real
+   job payloads. The version that lived inside useMemo could only be checked by
+   looking at the window, and "looks right" is how the last UI bug survived. */
+export function railRows(roster, jobs, liveAgents) {
+  const index = roster && roster.length ? indexRoster(roster) : byId;
+  const who = id => index[id] || byId[id] || byId.diablo;
+  const live = liveAgents || {};
+  const all = jobs || [];
+  const out = [];
+
+  /* Diablo first, and always. Its line is whatever it is doing now, or the
+     last thing it finished on its own — not a sub-agent's work, which has its
+     own row further down. */
+  const diabloJob = all.find(j => !(j.parts || []).length
+                                  && (j.agent || 'diablo') === 'diablo');
+  out.push({
+    key: 'diablo',
+    agent: who('diablo'),
+    title: who('diablo').name,
+    line: live.diablo || diabloJob?.summary || diabloJob?.task || who('diablo').blurb,
+    when: ago(diabloJob?.finished_at || diabloJob?.created_at),
+    busy: !!live.diablo,
+    pick: 'diablo',
+  });
+
+  /* Then the work. A fan-out becomes one row per agent that took a piece,
+     because that is what you would want to open — the piece, not the job. */
+  for (const job of all) {
+    const parts = (job.parts || []).length
+      ? job.parts.map(p => ({ id: p.agent, task: p.task, summary: p.summary,
+                              status: p.status,
+                              when: p.finished_at || job.created_at }))
+      : [{ id: job.agent || 'diablo', task: job.task, summary: job.summary,
+           status: job.status, when: job.finished_at || job.created_at }];
+    for (const [i, part] of parts.entries()) {
+      if (part.id === 'diablo' && parts.length === 1) continue;   // already above
+      const agent = who(part.id);
+      const running = live[part.id];
+      out.push({
+        key: `${job.id}:${i}`,
+        agent,
+        title: part.task || `${agent.name}'s work`,
+        line: running || part.summary
+              || (part.status === 'running' ? `${agent.name} is on it`
+                                            : `${agent.name} · ${part.status || 'queued'}`),
+        when: ago(part.when),
+        busy: !!running,
+        pick: part.id,
+      });
+    }
+  }
+  return out;
+}
+
 function Rail({ roster, jobs, liveAgents, picked, onPick, view, setView, state }) {
   const [query, setQuery] = useState('');
 
-  /* One row per agent, carrying the last thing that agent actually did. Built
-     from the job store rather than kept as separate state, so the rail cannot
-     disagree with the work queue. */
-  const rows = useMemo(() => {
-    const latest = {};
-    for (const job of jobs) {
-      const entries = (job.parts && job.parts.length)
-        ? job.parts.map(p => [p.agent, p.summary || p.task, p.finished_at || job.created_at])
-        : [[job.agent || 'diablo', job.summary || job.task, job.finished_at || job.created_at]];
-      for (const [id, text, when] of entries) {
-        if (!latest[id] || (when || 0) > (latest[id].when || 0)) {
-          latest[id] = { text, when };
-        }
-      }
-    }
-    return roster.map(agent => ({
-      agent,
-      line: liveAgents[agent.id] || latest[agent.id]?.text || agent.blurb,
-      when: ago(latest[agent.id]?.when),
-      busy: !!liveAgents[agent.id],
-      seen: !!latest[agent.id],
-    }));
-  }, [roster, jobs, liveAgents]);
+  const rows = useMemo(() => railRows(roster, jobs, liveAgents),
+                       [roster, jobs, liveAgents]);
 
   const shown = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return rows;
     return rows.filter(r =>
       r.agent.name.toLowerCase().includes(needle) ||
+      String(r.title).toLowerCase().includes(needle) ||
       String(r.line).toLowerCase().includes(needle));
   }, [rows, query]);
 
@@ -166,7 +211,7 @@ function Rail({ roster, jobs, liveAgents, picked, onPick, view, setView, state }
             <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
           </svg>
           <input value=${query} onInput=${e => setQuery(e.target.value)}
-                 placeholder="Search" aria-label="Search agents" spellcheck="false" />
+                 placeholder="Search" aria-label="Search tasks and agents" spellcheck="false" />
         </label>
         <button class="plus" onClick=${() => { setQuery(''); onPick(null); }}
                 title="Start fresh" aria-label="Start a new conversation">
@@ -177,12 +222,16 @@ function Rail({ roster, jobs, liveAgents, picked, onPick, view, setView, state }
 
       <div class="convos" role="list">
         ${shown.length === 0
-          ? html`<p class="railempty">Nobody by that name.</p>`
+          ? html`<p class="railempty">Nothing by that name.</p>`
           : shown.map(r => html`
-            <${RailRow} key=${r.agent.id} agent=${r.agent} line=${r.line}
+            <${RailRow} key=${r.key} agent=${r.agent} title=${r.title} line=${r.line}
                when=${r.when} busy=${r.busy}
-               active=${picked === r.agent.id && view === 'home'}
-               onPick=${() => { setView('home'); onPick(r.agent.id); }} />`)}
+               active=${picked === r.pick && view === 'home'}
+               onPick=${() => { setView('home'); onPick(r.pick); }} />`)}
+        ${shown.length === 1 && !query
+          ? html`<p class="railempty">Ask for something that takes a while and it
+                   will appear here while it runs.</p>`
+          : null}
       </div>
 
       <nav class="railfoot" aria-label="Sections">

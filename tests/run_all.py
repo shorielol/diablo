@@ -34,6 +34,7 @@ SUITES = [
     ("test_walkthrough.py",  False, "the marker on screen, and waiting for a click"),
     ("test_vision_maths.py", False, "reading a question off the screen, drawing the working"),
     ("test_working.py",      False, "asking an agent how it got there"),
+    ("test_rail.py",         False, "the sidebar: Diablo, then the work"),
     ("test_system.py",       False, "system tools, offline gating, screen sight"),
     ("test_voice.py",        False, "Voicebox, cache, and every fallback"),
     ("test_brain.py",        True,  "the model, conversation, anti-fabrication"),
