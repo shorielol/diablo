@@ -272,95 +272,94 @@ button:active:not(:disabled), [role="button"]:active {
 
 /* ── Hero ─────────────────────────────────────────────────────────────── */
 
-.hero {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  gap: var(--s4); padding: var(--s5) var(--s6) var(--s6); text-align: center;
+/* ── The head of the conversation ────────────────────────────────────────
+   Him at 22px, his name, and one word for what he is doing. Forty points of
+   chrome, where there used to be four hundred. */
+
+.head {
+  display: flex; align-items: center; gap: var(--s2);
+  height: 40px; padding: 0 var(--s4); flex-shrink: 0;
+  border-bottom: 1px solid var(--line-soft);
+  -webkit-app-region: drag;
 }
-.hero .mascot {
-  filter: drop-shadow(0 18px 40px rgba(224, 35, 60, 0.18));
+.head .mascot { flex-shrink: 0; }
+.head .mark {
+  font-size: 13px; font-weight: 550; letter-spacing: 0.01em; color: var(--text);
+}
+.head .state {
+  margin-left: auto; display: flex; align-items: center; gap: var(--s2);
+  font-size: 11.5px; color: var(--dim);
+}
+.head .dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--idle);
+  flex-shrink: 0;
+}
+.head .dot[data-state="listening"] { background: var(--listening); }
+.head .dot[data-state="processing"] { background: var(--thinking); }
+.head .dot[data-state="responding"] { background: var(--speaking); }
+.head .dot[data-state="error"]      { background: var(--error); }
+
+/* ── Nothing said yet ────────────────────────────────────────────────────
+   One line, vertically centred, and no character. The character is in the
+   corner of the screen and at the top of this window; a third copy of him
+   filling the middle of an empty surface is not presence, it is wallpaper. */
+
+/* Named .blank, not .empty: there is already an .empty further down for the
+   trace and health views, and it won on source order — quietly resetting this
+   one's type size to 13px. Two rules with one name is a bug waiting for
+   whoever edits next. */
+.blank {
+  flex: 1; display: grid; place-items: center; padding: var(--s6) var(--s5);
+}
+.blank p {
+  font-size: 15px; color: var(--faint); letter-spacing: -0.01em;
 }
 
-/* The speech bubble. Rounded to a capsule with a lit rim, because a rectangle
-   with a tail reads as a comic and this is a person talking to you. */
-.bubble-hero {
-  display: inline-flex; align-items: center; gap: var(--s2);
-  max-width: 78%; padding: 11px 18px 11px 14px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, var(--surface-3), var(--surface-2));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07),
-              0 8px 24px rgba(0, 0, 0, 0.45);
-  font: 400 14px/1.4 var(--font); color: var(--text);
-  transition: box-shadow var(--t-enter) var(--ease-out);
-}
-@starting-style {
-  .bubble-hero { opacity: 0; transform: scale(0.96); }
-}
-.bubble-hero[data-speaking="true"] {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07),
-              0 8px 24px rgba(0, 0, 0, 0.45),
-              0 0 0 1px color-mix(in srgb, var(--speaking) 45%, transparent),
-              0 0 28px color-mix(in srgb, var(--speaking) 22%, transparent);
-}
-.bubmic { color: var(--faint); display: flex; flex-shrink: 0; }
-.bubtext {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  user-select: text; cursor: text;
-}
+/* ── Working ─────────────────────────────────────────────────────────────
+   What is running, in one line per errand, under a rule that moves.
 
-/* Optical sizing: a 30px greeting needs its tracking pulled in or it reads as
-   loose. Small text needs the opposite. */
-.greet {
-  font: 600 30px/1.2 var(--font); letter-spacing: -0.021em; color: var(--text);
-}
-/* --dim, not --faint: this is the instruction for using the whole app, so it
-   is body text that happens to be quiet, not metadata. */
-.hint {
-  font: 400 13.5px/1.6 var(--font); color: var(--dim); max-width: 42ch;
-}
-.hint b { color: var(--dim); font-weight: 600; }
-
-/* ── Work in flight ───────────────────────────────────────────────────── */
+   Not a spinner and not a "Thinking…" screen: the application the user is
+   actually working in stays the thing they are looking at, and this is a
+   status line, not a destination. */
 
 .running {
-  flex-shrink: 0; display: flex; flex-direction: column; gap: 5px;
-  padding: 0 var(--s5) var(--s3);
+  flex-shrink: 0; padding: var(--s3) var(--s4) var(--s2);
+  display: flex; flex-direction: column; gap: var(--s2);
+  border-bottom: 1px solid var(--line-soft);
 }
-.runjob { display: flex; flex-wrap: wrap; gap: 5px; }
+.runjob { display: flex; flex-direction: column; gap: var(--s2); }
 .runpart {
-  display: inline-flex; align-items: center; gap: 7px; min-width: 0;
-  padding: 5px 11px 5px 5px; border-radius: 999px;
-  background: var(--surface-2);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
-  font: 400 12px/1 var(--font); color: var(--dim);
-  transition: opacity var(--t-enter) var(--ease-out),
-              transform var(--t-enter) var(--ease-out);
+  display: flex; align-items: center; gap: var(--s2); min-width: 0;
 }
-@starting-style {
-  .runpart { opacity: 0; transform: translateY(4px); }
+.runface { flex-shrink: 0; display: block; opacity: 0.9; }
+.runtask {
+  font-size: 12.5px; color: var(--dim); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.runpart[data-status="queued"] { opacity: 0.5; }
-.runface { width: 20px; height: 20px; border-radius: 50%; overflow: hidden; flex-shrink: 0; }
-.runwho { font-weight: 600; color: var(--accent); flex-shrink: 0; }
-.runtask { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 34ch; }
+.runpart[data-status="done"] .runtask { color: var(--faint); }
 
-/* ── An agent's own page ──────────────────────────────────────────────── */
-
-.agenthead {
-  display: flex; gap: var(--s4); align-items: center;
-  padding: var(--s3) var(--s5) var(--s4);
-  border-bottom: 1px solid var(--line-soft); flex-shrink: 0;
+/* An indeterminate rule rather than a percentage, because there is no
+   percentage: the model does not know how long it will take and a bar that
+   invents one is a lie that gets found out every time. */
+.runrule {
+  display: block; height: 1px; background: var(--line); overflow: hidden;
+  border-radius: 1px;
 }
-.agenthead .mascot {
-  border-radius: 50%; overflow: hidden; flex-shrink: 0;
-  background: var(--surface-2);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+.runrule i {
+  display: block; height: 100%; width: 34%; border-radius: 1px;
+  background: var(--accent, var(--crimson));
+  animation: sweep 1.5s var(--ease-move) infinite;
 }
-.agenthead h1 { font: 600 20px/1.25 var(--font); letter-spacing: -0.015em; }
-.agenthead .role { font-size: 12.5px; color: var(--accent); margin-top: 1px; }
-.agenthead .blurb { font-size: 13px; color: var(--dim); margin-top: 5px; max-width: 56ch; }
-
-.quiet { font-size: 13.5px; line-height: 1.65; color: var(--faint); max-width: 52ch; }
+@keyframes sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(340%); }
+}
+/* Reduced motion still needs to say "working", so the rule stays and stops
+   moving: the segment sits at a third of the width rather than sweeping.
+   Removing it entirely would take the only signal that anything is running. */
+@media (prefers-reduced-motion: reduce) {
+  .runrule i { animation: none; width: 100%; opacity: 0.45; }
+}
 
 .jobcard {
   padding: var(--s3) var(--s4); margin-bottom: var(--s3);
@@ -403,9 +402,14 @@ button:active:not(:disabled), [role="button"]:active {
 }
 .turn.you .bubble { background: var(--surface-3); border-color: var(--line); }
 
+/* The speaker labels are for screen readers only.
+   YOU and DIABLO sat in caps above every message, saying what the alignment
+   and the bubble colour already say, in the one typographic treatment the
+   interface otherwise avoids. Hidden visually, kept in the accessibility
+   tree, so a screen reader still announces who is speaking. */
 .turn .who {
-  font: 600 10px/1 var(--mono); letter-spacing: 0.14em;
-  color: var(--faint); text-transform: uppercase; margin-bottom: 6px;
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
 }
 
 .empty {
@@ -601,9 +605,14 @@ button:active:not(:disabled), [role="button"]:active {
   .convo { grid-template-columns: 1fr; justify-items: center; padding: 8px 0; }
   .convo .unread { position: absolute; top: 6px; right: 10px; }
   .railfoot { flex-direction: column; }
+  /* No room reserved for the traffic lights, and the reason is worth
+     writing down. WKWebView applies the window's titlebar as a top safe-area
+     inset, so the page already begins below the close, minimise and zoom
+     buttons — they are drawn over the titlebar, not over the head. Adding
+     left padding as well pushed the character a third of the way across an
+     otherwise empty row, which looked like a mistake because it was one. */
   .pane { padding: var(--s4); }
-  .greet { font-size: 24px; }
-}
+  }
 
 /* ─── Delegation ─────────────────────────────────────────────────────────── */
 /*
@@ -747,33 +756,20 @@ button:active:not(:disabled), [role="button"]:active {
 .convos .convo:nth-child(5) { animation-delay: 120ms; }
 .convos .convo:nth-child(6) { animation-delay: 150ms; }
 
-/* The hero's four pieces land in order: him first, then what he said, then
-   the greeting, then the instruction. That order is the sentence the screen
-   is making, and staggering it is the only thing that says so. */
-.hero > * { animation: arrive 320ms var(--ease-out) both; }
-.hero > *:nth-child(1) { animation-delay: 0ms; }
-.hero > *:nth-child(2) { animation-delay: 70ms; }
-.hero > *:nth-child(3) { animation-delay: 130ms; }
-.hero > *:nth-child(4) { animation-delay: 180ms; }
-
 @media (prefers-reduced-motion: reduce) {
-  .convos .convo, .hero > * { animation: none !important; opacity: 1 !important; }
+  .convos .convo { animation: none !important; opacity: 1 !important; }
 }
 
-/* Blur-in text, after reactbits' Blur Text.
-   Each word starts slightly below, slightly small and out of focus, then
-   lands. Blur is what makes it read as "coming into focus" rather than
-   "sliding in" — and it is kept at 6px because heavy blur is expensive in
-   WebKit and this runs the moment the window opens. */
-.blurin { display: inline-block; }
-.blurin > span {
-  display: inline-block;
-  animation: blurin 420ms var(--ease-out) both;
-}
-@keyframes blurin {
-  from { opacity: 0; filter: blur(6px); transform: translateY(8px) scale(0.985); }
-  to   { opacity: 1; filter: blur(0);   transform: translateY(0) scale(1); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .blurin > span { animation: none; opacity: 1; filter: none; transform: none; }
+
+/* Below this width there is one surface, not two.
+   Diablo opens at 392 points — wide enough for a sentence and a reply, narrow
+   enough to sit beside the application being worked in rather than in front
+   of it. Dragging the window wider brings the rail back, so nothing is lost;
+   it is simply not what you get for asking one question. */
+@media (max-width: 719px) {
+  .app { grid-template-columns: 1fr; }
+  .rail { display: none; }
+  .pane { padding: var(--s4); }
+  .thread { gap: var(--s3); }
+  .composer { padding: var(--s3) var(--s3) var(--s4); }
 }

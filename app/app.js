@@ -55,20 +55,24 @@ const Icon = memo(({ name, size = 18 }) => {
    markup comes from mascot.js, which builds it from a fixed template and a
    colour, never from anything a user or a model produced. */
 
-const Mascot = memo(({ agent, size = 96, wave = true }) => {
+const Mascot = memo(({ agent, size = 96, wave = true, crop = '' }) => {
   const svg = useMemo(
-    () => mascot({ accent: agent.accent, eye: agent.eye, mouth: agent.mouth, size, wave }),
-    [agent.accent, agent.eye, agent.mouth, size, wave]);
+    () => mascot({ accent: agent.accent, eye: agent.eye, mouth: agent.mouth,
+                   size, wave, crop }),
+    [agent.accent, agent.eye, agent.mouth, size, wave, crop]);
   return html`<div class="mascot" style=${{ width: size, height: size }}
       dangerouslySetInnerHTML=${{ __html: svg }} />`;
 });
 
 /* ─── Chrome ─────────────────────────────────────────────────────────────── */
 
+/* One word each, and nothing at all when he is idle.
+   "Listening for you" sat in the corner permanently, which is a caption
+   telling you the application is running. The empty string is the design. */
 const STATE_WORDS = {
-  cold: 'Asleep', init: 'Waking', idle: 'Listening for you',
+  cold: '', init: 'Waking', idle: '',
   listening: 'Listening', processing: 'Thinking', responding: 'Speaking',
-  error: 'Something broke', shutdown: 'Shutting down',
+  error: 'Something broke', shutdown: 'Closing',
 };
 
 /* The sections that are not a conversation. They used to be tabs across the
@@ -76,14 +80,6 @@ const STATE_WORDS = {
    here to say one sentence. They are now three small links at the foot of the
    rail, where a settings link belongs. */
 const SECTIONS = [['trace', 'Trace'], ['health', 'Health'], ['settings', 'Settings']];
-
-function greeting(hour) {
-  if (hour < 5) return 'Still up';
-  if (hour < 12) return 'Morning';
-  if (hour < 17) return 'Afternoon';
-  if (hour < 22) return 'Evening';
-  return 'Late one';
-}
 
 /* "3m", "2h", "Yesterday". Absolute timestamps in a list of conversations are
    noise: what you want to know is whether this was just now or a while ago. */
@@ -253,32 +249,44 @@ const Turn = memo(({ role, content }) => html`
   </div>`);
 
 /* ─── The stage ──────────────────────────────────────────────────────────────
-   The character, large, with the last thing he said above him. Before he has
-   said anything there is a greeting and one line telling you how to start,
-   and that is the entire screen — because on the first run the only thing
-   worth knowing is that you can just talk to it. */
+   A head, whatever is running, the conversation, and a field. In that order,
+   and nothing else.
 
-/* The greeting arrives a word at a time, each one unblurring as it lands.
-   The idea is reactbits' Blur Text; the implementation is eight lines of CSS
-   rather than a dependency, because this app has no build step and a text
-   effect is not worth acquiring one.
+   It used to open on the character at 188 points with a speech bubble, a
+   greeting and a line of instructions. All of that is information you have
+   after the first second of the first run and never need again, on a surface
+   opened twenty times a day to say one sentence. */
 
-   Justified because of how often it is seen: the greeting shows once, when
-   the window opens on an empty conversation. Anything you look at a hundred
-   times a day should not animate at all — but a first impression can afford
-   240 milliseconds. */
-const BlurIn = memo(({ text }) => html`
-  <span class="blurin" aria-label=${text}>
-    ${text.split(' ').map((word, i) => html`
-      <span key=${i} style=${{ animationDelay: `${i * 70}ms` }} aria-hidden="true">
-        ${word}${i < text.split(' ').length - 1 ? '\u00A0' : ''}</span>`)}
-  </span>`);
+/* ─── The head of the conversation ───────────────────────────────────────────
+   Him, small, and what he is doing. That is the entire chrome.
 
-const Bubble = memo(({ text, speaking }) => html`
-  <div class="bubble-hero" data-speaking=${speaking}>
-    <span class="bubmic"><${Icon} name="mic" size=${15} /></span>
-    <span class="bubtext">${text}</span>
-  </div>`);
+   What used to be here: a 188px mascot mid-wave, a speech bubble reading
+   "Hey Diablo. I'm listening.", a greeting sized like a magazine headline and
+   a line of instructions — roughly four hundred vertical points saying that
+   the application had launched. On a surface you open twenty times a day to
+   say one sentence, all four are things to read past.
+
+   State lives in the dot and in one word, and the word is only there when
+   something is actually happening. Idle says nothing, because idle is the
+   answer you can already see. */
+
+const Head = memo(({ state, working }) => html`
+  <header class="head">
+    <${Mascot} agent=${byId.diablo} size=${22} wave=${false} crop="head" />
+    <span class="mark">Diablo</span>
+    ${working || STATE_WORDS[state]
+      ? html`<span class="state" role="status" aria-live="polite">
+               <i class="dot" data-state=${state} aria-hidden="true"></i>
+               ${working || STATE_WORDS[state]}
+             </span>`
+      : null}
+  </header>`);
+
+/* Nothing said yet. One line, because the field below it is self-explanatory
+   and a second sentence explaining the first is the tell of an interface that
+   does not trust its own layout. */
+const Empty = memo(() => html`
+  <div class="blank"><p>What are we doing?</p></div>`);
 
 function Stage({ turns, state, agent, roster, jobs, liveAgents, address,
                  onSend, onInterrupt, onReset }) {
@@ -356,21 +364,14 @@ function Stage({ turns, state, agent, roster, jobs, liveAgents, address,
       </div>`;
   }
 
-  const last = [...turns].reverse().find(t => t.role === 'assistant');
+  const busy = jobs.filter(j => j.status === 'running' || j.status === 'queued');
 
   return html`
     <div class="stage">
+      <${Head} state=${state} working=${busy.length ? null : null} />
       <${Running} jobs=${jobs} roster=${roster.length ? indexRoster(roster) : byId} />
       ${turns.length === 0
-        ? html`
-          <div class="hero">
-            <${Mascot} agent=${byId.diablo} size=${188} />
-            <${Bubble} speaking=${speaking}
-               text=${last?.content || "Hey Diablo. I'm listening."} />
-            <h1 class="greet"><${BlurIn} text=${`${greeting(new Date().getHours())}, ${address}.`} /></h1>
-            <p class="hint">Say <b>"Hey Diablo"</b> out loud, or type below.
-               Everything runs on this Mac.</p>
-          </div>`
+        ? html`<${Empty} />`
         : html`
           <div class="pane">
             <div class="thread">
@@ -412,7 +413,7 @@ const Running = memo(({ jobs, roster }) => {
   if (!live.length) return null;
   return html`
     <div class="running" role="status" aria-live="polite">
-      ${live.slice(0, 3).map(job => {
+      ${live.slice(0, 2).map(job => {
         const parts = (job.parts && job.parts.length)
           ? job.parts
           : [{ agent: job.agent || 'diablo', task: job.task, status: job.status }];
@@ -421,13 +422,13 @@ const Running = memo(({ jobs, roster }) => {
             ${parts.map((part, i) => {
               const who = pickAgent(part.agent, roster);
               return html`
-                <span class="runpart" key=${i} style=${{ '--accent': who.accent }}
-                      data-status=${part.status || 'queued'}>
-                  <span class="runface"><${Mascot} agent=${who} size=${20} wave=${false} /></span>
-                  <span class="runwho">${who.name}</span>
+                <div class="runpart" key=${i} style=${{ '--accent': who.accent }}
+                     data-status=${part.status || 'queued'}>
+                  <span class="runface"><${Mascot} agent=${who} size=${18} wave=${false} crop="head" /></span>
                   <span class="runtask">${part.task}</span>
-                </span>`;
+                </div>`;
             })}
+            <span class="runrule" aria-hidden="true"><i /></span>
           </div>`;
       })}
     </div>`;

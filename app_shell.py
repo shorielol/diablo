@@ -414,11 +414,23 @@ class Panel:
         self.window = None
         self.webview = None
 
+    # The size it opens at.
+    #
+    # It opened at 1040x680 and centred, which is a window you go TO. Almost
+    # every use of this surface is one sentence and one reply, and a centred
+    # window two-thirds the width of the screen for that put a dashboard in
+    # front of whatever was being worked on.
+    #
+    # 392 is wide enough for a sentence and a reply at a comfortable measure
+    # and narrow enough to sit beside an editor rather than over it. The rail,
+    # the trace and the settings are all still there — the stylesheet brings
+    # the rail back above 720 points, so dragging the window wider restores
+    # the old layout exactly. Nothing was removed; it simply is not what you
+    # get for asking one question.
+    COMPACT = (392.0, 560.0)
+
     def _build(self):
-        # Wider than it was. The window is two columns now — a rail of
-        # conversations and a stage — and at 880 the stage was narrower than
-        # the character standing in it.
-        frame = NSMakeRect(0, 0, 1040, 680)
+        frame = NSMakeRect(0, 0, *Panel.COMPACT)
         style = (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                  | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
                  | NSWindowStyleMaskFullSizeContentView)
@@ -428,8 +440,8 @@ class Panel:
         self.window.setTitlebarAppearsTransparent_(True)
         self.window.setTitleVisibility_(NSWindowTitleHidden)
         self.window.setBackgroundColor_(_colour((0.043, 0.043, 0.051), 1.0))
-        self.window.setMinSize_(NSMakeSize(560, 420))
-        self.window.center()
+        self.window.setMinSize_(NSMakeSize(340, 360))
+        self._anchor()
 
         config = WKWebViewConfiguration.alloc().init()
         self.webview = WKWebView.alloc().initWithFrame_configuration_(frame, config)
@@ -437,6 +449,34 @@ class Panel:
         self.window.setContentView_(self.webview)
         self.webview.loadRequest_(
             NSURLRequest.requestWithURL_(NSURL.URLWithString_(self.url)))
+
+    def _anchor(self):
+        """
+        Open beside the orb, not in the middle of the screen.
+
+        The expansion has to read as the presence growing into a surface. A
+        window that appears centred is an unrelated thing arriving; a window
+        that appears where Diablo already was is the same thing, larger. The
+        orb sits 18 points in from the bottom-right of whichever screen the
+        cursor is on, so the panel sits directly above it with the same inset,
+        and both share a right edge.
+        """
+        width, height = Panel.COMPACT
+        try:
+            mouse = NSEvent.mouseLocation()
+            screen = next((s for s in NSScreen.screens()
+                           if _contains(s.frame(), mouse)), NSScreen.mainScreen())
+            visible = screen.visibleFrame()
+            x = visible.origin.x + visible.size.width - width - 18
+            # Clear of the orb, which is CANVAS tall with an 18 point inset.
+            y = visible.origin.y + 18 + CANVAS + 10
+            # Never taller than the screen it is on.
+            if y + height > visible.origin.y + visible.size.height:
+                y = max(visible.origin.y + 18,
+                        visible.origin.y + visible.size.height - height - 18)
+            self.window.setFrameOrigin_(NSPoint(x, y))
+        except Exception:
+            self.window.center()
 
     def toggle(self):
         if self.window is None:

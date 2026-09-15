@@ -61,11 +61,19 @@ const MOUTHS = {
  * @param {number} opts.size    rendered px
  * @param {boolean} opts.wave   include the raised gloved hand
  */
+/* `crop: 'head'` frames the head alone.
+   The full drawing is 120 units of character, of which the head is about
+   sixty. Rendered at 22px for the header mark that leaves a face nine pixels
+   across sitting above a suit, which reads as a smudge. Cropping the viewBox
+   costs nothing — it is the same paths — and gives the small sizes the same
+   framing the orb in the corner already uses. */
 export function mascot({ accent = '#E0233C', eye = '#F2C230',
-                         mouth = 'grin', size = 96, wave = true } = {}) {
+                         mouth = 'grin', size = 96, wave = true,
+                         crop = '' } = {}) {
+  const box = crop === 'head' ? '24 12 72 74' : '0 0 120 120';
   const id = Math.random().toString(36).slice(2, 8);
   return `
-<svg viewBox="0 0 120 120" width="${size}" height="${size}" role="img"
+<svg viewBox="${box}" width="${size}" height="${size}" role="img"
      aria-label="Diablo" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <clipPath id="head-${id}"><ellipse cx="60" cy="54" rx="32" ry="31"/></clipPath>
