@@ -22,6 +22,7 @@ GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", 
 
 SUITES = [
     ("test_architecture.py", False, "the invariants: who owns what, and what delegates"),
+    ("test_routing_live.py",  True,  "does routing generalise beyond the phrases it knows"),
     ("test_diablo.py",       False, "tool contracts, clarify loop, fast path"),
     ("test_mcp.py",          False, "MCP wire protocol against an embedded server"),
     ("test_filesystem.py",   False, "every file tool, and the sandbox boundary"),
@@ -35,6 +36,7 @@ SUITES = [
     ("test_walkthrough.py",  False, "the marker on screen, and waiting for a click"),
     ("test_vision_maths.py", False, "reading a question off the screen, drawing the working"),
     ("test_working.py",      False, "asking an agent how it got there"),
+    ("test_memory.py",       True,  "what it remembers, and what it admits it does not"),
     ("test_rail.py",         False, "the sidebar: Diablo, then the work"),
     ("test_brain_errors.py", False, "what it says when the model refuses"),
     ("test_tidying.py",      False, "tidying a folder without reading it"),

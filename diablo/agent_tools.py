@@ -650,6 +650,92 @@ def calculate(expression: str) -> str:
     return f"{number:.10g}"
 
 
+# Conversions people actually ask for, as exact factors. Temperature is not a
+# factor and is handled separately.
+_UNITS = {
+    ("mile", "km"): 1.609344, ("km", "mile"): 1 / 1.609344,
+    ("mile", "m"): 1609.344, ("m", "mile"): 1 / 1609.344,
+    ("foot", "m"): 0.3048, ("m", "foot"): 1 / 0.3048,
+    ("inch", "cm"): 2.54, ("cm", "inch"): 1 / 2.54,
+    ("kg", "lb"): 2.20462262, ("lb", "kg"): 1 / 2.20462262,
+    ("g", "oz"): 1 / 28.349523125, ("oz", "g"): 28.349523125,
+    ("stone", "kg"): 6.35029318, ("kg", "stone"): 1 / 6.35029318,
+    ("mb", "gb"): 1 / 1024, ("gb", "mb"): 1024,
+    ("gb", "tb"): 1 / 1024, ("tb", "gb"): 1024,
+    ("kb", "mb"): 1 / 1024, ("mb", "kb"): 1024,
+    ("hour", "minute"): 60, ("minute", "hour"): 1 / 60,
+    ("minute", "second"): 60, ("second", "minute"): 1 / 60,
+    ("hour", "second"): 3600, ("second", "hour"): 1 / 3600,
+    ("day", "hour"): 24, ("hour", "day"): 1 / 24,
+    ("week", "day"): 7, ("day", "week"): 1 / 7,
+    ("litre", "ml"): 1000, ("ml", "litre"): 1 / 1000,
+    ("litre", "pint"): 1.75975, ("pint", "litre"): 1 / 1.75975,
+}
+
+_UNIT_NAMES = {
+    "miles": "mile", "mile": "mile", "mi": "mile",
+    "kilometres": "km", "kilometers": "km", "km": "km", "kms": "km",
+    "metres": "m", "meters": "m", "m": "m",
+    "feet": "foot", "foot": "foot", "ft": "foot",
+    "inches": "inch", "inch": "inch", "in": "inch",
+    "centimetres": "cm", "centimeters": "cm", "cm": "cm",
+    "kilos": "kg", "kilograms": "kg", "kg": "kg", "kgs": "kg",
+    "pounds": "lb", "pound": "lb", "lb": "lb", "lbs": "lb",
+    "grams": "g", "gram": "g", "g": "g",
+    "ounces": "oz", "ounce": "oz", "oz": "oz",
+    "stone": "stone", "st": "stone",
+    "mb": "mb", "megabytes": "mb", "gb": "gb", "gigabytes": "gb",
+    "tb": "tb", "terabytes": "tb", "kb": "kb", "kilobytes": "kb",
+    "hours": "hour", "hour": "hour", "hrs": "hour", "h": "hour",
+    "minutes": "minute", "minute": "minute", "mins": "minute", "min": "minute",
+    "seconds": "second", "second": "second", "secs": "second", "s": "second",
+    "days": "day", "day": "day", "weeks": "week", "week": "week",
+    "litres": "litre", "liters": "litre", "l": "litre",
+    "millilitres": "ml", "ml": "ml", "pints": "pint", "pint": "pint",
+    "celsius": "c", "centigrade": "c", "c": "c",
+    "fahrenheit": "f", "f": "f",
+}
+
+_CONVERT = re.compile(
+    r"(-?[\d.,]+)\s*([a-z°]+)\s*(?:in|to|into|as)\s*([a-z°]+)", re.IGNORECASE)
+
+
+def convert_units(request: str) -> str:
+    """
+    Convert between the units people ask about, exactly.
+
+    Here for the same reason calculate() is: the model is confidently wrong at
+    it, and a wrong conversion looks exactly like a right one. Deliberately not
+    a full unit library — these are the conversions that come up in a house,
+    and anything else says so rather than guessing.
+    """
+    match = _CONVERT.search((request or "").replace("\u00b0", ""))
+    if not match:
+        return ("Error: tell me what to convert, like \"5 miles to km\" or "
+                "\"20 celsius to fahrenheit\".")
+    amount_text, source, target = match.groups()
+    try:
+        amount = float(amount_text.replace(",", ""))
+    except ValueError:
+        return "Error: I could not read that number."
+
+    source = _UNIT_NAMES.get(source.lower().rstrip("."), source.lower())
+    target = _UNIT_NAMES.get(target.lower().rstrip("."), target.lower())
+    if source == target:
+        return f"{amount:g} {source}"
+
+    if (source, target) == ("c", "f"):
+        return f"{amount * 9 / 5 + 32:.4g} fahrenheit"
+    if (source, target) == ("f", "c"):
+        return f"{(amount - 32) * 5 / 9:.4g} celsius"
+
+    factor = _UNITS.get((source, target))
+    if factor is None:
+        return (f"Error: I do not convert {source} to {target}. "
+                f"Ask me the arithmetic instead and I will do that exactly.")
+    return f"{amount * factor:.6g} {target}"
+
+
 def python_snippet(code: str) -> str:
     """Run a short Python program. The fastest route into xlsx, docx and pptx."""
     confirm = CONTEXT.get("confirm")
@@ -1257,6 +1343,12 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
           "Run a shell command in a workspace folder. Use for git, ls, wc, pandoc, ffmpeg.",
           {"command": _S, "working_directory": _S}, ["command"],
           "shell terminal command run git bash script execute"),
+    _tool("convert_units", convert_units,
+          "Convert between units exactly — distance, weight, temperature, data "
+          "size, time. Never work a conversion out yourself.",
+          {"request": _S}, ["request"],
+          "convert conversion miles km kilometres kilos pounds celsius "
+          "fahrenheit gigabytes megabytes hours minutes units how many"),
     _tool("calculate", calculate,
           "Work out an exact arithmetic result. Use this for every sum, total, "
           "average, percentage or product, however small — never do the "

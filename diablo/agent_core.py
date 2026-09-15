@@ -161,6 +161,22 @@ UNDERSTAND_SCHEMA = {
         "task": {"type": "string"},
         "question": {"type": "string"},
         "reply": {"type": "string"},
+        # The operations this request contains, in the order given. Rides on
+        # the call that already happens, so it costs no extra round trip —
+        # route.classify() calls understand() and always did.
+        "operations": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "intent": {"type": "string",
+                               "enum": ["direct", "research", "agent"]},
+                    "depends_on": {"type": "integer"},
+                },
+                "required": ["text", "intent"],
+            },
+        },
     },
     "required": ["action"],
 }
@@ -180,6 +196,20 @@ A pronoun with no antecedent ("it", "that one", "him") almost always means
 clarify. So does a bare noun where the user owns several ("the file", "my essay",
 "the spreadsheet"). Guessing on a voice command means acting on a sentence that
 may have been misheard, and the user cannot see what you chose.
+
+Also split the request into "operations", in the order the user gave them.
+
+  "text"        that operation on its own, self-contained.
+  "intent"      "direct"   — something you do yourself now: a setting, a file,
+                             an app, a calculation, a question you can answer,
+                             anything about this machine or this screen
+                "research" — a real investigation needing several outside
+                             sources, not a single lookup
+                "agent"    — the user asked outright for an agent, or named one
+  "depends_on"  the index of the operation whose result this one needs, if any.
+
+Most requests are ONE operation. Do not invent operations, and do not split a
+single instruction into steps — "tidy my downloads" is one operation, not three.
 
 Examples:
   "open the file"                 -> clarify, "Which file, Sir?"

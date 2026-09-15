@@ -44,7 +44,14 @@ from skills import persona  # noqa: E402
 from skills import screen_context  # noqa: E402
 
 ASSISTANT_NAME = os.getenv("DIABLO_NAME", "Diablo")
-MAX_TURNS = config.env_int("DIABLO_MEMORY_TURNS", 12)
+# Measured, not guessed. At 12 a session held about 18 turns and 1,000
+# characters — 3% of the ~32,000 the 8192-token window allows — and then
+# started folding the beginning away. The compaction was not protecting the
+# context window from anything; it was throwing away the conversation while
+# the window sat empty. 30 turns is roughly 3,000 characters, still under a
+# tenth of the budget, and pushes the first compaction far out of the way of
+# an ordinary session.
+MAX_TURNS = config.env_int("DIABLO_MEMORY_TURNS", 30)
 SESSION_TIMEOUT = config.env_int("DIABLO_SESSION_TIMEOUT", 900)  # 15 minutes
 
 # How much of an agent's working is kept, and how much of it reaches a prompt.
@@ -55,6 +62,8 @@ SESSION_TIMEOUT = config.env_int("DIABLO_SESSION_TIMEOUT", 900)  # 15 minutes
 # capped at 600 here, and twelve calls covers a two-source research run with
 # room over. The prompt budget is smaller again, because the working goes in
 # alongside the conversation rather than instead of it.
+OPENING_CHARS = config.env_int("DIABLO_OPENING_CHARS", 300, low=40, high=2000)
+EVIDENCE_CHARS = config.env_int("DIABLO_EVIDENCE_CHARS", 400, low=80, high=2000)
 TASK_SOURCES = config.env_int("DIABLO_TASK_SOURCES", 8, low=1, high=40)
 TASK_FINDINGS = config.env_int("DIABLO_TASK_FINDINGS", 6, low=1, high=30)
 TASK_FINDING_CHARS = config.env_int("DIABLO_TASK_FINDING_CHARS", 400, low=80, high=2000)
@@ -127,6 +136,50 @@ _NUMBER_TOOLS = {"python_snippet", "solve", "calculate"}
 _URL = re.compile(r"https?://[^\s,)\]\"']+")
 
 
+_KNOWN_KINDS = (
+    (".gov", "government"), (".gov.uk", "government"), (".gov.in", "government"),
+    ("wikipedia.org", "reference"), ("docs.", "official documentation"),
+    ("support.", "official documentation"), ("developer.", "official documentation"),
+    ("reddit.com", "community discussion"), ("quora.com", "community discussion"),
+    ("stackoverflow.com", "community discussion"), (".ac.uk", "academic"),
+    (".edu", "academic"), ("arxiv.org", "academic"),
+)
+
+
+def _provider_of(url: str) -> str:
+    """
+    A rough kind for the source, for §19.
+
+    Not a ranking and not a truth claim — a government page can be out of date
+    and a forum post can be right. It is kept so that a disagreement between
+    two sources can be described with something more useful than "one page said
+    otherwise".
+    """
+    lowered = (url or "").lower()
+    for marker, kind in _KNOWN_KINDS:
+        if marker in lowered:
+            return kind
+    return "web"
+
+
+def _near(text: str, url: str, width: int) -> str:
+    """The sentence the URL was sitting in."""
+    position = (text or "").find(url)
+    if position < 0:
+        return ""
+    start = max(0, position - width)
+    return " ".join(text[start:position + len(url) + width].split())
+
+
+def _title_near(text: str, url: str) -> str:
+    return _near(text, url, 60)[:120]
+
+
+def _evidence_near(text: str, url: str) -> str:
+    """What the source actually said, as far as we saw it."""
+    return _near(text, url, 200)[:EVIDENCE_CHARS]
+
+
 def _absorb(record: Dict[str, Any], step: Dict[str, str]) -> None:
     """
     Pull the durable part out of one tool result.
@@ -148,7 +201,22 @@ def _absorb(record: Dict[str, Any], step: Dict[str, str]) -> None:
             url = url.rstrip(".,;")
             if url not in seen:
                 seen.add(url)
-                record["sources"].append({"url": url[:200], "title": ""})
+                # §15: enough to answer "where did this come from, what did it
+                # actually say, and when did we get it". The id is what a
+                # follow-up refers to — "check source two" has to mean
+                # something stable.
+                record["sources"].append({
+                    "source_id": len(record["sources"]) + 1,
+                    "url": url[:200],
+                    "title": _title_near(result, url),
+                    "provider": str(step.get("provider", "")) or _provider_of(url),
+                    "retrieved_at": time.time(),
+                    # When the URL came from the arguments — read_page asking
+                    # for a page — the whole result is what that page said, and
+                    # there is nothing to find "near" it in the text.
+                    "evidence": (_evidence_near(result, url)
+                                 or " ".join(result.split())[:EVIDENCE_CHARS]),
+                })
         first = " ".join(result.split())[:TASK_FINDING_CHARS]
         if first:
             record["findings"].append(first)
@@ -165,6 +233,17 @@ class Session:
     def __init__(self) -> None:
         self.turns: List[Dict[str, str]] = []
         self.earlier: str = ""        # the summarised part, if any
+        # The first thing he said, kept word for word and never summarised.
+        #
+        # Measured: with the opening turn left to the summariser, "what was the
+        # original objective?" was answered wrongly at every level of session
+        # length tested — 0 for 5 — and three of those answers were invented
+        # outright ("to discuss the weather", "to generate a list of names").
+        # The summary prompt already forbids that in those words and the 4B did
+        # it anyway, which is the whole argument for putting the guarantee in
+        # code. An opening turn is small and disproportionately the objective,
+        # so it is simply kept.
+        self.opening: str = ""
         self.last_spoke_at: float = 0.0
         self.last_screen_app: Optional[str] = None
         # Who is being spoken to. None is Diablo. Set when a job is handed to
@@ -219,11 +298,14 @@ class Session:
         if self.last_spoke_at and time.time() - self.last_spoke_at > SESSION_TIMEOUT:
             self.turns = []
             self.earlier = ""
+            self.opening = ""
             self.last_screen_app = None
             self.focus = None
             self.tasks = {}
 
     def remember(self, role: str, content: str) -> None:
+        if role == "user" and not self.opening and content.strip():
+            self.opening = content.strip()[:OPENING_CHARS]
         self.turns.append({"role": role, "content": content})
         if len(self.turns) > MAX_TURNS * 2:
             self._summarise_oldest()
@@ -285,10 +367,18 @@ class Session:
             return ""
         lines = [f"Task: {record['title']} ({record['status']})"]
         if record["sources"]:
-            lines.append("Sources actually opened:")
+            lines.append("Sources actually opened, numbered:")
             for source in record["sources"]:
-                title = f" — {source['title']}" if source.get("title") else ""
-                lines.append(f"  {source['url']}{title}")
+                lines.append(
+                    f"  [{source.get('source_id', '?')}] {source['url']}"
+                    f" ({source.get('provider', 'web')})")
+                if source.get("evidence"):
+                    lines.append(f"      said: {source['evidence']}")
+        else:
+            # §17. The honest answer to "which source supports that" when
+            # there is none, said plainly so the model has no gap to fill.
+            lines.append("No sources were opened for this task. If he asks "
+                         "which source supports something, say there is none.")
         if record["findings"]:
             lines.append("What came back:")
             lines += [f"  {f}" for f in record["findings"]]
@@ -302,6 +392,7 @@ class Session:
     def reset(self) -> None:
         self.turns = []
         self.earlier = ""
+        self.opening = ""
         self.last_screen_app = None
         self.focus = None
         self.tasks = {}
@@ -399,6 +490,15 @@ class Session:
         # The part of the conversation that has already been folded down. It
         # goes in as its own system message rather than as a fake turn, so the
         # model cannot quote it back as something one of them actually said.
+        # Before the summary, because it outranks it: this is what he said,
+        # not what a 4B made of what he said.
+        if self.opening and len(self.turns) > 4:
+            messages.append({"role": "system", "content":
+                "The first thing he said in this conversation, word for word. "
+                "If he asks what he was working on, what the objective was, or "
+                "why he started, answer from this and not from the summary "
+                "below.\n\n" + self.opening})
+
         if self.earlier:
             messages.append({"role": "system", "content":
                 "Earlier in this same conversation, summarised. Treat it as "

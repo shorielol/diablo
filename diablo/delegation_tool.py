@@ -507,7 +507,9 @@ def handle(
 
     # ── The routing decision ─────────────────────────────────────────────
     # One call, one recorded reason. Nothing below re-derives it.
-    routing = decide(task)
+    # The operations understand() extracted, when it managed any. No extra
+    # model call: route.classify() calls understand() and always has.
+    routing = decide(task, operations=verdict.get("operations"), said=text)
     trace.event("decide", route=routing.route, reason=routing.reason,
                 matched=routing.matched, task=task[:120])
 
@@ -694,6 +696,175 @@ def is_substantial_research(text: str) -> tuple:
     return False, ""
 
 
+# ─── Hard policy, which the classifier may not overrule ──────────────────────
+#
+# The model interprets; this decides. A local model that has misread a request
+# must not be able to turn a volume change into a research project, so the
+# things that are never research are settled here, in code, after it has had
+# its say. §10 of the brief, and the reason the cue list is not simply deleted:
+# it is no longer how research is found, but it is still how obvious direct
+# work is protected.
+
+def _is_atomic_action(text: str) -> bool:
+    """A setting, a control, a lookup — never an investigation."""
+    flat = _flatten(text)
+    return any(f" {word}" in flat for word in ATOMIC_ACTIONS)
+
+
+# Deliberately short, and it must stay short.
+#
+# The first version of this list held "what is " and "open " and "screen", and
+# it swallowed "what is going on with NVIDIA" as an OS action — which is the
+# exact failure this whole phase exists to end. A policy list is not a way to
+# understand language. It is a floor under the things that are never research
+# whatever a small model decides, and nothing else belongs in it.
+#
+# "What is X" is not here on purpose: "what is the capital of Peru" is direct
+# and "what is going on with NVIDIA" is research, and no string tells them
+# apart. That is the classifier's job, and the fallback's after it.
+ATOMIC_ACTIONS = (
+    "volume", "louder", "quieter", "turn it down", "turn it up", "mute",
+    "unmute", "brightness", "brighter", "dimmer", "screenshot",
+    "pause the music", "pause music", "play music", "play some music",
+    "next track", "previous track", "skip track", "resume the music",
+    "time is it", "whats the time", "what time",
+    "battery", "disk space",
+)
+
+
+def _from_operations(operations: list) -> Optional[Decision]:
+    """
+    A Decision built from what the classifier understood, or None.
+
+    None means it gave us nothing usable and the caller should fall back. That
+    happens: the 4B sometimes returns no operations at all, and a router that
+    depended on it would simply stop working. The fallback is the structural
+    path, and the fallback of that is DIRECT.
+    """
+    usable = [o for o in (operations or [])
+              if isinstance(o, dict) and str(o.get("text", "")).strip()]
+    if not usable:
+        return None
+
+    pieces, reasons = [], []
+    for index, operation in enumerate(usable):
+        text = str(operation["text"]).strip()
+        intent = str(operation.get("intent", "direct")).lower()
+
+        # Explicit request first: it outranks everything, including the
+        # atomic-action policy, because he asked.
+        asked, phrase = asks_for_an_agent(text)
+        if asked:
+            pieces.append((text, roster.assign(text)))
+            reasons.append(f"user_requested_agent: {phrase!r}")
+            continue
+
+        # Then the policy the classifier may not overrule.
+        if _is_atomic_action(text):
+            reasons.append("direct_os_action")
+            continue
+
+        if intent in ("research", "agent"):
+            # One more gate: the classifier is talking about something on this
+            # machine, which is not research whatever it called it.
+            local, _ = is_substantial_research(text)
+            if not local and _mentions_local_object(text):
+                reasons.append("direct_local_subject")
+                continue
+            pieces.append((text, roster.assign(text)))
+            reasons.append("multi_source_investigation" if intent == "research"
+                           else "user_requested_agent")
+            continue
+
+        reasons.append("direct_understood")
+
+    if not pieces:
+        return Decision(DIRECT, "; ".join(reasons[:3]) or "direct_understood")
+    return Decision(DELEGATE, "; ".join(r for r in reasons if "direct" not in r)
+                    or "multi_source_investigation", pieces=pieces)
+
+
+def _mentions_local_object(text: str) -> bool:
+    flat = _flatten(text)
+    return any(f" {phrase}" in flat for phrase in LOCAL_OBJECTS)
+
+
+# ─── The last question, asked only when nothing else knows ───────────────────
+#
+# Measured on the 4B: understand() returns its "operations" field about 8 times
+# in 14, and when it does not, a research request phrased outside the cue list
+# falls through to DIRECT. Fail-safe, and poor recall — 3 of 7 real research
+# requests were caught.
+#
+# So one more question, and it is deliberately the smallest one that can be
+# asked: yes or no, does this need outside sources. It runs only in the band
+# where nothing else has an opinion — not for an explicit request, not for an
+# atomic action, not for anything about this machine, not when the cue list
+# already fired, not when the classifier gave us operations. Most turns never
+# reach it.
+
+RESEARCH_SCHEMA = {
+    "type": "object",
+    "properties": {"needs_sources": {"type": "boolean"},
+                   "why": {"type": "string"}},
+    "required": ["needs_sources"],
+}
+
+RESEARCH_QUESTION = """Does answering this require looking things up in several
+outside sources, or is it something an assistant on this Mac answers or does by
+itself?
+
+true  — it needs real investigation: several sources, comparison, current facts
+        the assistant cannot know, a claim to be checked
+false — a setting, a file, an app, the screen, a calculation, a greeting, or a
+        question answerable from ordinary general knowledge
+
+Judge what answering well would take, not how the sentence is phrased. Asking
+for "a picture of", "an assessment of", "the bottom of" or "what people say
+about" something outside this Mac all mean several sources, however casually
+they are put.
+
+true:
+  "can you figure out what is going on with NVIDIA"
+  "I want a proper assessment of this company before I apply"
+  "give me a thorough picture of the apprenticeship market in Delhi"
+  "get to the bottom of why this keeps being recommended"
+  "build me a picture of the competitive landscape here"
+
+false:
+  "who wrote Dubliners"                  one fact, generally known
+  "what is the capital of Peru"          one fact, generally known
+  "explain recursion"                    general knowledge, no sources needed
+  "what time is it"                      this machine
+  "turn it down"                         this machine
+  "tidy my downloads"                    this machine
+
+If you are still unsure, answer false.
+Reply with JSON only."""
+
+
+# Off switch, for tests that are measuring the deterministic layers and for a
+# machine with no model running. Off means the phrase fallback decides, which
+# is the behaviour this replaced — worse recall, same safety.
+CLASSIFY = os.getenv("DIABLO_ROUTE_CLASSIFY", "1") not in ("0", "", "false", "False")
+
+
+def _needs_outside_sources(text: str) -> tuple:
+    """(bool, why). False on any failure — the safe direction is Diablo's."""
+    if not CLASSIFY:
+        return False, ""
+    try:
+        answer = local_brain.chat_json(
+            [{"role": "system", "content": RESEARCH_QUESTION},
+             {"role": "user", "content": text[:400]}],
+            schema=RESEARCH_SCHEMA, num_predict=60, timeout=20,
+            temperature=0.0)
+    except Exception as e:
+        trace.event("route", route="classifier_failed", reason=type(e).__name__)
+        return False, ""
+    return bool(answer.get("needs_sources")), str(answer.get("why", ""))[:80]
+
+
 def _classify_one(text: str) -> tuple:
     """(route, reason, matched) for a single operation."""
     if not (text or "").strip():
@@ -716,12 +887,19 @@ def _classify_one(text: str) -> tuple:
 
     research, cue = is_substantial_research(text)
     if research:
-        return DELEGATE, f"substantial research: {cue!r}", cue
+        return DELEGATE, f"multi_source_investigation: {cue!r}", cue
 
-    return DIRECT, "no agent asked for and not research", ""
+    # Nothing so far has an opinion. Ask, but only here.
+    if not _is_atomic_action(text) and not _mentions_local_object(text):
+        needs, why = _needs_outside_sources(text)
+        if needs:
+            return DELEGATE, f"multi_source_investigation (classifier: {why})", ""
+
+    return DIRECT, "ambiguous_direct_fallback", ""
 
 
-def decide(text: str) -> Decision:
+def decide(text: str, operations: Optional[list] = None,
+           said: str = "") -> Decision:
     """
     The single authoritative routing decision. Fails toward Diablo.
 
@@ -737,6 +915,24 @@ def decide(text: str) -> Decision:
     """
     if not (text or "").strip():
         return Decision(DIRECT, "nothing to route")
+
+    # Asking for an agent is about the words he used, and by this point `text`
+    # is understand()'s rewrite of them. "Run this in the background" came back
+    # as a tidied instruction with the phrase gone, and a request for an agent
+    # was read as ordinary work. The original utterance is checked first.
+    if said and said.strip() != (text or "").strip():
+        asked, phrase = asks_for_an_agent(said)
+        if asked:
+            return Decision(DELEGATE, f"user_requested_agent: {phrase!r}",
+                            pieces=[(text, roster.assign(text))], matched=phrase)
+
+    # What the classifier understood, when it understood anything. This is the
+    # part that generalises: "can you figure out what's going on with NVIDIA"
+    # is research and matches no cue in any list.
+    if operations:
+        semantic = _from_operations(operations)
+        if semantic is not None:
+            return semantic
 
     parts = roster.structural_parts(text) or [text]
     routed = [(part,) + _classify_one(part) for part in parts]

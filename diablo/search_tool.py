@@ -123,8 +123,36 @@ def health() -> dict:
 CACHE_SECONDS = float(os.getenv("DIABLO_SEARCH_CACHE", "300"))
 
 
-class Throttled(Exception):
-    """The engine is refusing to answer, which is not the same as no results."""
+class SearchProblem(Exception):
+    """
+    Something went wrong looking, which is never evidence that nothing exists.
+
+    `kind` says which, because the four are different facts about the world and
+    collapsing them loses the one that matters: no results means the web has
+    nothing, and every other value means we failed to ask properly.
+    """
+
+    NO_RESULTS = "no_results"
+    RATE_LIMITED = "rate_limited"
+    PROVIDER_FAILED = "provider_failed"
+    TIMEOUT = "timeout"
+    MALFORMED = "malformed_result"
+
+    def __init__(self, message: str, kind: str = PROVIDER_FAILED,
+                 provider: str = ""):
+        super().__init__(message)
+        self.kind, self.provider = kind, provider
+
+
+class Throttled(SearchProblem):
+    """
+    The engine is refusing to answer, which is not the same as no results.
+
+    Kept as its own name because three modules catch it by that name.
+    """
+
+    def __init__(self, message: str, provider: str = ""):
+        super().__init__(message, SearchProblem.RATE_LIMITED, provider)
 
 
 def _blocked(page: str) -> bool:

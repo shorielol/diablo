@@ -22,6 +22,12 @@ from harness import Results  # noqa: E402
 DIABLO_HOME = os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo"))
 sys.path.insert(0, DIABLO_HOME)
 
+# The deterministic layers are what this suite measures, so the last-resort
+# classifier is off: it is a model call, 154 of them would take an hour, and
+# its answers are not deterministic. It has its own live suite —
+# test_routing_live.py — which is where its accuracy is actually measured.
+os.environ.setdefault("DIABLO_ROUTE_CLASSIFY", "0")
+
 from skills import agent_tools, conversation, delegation_tool, roster  # noqa: E402
 
 # §26. Ordinary work. None of this may create an agent.
