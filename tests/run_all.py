@@ -36,6 +36,7 @@ SUITES = [
     ("test_working.py",      False, "asking an agent how it got there"),
     ("test_rail.py",         False, "the sidebar: Diablo, then the work"),
     ("test_brain_errors.py", False, "what it says when the model refuses"),
+    ("test_tidying.py",      False, "tidying a folder without reading it"),
     ("test_system.py",       False, "system tools, offline gating, screen sight"),
     ("test_voice.py",        False, "Voicebox, cache, and every fallback"),
     ("test_brain.py",        True,  "the model, conversation, anti-fabrication"),

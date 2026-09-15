@@ -52,7 +52,62 @@ Confirm = Optional[Callable[[str], bool]]
 
 # ─── Prompts ─────────────────────────────────────────────────────────────────
 
-def _system_prompt(plan: Optional[List[str]] = None) -> str:
+# ─── Tidying is not a research project ───────────────────────────────────────
+#
+# Asked to tidy the Downloads folder, Diablo opened a piece of his coursework
+# and said "I'm reading the ESS IA - FDI and PM2.5 Final Draft.md file to
+# understand the project's current state."
+#
+# Nothing in the prompt asked for that. It is the coding-agent reflex the model
+# brings with it — orient in the repo, read the files, then act — and a
+# personal folder is not a repo. Where a file goes is decided by its extension
+# and nothing else, so opening it is useless, and it is somebody's private
+# document, so opening it is worse than useless.
+#
+# A prompt line would not hold. The 4B ignores prompt lines, reproducibly and
+# measurably — that is why _ambiguous_target and _claims_unperformed_action are
+# code. This is the same shape of guard: the tools are taken away, and if it
+# asks for one anyway it is told no.
+
+HOUSEKEEPING = (
+    "tidy", "tidy up", "clean up", "cleanup", "clear out", "organise",
+    "organize", "sort out", "sort my", "sort the", "declutter", "de-clutter",
+    "make space", "free up space", "spring clean",
+)
+
+# Tools that open a document and return what is inside it.
+CONTENT_TOOLS = {"read_file", "search_text", "read_page"}
+
+
+def is_housekeeping(task: str) -> bool:
+    """Sorting a folder out, rather than working on what is in it."""
+    lowered = " " + re.sub(r"[^a-z0-9 ]+", " ", (task or "").lower()) + " "
+    lowered = re.sub(r"\s+", " ", lowered)
+    if not any(f" {cue}" in lowered for cue in HOUSEKEEPING):
+        return False
+    # "tidy up the wording of my essay" is housekeeping by phrasing and not by
+    # intent, and it genuinely does need the file open.
+    about_a_file = ("essay", "draft", "wording", "paragraph", "sentence",
+                    "notes", "writing", "code", "function", "script")
+    return not any(f" {word}" in lowered for word in about_a_file)
+
+
+def _system_prompt(plan: Optional[List[str]] = None,
+                   tidying: bool = False) -> str:
+    # What his folders are FOR is context for working on his projects, and
+    # priming for a task that is not one. Told that 10 Academics holds the Econ
+    # EE and the BM IA, then asked to tidy Downloads, the model went looking
+    # for a project to understand. Left out, there is nothing to look for.
+    workstations = "" if tidying else """His work lives in numbered workstations: \
+10 Academics is IB coursework (the Econ
+EE, the Coca-Cola BM IA, TOK), 30 Code is software, 50 Finance is spreadsheets
+and markets, 20 Ventures is his businesses, 40 Studio is music and design.
+"""
+    housekeeping = "" if not tidying else """
+- This is a tidy-up, not a piece of work. Sort by what a file IS — its name,
+  extension, size and date. Never open one: what is inside a document has no
+  bearing on which folder it belongs in, and these are his private papers.
+  survey_folder shows you what is there; tidy_folder sorts it by kind."""
     base = f"""You are Diablo, Shaurya's voice assistant, running offline on his Mac.
 You do not answer questions about tasks — you carry them out, using the tools you
 have been given, and then report what you actually did.
@@ -60,11 +115,8 @@ have been given, and then report what you actually did.
 Shaurya's folders:
 {agent_tools.workspace_map()}
 
-His work lives in numbered workstations: 10 Academics is IB coursework (the Econ
-EE, the Coca-Cola BM IA, TOK), 30 Code is software, 50 Finance is spreadsheets
-and markets, 20 Ventures is his businesses, 40 Studio is music and design.
-
-How to work:
+{workstations}
+How to work:{housekeeping}
 - Take one action at a time. Call a tool, read what came back, then decide the
   next move from what you actually saw.
 - Never invent a file path. If you are not certain a file exists, use list_files
@@ -433,10 +485,13 @@ def run(
 
     steps = plan(task)
     tool_names = agent_tools.select(task)
+    tidying = is_housekeeping(task)
+    if tidying:
+        tool_names = [n for n in tool_names if n not in CONTENT_TOOLS]
     tools = agent_tools.schemas(tool_names)
 
     messages: List[Dict[str, Any]] = [
-        {"role": "system", "content": _system_prompt(steps)},
+        {"role": "system", "content": _system_prompt(steps, tidying=tidying)},
         {"role": "user", "content": task},
     ]
 
@@ -583,6 +638,17 @@ def run(
                 messages.append({"role": "tool", "tool_name": name, "content":
                                  f"Error: {question} Nobody is listening, so pick "
                                  f"the most likely one and say which you chose."})
+                continue
+
+            if tidying and name in CONTENT_TOOLS:
+                trace.event("guard", guard="no_reads_while_tidying", tool=name)
+                print(f"  [Agent {step}] refused {name} during a tidy-up")
+                messages.append({"role": "tool", "tool_name": name, "content":
+                    "Error: not while tidying. Where a file goes is decided by "
+                    "its name, extension, size and date — never by what is "
+                    "inside it, and these are his private documents. Use "
+                    "survey_folder to see what is there, or tidy_folder to sort "
+                    "it by kind."})
                 continue
 
             signature = _call_signature(name, args)

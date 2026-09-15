@@ -292,6 +292,164 @@ def search_text(query: str, path: str = "desktop") -> str:
     return f"{len(hits)} file(s) contain '{query}':\n" + "\n".join(hits)
 
 
+# ─── Tidying up ──────────────────────────────────────────────────────────────
+#
+# Asked to tidy the Downloads folder, Diablo said:
+#
+#     "I'm reading the ESS IA - FDI and PM2.5 Final Draft.md file to
+#      understand the project's current state."
+#
+# It opened a piece of his coursework to decide where to put a disk image. That
+# is a coding agent's reflex — orient in the repo, read the files, then act —
+# and it is wrong twice over on a personal folder. It is useless, because where
+# a file goes is decided by its extension and nothing else. And it is a privacy
+# failure: nobody tidying a drawer reads the letters.
+#
+# So sorting is arithmetic on metadata. Name, extension, size, modified date,
+# straight from os.scandir. No file is ever opened.
+
+CATEGORIES = [
+    ("Images",     {".png", ".jpg", ".jpeg", ".gif", ".heic", ".webp", ".svg",
+                    ".tiff", ".bmp", ".raw", ".cr2"}),
+    ("Video",      {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".webm"}),
+    ("Audio",      {".mp3", ".m4a", ".wav", ".aiff", ".flac", ".aac"}),
+    ("Documents",  {".pdf", ".doc", ".docx", ".pages", ".txt", ".rtf", ".md",
+                    ".odt", ".epub"}),
+    ("Spreadsheets", {".xls", ".xlsx", ".csv", ".numbers", ".tsv"}),
+    ("Slides",     {".ppt", ".pptx", ".key"}),
+    ("Installers", {".dmg", ".pkg", ".app", ".mpkg"}),
+    ("Archives",   {".zip", ".tar", ".gz", ".tgz", ".bz2", ".7z", ".rar", ".xz"}),
+    ("Code",       {".py", ".js", ".ts", ".tsx", ".jsx", ".json", ".sh", ".rb",
+                    ".go", ".rs", ".c", ".h", ".cpp", ".java", ".swift", ".html",
+                    ".css", ".yml", ".yaml", ".toml"}),
+    ("Fonts",      {".ttf", ".otf", ".woff", ".woff2"}),
+]
+
+# Things that are finished with once they have been used: an installer you have
+# already run, an archive you have already unpacked.
+CLUTTER = {".dmg", ".pkg", ".zip", ".tar", ".gz", ".tgz", ".7z", ".rar", ".mpkg"}
+CLUTTER_DAYS = 30
+
+
+def _category(name: str) -> str:
+    extension = os.path.splitext(name)[1].lower()
+    for label, suffixes in CATEGORIES:
+        if extension in suffixes:
+            return label
+    return "Other"
+
+
+def survey_folder(path: str = "downloads", older_than_days: int = CLUTTER_DAYS) -> str:
+    """
+    What is in a folder, by kind. Metadata only — nothing is opened.
+    """
+    target = _resolve(path)
+    if not os.path.isdir(target):
+        return f"Error: {target} is not a folder."
+
+    groups: Dict[str, List[tuple]] = {}
+    stale: List[tuple] = []
+    cutoff = time.time() - max(0, older_than_days) * 86400
+    total = 0
+    try:
+        with os.scandir(target) as entries:
+            for entry in entries:
+                if entry.name.startswith("."):
+                    continue
+                if entry.is_dir():
+                    groups.setdefault("Folders", []).append((entry.name, 0))
+                    continue
+                try:
+                    info = entry.stat()          # metadata; the file stays shut
+                except OSError:
+                    continue
+                total += 1
+                label = _category(entry.name)
+                groups.setdefault(label, []).append((entry.name, info.st_size))
+                extension = os.path.splitext(entry.name)[1].lower()
+                if extension in CLUTTER and info.st_mtime < cutoff:
+                    stale.append((entry.name, int((time.time() - info.st_mtime) / 86400)))
+    except OSError as e:
+        return f"Error reading {target}: {e}"
+
+    if not total and "Folders" not in groups:
+        return f"{os.path.basename(target)} is already empty."
+
+    lines = [f"{total} files in {os.path.basename(target)}:"]
+    for label, items in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+        size = sum(n for _, n in items)
+        megabytes = f", {size / 1e6:.0f} MB" if size > 1e6 else ""
+        lines.append(f"  {label}: {len(items)}{megabytes}")
+    if stale:
+        lines.append(f"Finished with (installers and archives over "
+                     f"{older_than_days} days old): "
+                     + ", ".join(f"{n} ({d}d)" for n, d in stale[:8]))
+    return "\n".join(lines)
+
+
+def tidy_folder(path: str = "downloads", dry_run: bool = True) -> str:
+    """
+    Sort a folder into subfolders by kind. Never opens a file.
+    """
+    target = _resolve(path)
+    if not os.path.isdir(target):
+        return f"Error: {target} is not a folder."
+
+    plan: Dict[str, List[str]] = {}
+    try:
+        with os.scandir(target) as entries:
+            for entry in entries:
+                if entry.name.startswith(".") or entry.is_dir():
+                    continue
+                label = _category(entry.name)
+                if label == "Other":
+                    continue          # unknown kinds are left exactly where they are
+                plan.setdefault(label, []).append(entry.name)
+    except OSError as e:
+        return f"Error reading {target}: {e}"
+
+    if not plan:
+        return f"Nothing in {os.path.basename(target)} that I can sort by kind."
+
+    summary = ", ".join(f"{len(v)} into {k}" for k, v in sorted(plan.items()))
+    if dry_run:
+        return (f"Ready to move {summary}. Nothing has been moved yet — "
+                f"say the word and I will.")
+
+    confirm = CONTEXT.get("confirm")
+    if confirm and not confirm(f"move {sum(len(v) for v in plan.values())} files "
+                               f"in {os.path.basename(target)} into folders by kind"):
+        return "Cancelled by the user."
+
+    import shutil
+    moved, failed = 0, []
+    for label, names in plan.items():
+        folder = os.path.join(target, label)
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except OSError as e:
+            failed.append(f"{label} ({e})")
+            continue
+        for name in names:
+            source = os.path.join(target, name)
+            destination = os.path.join(folder, name)
+            if os.path.exists(destination):
+                # Never overwrite one of his files to tidy up. Skipping is the
+                # only safe answer and he is told the count.
+                failed.append(name)
+                continue
+            try:
+                shutil.move(source, destination)
+                moved += 1
+            except Exception:
+                failed.append(name)
+
+    report = f"Moved {moved} files in {os.path.basename(target)} into folders by kind."
+    if failed:
+        report += f" {len(failed)} left alone because something of that name was already there."
+    return report
+
+
 def make_folder(path: str) -> str:
     target = _resolve(path)
     try:
@@ -974,6 +1132,18 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
     _tool("make_folder", make_folder,
           "Create a folder, including any parent folders that do not exist yet.",
           {"path": _S}, ["path"], "folder create make directory organise"),
+    _tool("survey_folder", survey_folder,
+          "What is in a folder, counted by kind, plus installers and archives "
+          "that look finished with. Reads names, sizes and dates only — never "
+          "opens a file. Use this first for any tidy-up.",
+          {"path": _S, "older_than_days": {"type": "integer"}}, [],
+          "tidy clean organise organize sort folder downloads desktop clutter junk messy"),
+    _tool("tidy_folder", tidy_folder,
+          "Sort a folder into subfolders by kind (Images, Documents, "
+          "Installers, Archives, Code). Decided by file extension alone; no "
+          "file is opened. Call with dry_run true first to say what would move.",
+          {"path": _S, "dry_run": {"type": "boolean"}}, [],
+          "tidy clean organise organize sort folder downloads desktop tidy-up"),
     _tool("move_file", move_file,
           "Move or rename a file or folder. Confirms before replacing anything.",
           {"source": _S, "destination": _S}, ["source", "destination"],
