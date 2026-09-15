@@ -283,6 +283,38 @@ def point_at(description: str, target: str = "", seconds: float = 3.0) -> str:
     if not description or not description.strip():
         return "I need to know what to point at, Sir."
 
+    # Through the shared perception layer, not through locate() directly.
+    #
+    # This is the one place it matters most. If the marker came from OCR and
+    # the click came from the accessibility tree, Diablo could draw a ring
+    # around one control and press another — and the user, watching the ring,
+    # would have no way to know. One pipeline, one target, both consumers.
+    #
+    # Imported here rather than at the top because perception imports this
+    # module for its scorer, and a cycle at import time would take the whole
+    # assistant down rather than just this feature.
+    try:
+        from skills import perception, screen_context
+        window = (screen_context.find_window(target) if target
+                  else screen_context.frontmost_window())
+        reading = perception.read(description, window)
+        if reading.ambiguous and reading.question():
+            return reading.question()
+        if reading.best:
+            best = reading.best
+            x, y = best.centre
+            show(x, y, best.label or description, seconds)
+            place = describe_location(
+                {"x": x, "y": y, "window_id": (window or {}).get("id", 0),
+                 "text": best.label}, window)
+            hedge = "" if best.confidence >= 0.9 else " I think"
+            found = best.label or best.describe()
+            return f"{place.capitalize()}, marked{hedge} — '{found[:40]}'."
+    except Exception:
+        # Perception is an improvement on the OCR path, not a replacement for
+        # it. If it cannot answer, the original path still can.
+        pass
+
     hits = locate(description, target)
     if not hits:
         window = screen_context.find_window(target) if target else screen_context.frontmost_window()

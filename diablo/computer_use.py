@@ -31,8 +31,8 @@ moved, the click does not happen.
 import os
 import sys
 import time
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -315,3 +315,314 @@ if __name__ == "__main__":
     print("computer use:", state())
     for label in ("Continue", "Delete all messages", "Send", "Search box", "Buy now"):
         print(f"  {label:24} destructive={is_destructive(label)}")
+
+
+# ─── Can I, and should I ─────────────────────────────────────────────────────
+#
+# Two different questions, and collapsing them is how an assistant ends up
+# clicking something it was technically allowed to click. Permission answers
+# the first. Everything below answers the second, from evidence: how sure the
+# perception layer is, whether anything else looked equally plausible, what
+# the action would cost if it is wrong, and whether the screen still looks
+# like the screen the coordinate came from.
+
+LOW = "low"           # opens a menu, switches a tab, scrolls. Undone by looking away.
+MEDIUM = "medium"     # edits, renames, moves, changes a setting. Undone with effort.
+HIGH = "high"         # deletes, sends, buys, submits. Not undone.
+
+ACT = "act"
+ASK = "ask"
+REFUSE = "refuse"
+
+# How sure the perception layer has to be before Diablo acts unasked, per
+# risk class. These are not tuned parameters so much as a statement of
+# policy: the more a mistake costs, the more evidence it takes, and HIGH is
+# deliberately unreachable — anything irreversible is confirmed out loud
+# every time, however certain the machine claims to be.
+NEEDED = {LOW: 0.80, MEDIUM: 0.90, HIGH: 1.01}
+
+
+def risk_of(label: str, action: str = "click") -> str:
+    """How much a mistake would cost."""
+    if action in ("type", "type_text") or is_destructive(label):
+        return HIGH if is_destructive(label) else MEDIUM
+    return LOW
+
+
+@dataclass
+class Decision:
+    verdict: str
+    reason: str
+    candidate: Any = None
+    risk: str = LOW
+
+    @property
+    def acting(self) -> bool:
+        return self.verdict == ACT
+
+
+def decide(reading, risk: str = LOW, ambiguity_question: str = "") -> Decision:
+    """
+    Whether the evidence supports acting, asking, or declining.
+
+    Uncertainty makes Diablo hesitate, never improvise. Every branch that does
+    not act says which observation stopped it, because "I am not confident" is
+    not a reason anyone can check.
+    """
+    if not getattr(reading, "found", False):
+        return Decision(REFUSE, "I cannot find that control on screen.", risk=risk)
+
+    best = reading.best
+    if best.enabled is False:
+        return Decision(REFUSE,
+                        f"The {best.describe()} is there but the application "
+                        f"reports it as disabled.", best, risk)
+
+    if reading.ambiguous:
+        return Decision(ASK, ambiguity_question or reading.question(), best, risk)
+
+    needed = NEEDED.get(risk, 0.9)
+    if best.confidence < needed:
+        return Decision(
+            ASK,
+            f"I think it is {best.describe()}, but I am not certain enough to "
+            f"{'do that on my own' if risk != LOW else 'click it'}. Shall I?",
+            best, risk)
+
+    if risk == HIGH:
+        return Decision(ASK,
+                        f"That would {('send, delete or submit something' )}. "
+                        f"I found {best.describe()}. Do you want me to?",
+                        best, risk)
+    return Decision(ACT, f"{best.describe()}, {best.why()}", best, risk)
+
+
+# ─── What happened, and why ──────────────────────────────────────────────────
+
+@dataclass
+class ActionRecord:
+    """
+    One attempt to touch the computer, with everything needed to explain it.
+
+    Kept because "why did you click that" has to have an answer made of
+    observations rather than of a model's recollection. It is also what a
+    later undo, replay or evaluation run would be built on.
+    """
+
+    task: str = ""
+    at: float = 0.0
+    app: str = ""
+    window_title: str = ""
+    fingerprint: List[int] = field(default_factory=list)
+
+    intent: str = ""
+    target: str = ""
+    target_sources: List[str] = field(default_factory=list)
+    confidence: float = 0.0
+    evidence: List[str] = field(default_factory=list)
+
+    risk: str = LOW
+    verdict: str = ""
+    permission: str = DENY
+
+    action: str = ""
+    x: float = 0.0
+    y: float = 0.0
+
+    expected: str = ""
+    observed: str = ""
+    verified: Optional[bool] = None
+    retried: bool = False
+    spoken: str = ""
+
+    def explain(self) -> str:
+        """Why Diablo did that, in one sentence, from what it observed."""
+        if not self.action:
+            return f"I did not act: {self.spoken}"
+        who = self.target or "that control"
+        because = self.evidence[0] if self.evidence else "it matched what you asked for"
+        outcome = ("and the screen changed as expected" if self.verified
+                   else "but the screen did not change the way I expected"
+                   if self.verified is False else "")
+        return (f"You asked me to {self.intent}. I clicked {who} because "
+                f"{because}{', ' + outcome if outcome else ''}.")
+
+
+_history: List[ActionRecord] = []
+
+
+def history(limit: int = 20) -> List[ActionRecord]:
+    return _history[-limit:]
+
+
+def last_action() -> Optional[ActionRecord]:
+    return _history[-1] if _history else None
+
+
+def _remember(record: ActionRecord) -> ActionRecord:
+    _history.append(record)
+    if len(_history) > 100:
+        del _history[:50]
+    return record
+
+
+# ─── The golden path ─────────────────────────────────────────────────────────
+
+# One automatic retry, then stop and ask. A second blind attempt is how a
+# wrong coordinate becomes two wrong clicks, and a loop is how it becomes
+# forty.
+MAX_RETRIES = config.env_int("DIABLO_ACTION_RETRIES", 1, low=0, high=3)
+
+
+def act_on(intent: str, task: str = "", expect: str = "",
+           window: Optional[Dict[str, Any]] = None,
+           confirm: Optional[Callable[[str], bool]] = None,
+           risk: Optional[str] = None,
+           _attempt: int = 0) -> ActionRecord:
+    """
+    Understand, locate, decide, act, verify — and recover rather than repeat.
+
+    The whole loop in one place so that no caller can skip the middle of it.
+    Every exit writes an ActionRecord, including the exits that do nothing,
+    because "Diablo declined and here is what it saw" is as much a result as a
+    click is.
+    """
+    from skills import perception
+    from skills import screen as _screen
+    from skills import screen_context as _sc
+
+    record = ActionRecord(task=task or intent, at=time.time(), intent=intent)
+
+    if not ENABLED:
+        record.spoken = ("I am not allowed to control the computer, Sir. "
+                         "That is switched off.")
+        record.verdict = REFUSE
+        return _remember(record)
+
+    target_window = window or _sc.frontmost_window()
+    if not target_window:
+        record.spoken = "I cannot see a window to work in."
+        record.verdict = REFUSE
+        return _remember(record)
+    if target_window.get("sensitive"):
+        record.spoken = (f"{target_window['app']} is a password manager. "
+                         f"I will not touch it.")
+        record.verdict = REFUSE
+        return _remember(record)
+
+    record.app = target_window.get("app", "")
+    record.window_title = target_window.get("title", "")
+
+    # A frame, and a validity gate before anything reads it. A window on
+    # another Space captures as well-formed solid black, and perceiving
+    # nothing in it is not the same as there being nothing there.
+    frame = _screen.capture_this_window(target_window)
+    try:
+        if not frame.ok:
+            record.spoken = frame.problem.capitalize() + "."
+            record.verdict = REFUSE
+            return _remember(record)
+        record.fingerprint = list(frame.fingerprint)
+    finally:
+        frame.release()
+
+    reading = perception.read(intent, target_window)
+    if reading.best:
+        record.target = reading.best.describe()
+        record.target_sources = sorted(set(reading.best.sources))
+        record.confidence = round(reading.best.confidence, 3)
+        record.evidence = list(reading.best.evidence)
+
+    chosen_risk = risk or risk_of(reading.best.label if reading.best else "", "click")
+    record.risk = chosen_risk
+    decision = decide(reading, chosen_risk)
+    record.verdict = decision.verdict
+
+    if decision.verdict == REFUSE:
+        record.spoken = decision.reason
+        return _remember(record)
+
+    if decision.verdict == ASK:
+        # An ambiguous or low-confidence target is a question, not a coin
+        # toss. If there is nobody to ask, that is a refusal.
+        if confirm is None:
+            record.spoken = decision.reason
+            return _remember(record)
+        if not confirm(decision.reason):
+            record.spoken = "Left it alone."
+            return _remember(record)
+
+    granted, why = ask_for(f"click {record.target or 'that'}",
+                           task=task or intent, confirm=confirm)
+    record.permission = _GRANT.level
+    if not granted:
+        record.spoken = why
+        record.verdict = REFUSE
+        return _remember(record)
+
+    # Freshness. The coordinate was chosen from a frame that is now a second
+    # or two old and a confirmation has been spoken since. Locate again and
+    # act on what is there NOW — if the control has moved, the new position is
+    # the right one; if it has gone, there is nothing to click.
+    fresh = perception.read(intent, _sc.window_by_id(target_window.get("id", 0))
+                            or target_window)
+    if not fresh.found:
+        record.spoken = ("That control was there a moment ago and is not now. "
+                         "I have not clicked anything.")
+        record.verdict = REFUSE
+        return _remember(record)
+    target = fresh.best
+    x, y = target.centre
+    record.x, record.y = x, y
+
+    from skills import display as _display
+    if not _display.on_any_display(x, y):
+        record.spoken = "That control is not on any display I can see."
+        record.verdict = REFUSE
+        return _remember(record)
+
+    before = _screen.capture_this_window(target_window)
+    record.action = "click"
+    record.expected = expect
+    _GRANT.uses += 1
+    if not _post_click(x, y):
+        before.release()
+        record.spoken = ("I could not send the click. Diablo needs "
+                         "Accessibility permission in System Settings.")
+        record.verified = False
+        return _remember(record)
+
+    # Verify against the screen, not against the fact that an event was sent.
+    time.sleep(0.7)
+    after = _screen.capture_this_window(
+        _sc.window_by_id(target_window.get("id", 0)) or target_window)
+    try:
+        change = _screen.compare(before, after, target_window)
+        record.observed = change.describe()
+        if change.same:
+            record.verified = False
+        elif expect:
+            record.verified = any(expect.lower() in text.lower()
+                                  for text in change.appeared)
+        else:
+            record.verified = True
+    finally:
+        before.release()
+        after.release()
+
+    if record.verified:
+        record.spoken = f"Clicked {record.target}. {record.observed}"
+        return _remember(record)
+
+    # It did not do what it was supposed to. Look again before deciding
+    # anything, and try at most once more.
+    if _attempt < MAX_RETRIES:
+        record.retried = True
+        record.spoken = "That did not do what I expected. Looking again."
+        _remember(record)
+        return act_on(intent, task=task, expect=expect, window=target_window,
+                      confirm=confirm, risk=risk, _attempt=_attempt + 1)
+
+    record.spoken = ("That did not produce the result I expected, and I do not "
+                     "want to guess. Should I try again?")
+    return _remember(record)
