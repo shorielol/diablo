@@ -396,7 +396,7 @@ def _why(reason: str, **fields) -> None:
 _SPLIT_MARKERS = (" and also ", "; ", ", also ", " as well as ", " plus ", ", and ", " and ")
 
 
-def _structural_split(task: str) -> List[str]:
+def _structural_split(task: str, min_words: int = 3) -> List[str]:
     """
     Two halves, cut at the strongest conjunction, with no model involved.
 
@@ -419,7 +419,7 @@ def _structural_split(task: str) -> List[str]:
         # -1 for the space prepended to `lowered`.
         left = task[:index - 1].strip()
         right = task[index - 1 + len(marker):].strip()
-        if len(left.split()) >= 3 and len(right.split()) >= 3:
+        if len(left.split()) >= min_words and len(right.split()) >= min_words:
             return [left, right]
     return []
 
@@ -436,7 +436,14 @@ def structural_parts(task: str) -> List[str]:
     is one errand too few for a fan-out and one errand too many to hand to an
     agent whole. This applies the same cut without the fan-out gate.
     """
-    parts = _structural_split(task)
+    # Two words is enough here, where three is the right floor for split().
+    # The two serve different purposes: split() is deciding whether to run
+    # several agents at once, and splitting a single request in half there is
+    # worse than not splitting it. This is deciding which half is Diablo's, and
+    # "open Downloads" and "pause music" are two-word errands that genuinely
+    # must not be dragged into a research task. Both results still go through
+    # the same coverage and distinctness checks below.
+    parts = _structural_split(task, min_words=2)
     if len(parts) < 2:
         return []
     if not _covers(task, parts) or not _distinct(parts):

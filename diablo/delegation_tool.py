@@ -74,6 +74,8 @@ RESEARCH_CUES = (
     "options for", "gather", "summarise everything", "summarize everything",
     "go through the", "shortlist", "pros and cons of", "review the options",
     "deep research", "look up everything", "verify whether", "fact check",
+    "find information about", "information on", "read up about",
+    "background on", "what do we know about", "dig up",
 )
 
 # Things that are on this machine rather than on the web. A research cue
@@ -692,52 +694,83 @@ def is_substantial_research(text: str) -> tuple:
     return False, ""
 
 
+def _classify_one(text: str) -> tuple:
+    """(route, reason, matched) for a single operation."""
+    if not (text or "").strip():
+        return DIRECT, "nothing to route", ""
+
+    # A question put to an agent that has already done the work is a follow-up,
+    # not a request for a new one. "Vassago, where did you get that?" used to
+    # spawn a second research task and do the whole thing again; it should be
+    # answered out of the first one's evidence. Focus moves, nothing is
+    # created. Only when that agent has no task does naming it mean "start".
+    named = conversation.addressed_to(text)
+    if named and named != "diablo":
+        if conversation.session.task_for(named) is not None:
+            return DIRECT, f"follow-up to {named}'s existing task", named
+        return DELEGATE, f"explicitly asked: addressed {named}", named
+
+    asked, phrase = asks_for_an_agent(text)
+    if asked:
+        return DELEGATE, f"explicitly asked: {phrase!r}", phrase
+
+    research, cue = is_substantial_research(text)
+    if research:
+        return DELEGATE, f"substantial research: {cue!r}", cue
+
+    return DIRECT, "no agent asked for and not research", ""
+
+
 def decide(text: str) -> Decision:
     """
     The single authoritative routing decision. Fails toward Diablo.
 
-    Deliberately ignorant of which tools were selected, how long the request
-    is, and whether anything else is running. None of those is the question.
+    Classifies per operation rather than per sentence, which is not a detail:
+    "lower the volume and research X" judged whole came out DIRECT, because the
+    local-object guard saw "the volume" and suppressed the research clause —
+    and the research then vanished into an inline run. A sentence can hold one
+    errand for Diablo and one for an agent, and only looking at each on its own
+    gets both right.
+
+    Deliberately ignorant of which tools were selected, how long the request is,
+    and whether anything else is running. None of those is the question.
     """
     if not (text or "").strip():
         return Decision(DIRECT, "nothing to route")
 
-    asked, phrase = asks_for_an_agent(text)
-    if asked:
-        return Decision(DELEGATE, f"explicitly asked: {phrase!r}", matched=phrase)
+    parts = roster.structural_parts(text) or [text]
+    routed = [(part,) + _classify_one(part) for part in parts]
+    delegated = [r for r in routed if r[1] == DELEGATE]
 
-    research, cue = is_substantial_research(text)
-    if research:
-        return Decision(DELEGATE, f"substantial research: {cue!r}", matched=cue)
+    if not delegated:
+        # Whole-sentence reasons read better when there was only ever one.
+        _, _, reason, matched = routed[0]
+        return Decision(DIRECT, reason, matched=matched)
 
-    return Decision(DIRECT, "no agent asked for and not research")
+    first = delegated[0]
+    reason = first[2] if len(routed) == 1 else f"{first[2]} (one of {len(routed)} parts)"
+    return Decision(DELEGATE, reason,
+                    pieces=[(r[0], roster.assign(r[0])) for r in delegated],
+                    matched=first[3])
 
 
 def split_by_route(text: str) -> tuple:
     """
-    (direct_parts, delegated_pieces) for a request that is several errands.
+    (direct_parts, delegated_pieces). One classification, applied per operation.
 
-    Each piece is classified on its own. "Research apprenticeships in Delhi and
-    pause the music" used to fan out both halves, so pausing the music became a
-    delegated task with a row in the rail, purely because a research clause sat
-    next to it. Direct execution and delegation are independent classifications
-    and this is where that is enforced.
+    Uses roster.structural_parts rather than roster.split: split() answers a
+    different question — is this worth several agents at once — and its gate is
+    conservative for good reason. Separating work that must be delegated from
+    work that must not is not that question.
     """
-    pieces = roster.split(text)
-    if len(pieces) < 2:
-        # split() declined, which only means it is not worth several agents at
-        # once. It may still be one errand for an agent and one for Diablo.
-        parts = roster.structural_parts(text)
-        if len(parts) >= 2:
-            pieces = [(part, roster.assign(part)) for part in parts]
-    if len(pieces) < 2:
-        return ([], pieces) if decide(text).delegates else ([text], [])
+    parts = roster.structural_parts(text) or [text]
     direct, delegated = [], []
-    for subtask, agent_id in pieces:
-        if decide(subtask).delegates:
-            delegated.append((subtask, agent_id))
+    for part in parts:
+        route, _reason, _matched = _classify_one(part)
+        if route == DELEGATE:
+            delegated.append((part, roster.assign(part)))
         else:
-            direct.append(subtask)
+            direct.append(part)
     return direct, delegated
 
 

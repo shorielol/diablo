@@ -79,6 +79,22 @@ a bug however well it tests, and `tests/test_architecture.py` asserts each one.
 - **Critical behaviour is enforced in code.** The 4B ignores prompt lines
   reproducibly, which is why the ambiguity guard, the unperformed-action guard,
   the no-reads-while-tidying guard and the routing gate are all code.
+- **Mixed requests are routed per operation.** "Lower the volume and research
+  X" runs the volume here and delegates the research. Judging the sentence
+  whole lost one half or the other.
+- **A follow-up to a task agent is not a new agent.** Naming an agent that
+  already has a task answers from its evidence and moves focus; naming one
+  without a task starts one.
+- **Exact numbers come from code.** `calculate` (sympy) does every sum, total,
+  average and percentage, and a guard refuses a reported number when nothing
+  computed it. The 4B returned 135, 125 and 111 for the same 115.
+- **Tool failures carry no exception text.** `_failed()` logs the path, the
+  errno and the type, and returns a filename and a cause. Paths in tool results
+  are fine — they are internal, and `speech.spoken()` reduces them to basenames
+  before anything is said aloud.
+- **Search has one result shape** — title, url, snippet, provider — adapted at
+  the boundary, with retry, backoff, provider fallback and `health()`. It is
+  not immune to rate limiting and does not claim to be.
 - **Errors reach him through one boundary.** `BrainOffline.spoken` is the only
   thing that may be said; `str(e)` is for the log. No status codes, bodies,
   paths or tracebacks in speech, ever.

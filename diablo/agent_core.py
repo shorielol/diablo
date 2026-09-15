@@ -496,12 +496,14 @@ def run(
     ]
 
     seen: Dict[str, int] = {}
+    used_tools: set = set()
     used_any_tool = False
     asked_which = False
     performed = set()   # mutating tools that actually ran
     saw: List[str] = []          # everything the reading tools returned
     file_reads: List[str] = []   # read_file only, for the quote fallback
     challenged = False
+    counted = False
     asked_aloud = False
     quoted_challenge = False
     reassured = False
@@ -552,6 +554,17 @@ def run(
                     messages.append({"role": "user", "content":
                                      f"{reply}. Now finish the original request: {task}"})
                     continue
+
+            if (_did_maths_in_its_head(task, answer, used_tools)
+                    and not counted):
+                counted = True
+                trace.event("guard", guard="maths_in_its_head", answer=answer[:120])
+                messages.append({"role": "user", "content":
+                    "You have given a number without calculating it. Call "
+                    "calculate with the arithmetic written out — every sum, "
+                    "total, average and percentage, however small — and report "
+                    "what it returns. Do not work it out yourself."})
+                continue
 
             if _claims_unperformed_action(answer, performed) and not challenged:
                 challenged = True
@@ -664,6 +677,7 @@ def run(
                 began_call = time.time()
                 result = agent_tools.execute(name, args)
                 used_any_tool = True
+                used_tools.add(name)
                 if name in READING_TOOLS:
                     saw.append(result)
                     if name == "read_file":
@@ -724,6 +738,38 @@ _ACTION_CLAIM = re.compile(
 _NEGATED = re.compile(
     r"\b(did\s+not|didn'?t|could\s+not|couldn'?t|unable|cannot|can'?t|"
     r"no\s+changes?|nothing\s+was|not\s+able)\b", re.IGNORECASE)
+
+
+# ─── Arithmetic it did in its head ───────────────────────────────────────────
+#
+# The 4B totalled a three-row CSV as 135, then 125, then 111, across three runs
+# of the same test. The correct answer is 115. A different wrong number each
+# time is the signature of a language model doing sums, and no prompt line
+# fixes it — the system prompt has said "never do arithmetic in your head"
+# throughout, in those words.
+#
+# So it is enforced the way the other guarantees are. If the request needed an
+# exact number and the answer contains one, a tool that computes must have run.
+
+COMPUTE_TOOLS = {"calculate", "python_snippet"}
+
+_WANTS_EXACT = re.compile(
+    r"\b(total|totals|sum|subtotal|add up|adds up|average|mean|median|"
+    r"multiply|multiplied|times|product|divide|divided|percentage|percent|"
+    r"how much|how many|calculate|compute|work out|worked out|count up)\b",
+    re.IGNORECASE)
+
+# A number worth being right about. Not a year, not a version, not "one".
+_REPORTS_A_NUMBER = re.compile(r"\b\d{1,3}(?:[,\d]{3,})?(?:\.\d+)?\b|\b\d+\.\d+\b")
+
+
+def _did_maths_in_its_head(task: str, answer: str, used: set) -> bool:
+    """True when it reported a number it was never entitled to compute."""
+    if used & COMPUTE_TOOLS:
+        return False
+    if not _WANTS_EXACT.search(task or ""):
+        return False
+    return bool(_REPORTS_A_NUMBER.search(answer or ""))
 
 
 def _claims_unperformed_action(answer: str, performed: set) -> bool:

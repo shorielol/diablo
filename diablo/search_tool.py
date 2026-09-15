@@ -108,6 +108,18 @@ def _real_url(href: str) -> str:
 _last_call = [0.0]
 _cache: dict = {}
 MIN_GAP = float(os.getenv("DIABLO_SEARCH_GAP", "1.2"))
+# Two attempts per provider, then the next provider. Short, because a voice
+# interface cannot spend a minute backing off politely.
+RETRIES = int(os.getenv("DIABLO_SEARCH_RETRIES", "2"))
+BACKOFF = float(os.getenv("DIABLO_SEARCH_BACKOFF", "0.8"))
+# Last known state of each provider, for `health()`. Not persisted: it is a
+# diagnostic for this session, not a record.
+_health: dict = {}
+
+
+def health() -> dict:
+    """What each search provider did last time it was asked."""
+    return dict(_health)
 CACHE_SECONDS = float(os.getenv("DIABLO_SEARCH_CACHE", "300"))
 
 
@@ -153,7 +165,8 @@ def _via_ddgs(query: str, limit: int) -> List[dict]:
         if not title or not url:
             continue
         out.append({"title": title, "url": url,
-                    "snippet": (row.get("body") or "").strip()})
+                    "snippet": (row.get("body") or "").strip(),
+                    "provider": "ddgs"})
     return out
 
 
@@ -179,7 +192,8 @@ def _via_scraping(query: str, limit: int) -> List[dict]:
         parser.feed(page)
     except Exception:
         pass
-    return [r for r in parser.results if r["title"] and r["url"]]
+    return [dict(r, provider="ddg-html")
+            for r in parser.results if r["title"] and r["url"]]
 
 
 def search_web(query: str, limit: int = MAX_RESULTS) -> List[dict]:
@@ -215,20 +229,39 @@ def search_web(query: str, limit: int = MAX_RESULTS) -> List[dict]:
 
     out: List[dict] = []
     throttled: Optional[Throttled] = None
-    try:
-        out = _via_ddgs(query, limit)
-    except Throttled as e:
-        throttled = e
-    except ImportError:
-        pass                      # not installed; the scrape still works
-    except Exception as e:
-        print(f"  [Search] ddgs failed ({type(e).__name__}: {e}), scraping instead")
 
-    if not out:
-        try:
-            out = _via_scraping(query, limit)
-        except Throttled as e:
-            throttled = throttled or e
+    # Providers in order, each tried with a short backoff before the next.
+    #
+    # ddgs reduces throttling; it does not abolish it. Ten consecutive searches
+    # succeeding is not immunity, and the honest design is to assume every
+    # provider will refuse eventually and to say so when they all do rather
+    # than reporting no results. Backoff is deliberately short: this is a voice
+    # interface and a minute of silence is worse than an honest failure.
+    for name, provider in (("ddgs", _via_ddgs), ("ddg-html", _via_scraping)):
+        for attempt in range(RETRIES):
+            try:
+                out = provider(query, limit)
+                if out:
+                    _health[name] = {"ok": True, "at": time.time()}
+                    break
+            except Throttled as e:
+                throttled = e
+                _health[name] = {"ok": False, "at": time.time(),
+                                 "why": "throttled"}
+                if attempt + 1 < RETRIES:
+                    time.sleep(BACKOFF * (2 ** attempt))
+                    continue
+            except ImportError:
+                _health[name] = {"ok": False, "at": time.time(),
+                                 "why": "not installed"}
+            except Exception as e:
+                _health[name] = {"ok": False, "at": time.time(),
+                                 "why": type(e).__name__}
+                print(f"  [Search] {name} failed "
+                      f"({type(e).__name__}: {e}); trying the next provider")
+            break
+        if out:
+            break
 
     # Both refused, and nothing came back. Say that, rather than "no results" —
     # they are different sentences and only one of them is true.

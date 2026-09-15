@@ -117,6 +117,63 @@ def _skill(name: str):
 
 # ─── Path safety ─────────────────────────────────────────────────────────────
 
+# ─── The tool error boundary ─────────────────────────────────────────────────
+#
+# Every tool failure used to come back as f"Error reading {target}: {e}" — the
+# full path plus the raw exception, 41 sites of it. That string goes to the
+# model and from there into the spoken answer, so a failed read could say
+# "/Users/shaurya/Desktop/10 Academics/11 Econ EE/draft.md" out loud, and an
+# OSError's text is not a sentence anyone wants read to them either.
+#
+# The detail is not lost, it moves: the log keeps the path, the errno and the
+# exception type, which is where you want them when something is actually
+# wrong. What the model gets is the filename and a cause it can act on —
+# "not found" means look again, "permission denied" means stop asking.
+
+_CAUSES = {
+    2: "there is nothing by that name",
+    13: "the system would not give me access",
+    21: "that is a folder, not a file",
+    20: "that is a file, not a folder",
+    28: "the disk is full",
+    30: "that location is read-only",
+    36: "that name is too long",
+    39: "the folder is not empty",
+}
+
+
+def _why(exc: Exception) -> str:
+    """A cause worth saying out loud, from an exception worth logging."""
+    code = getattr(exc, "errno", None)
+    if code in _CAUSES:
+        return _CAUSES[code]
+    if isinstance(exc, PermissionError):
+        return "the system would not give me access"
+    if isinstance(exc, FileNotFoundError):
+        return "there is nothing by that name"
+    if isinstance(exc, IsADirectoryError):
+        return "that is a folder, not a file"
+    if isinstance(exc, UnicodeDecodeError):
+        return "it is not text"
+    if isinstance(exc, TimeoutError):
+        return "it took too long"
+    return "it did not work"
+
+
+def _failed(action: str, target: str, exc: Exception) -> str:
+    """
+    One clean sentence for the model, one full line for the log.
+
+    Never the path, never the exception text. The filename survives because the
+    model needs to know which file it was, and a filename is not a path.
+    """
+    print(f"  [Tools] {action} failed on {target!r}: "
+          f"{type(exc).__name__}: {exc}")
+    name = os.path.basename(str(target).rstrip("/"))
+    subject = f" {name}" if name else ""
+    return f"Error: I could not {action}{subject} — {_why(exc)}."
+
+
 def _resolve(path: str) -> str:
     """
     Turn whatever the model said into a real, allowed absolute path.
@@ -195,7 +252,7 @@ def read_file(path: str) -> str:
         with open(target, "r", errors="replace") as f:
             return _clip(f.read())
     except Exception as e:
-        return f"Error reading {target}: {e}"
+        return _failed("read", target, e)
 
 
 def _parent_must_exist(target: str) -> Optional[str]:
@@ -245,7 +302,7 @@ def write_file(path: str, content: str) -> str:
                     f"were written. The file may be truncated.")
         return f"{'Overwrote' if existed else 'Wrote'} {target} ({len(content)} chars)."
     except Exception as e:
-        return f"Error writing {target}: {e}"
+        return _failed("write", target, e)
 
 
 def append_file(path: str, content: str) -> str:
@@ -263,7 +320,7 @@ def append_file(path: str, content: str) -> str:
                     f"({before} bytes before and after). Nothing was added.")
         return f"Appended {len(content)} chars to {target}."
     except Exception as e:
-        return f"Error appending to {target}: {e}"
+        return _failed("append to", target, e)
 
 
 def find_files(name: str, path: str = "desktop") -> str:
@@ -370,7 +427,7 @@ def survey_folder(path: str = "downloads", older_than_days: int = CLUTTER_DAYS) 
                 if extension in CLUTTER and info.st_mtime < cutoff:
                     stale.append((entry.name, int((time.time() - info.st_mtime) / 86400)))
     except OSError as e:
-        return f"Error reading {target}: {e}"
+        return _failed("read", target, e)
 
     if not total and "Folders" not in groups:
         return f"{os.path.basename(target)} is already empty."
@@ -406,7 +463,7 @@ def tidy_folder(path: str = "downloads", dry_run: bool = True) -> str:
                     continue          # unknown kinds are left exactly where they are
                 plan.setdefault(label, []).append(entry.name)
     except OSError as e:
-        return f"Error reading {target}: {e}"
+        return _failed("read", target, e)
 
     if not plan:
         return f"Nothing in {os.path.basename(target)} that I can sort by kind."
@@ -456,7 +513,7 @@ def make_folder(path: str) -> str:
         os.makedirs(target, exist_ok=True)
         return f"Folder ready at {target}."
     except Exception as e:
-        return f"Error creating {target}: {e}"
+        return _failed("create", target, e)
 
 
 def move_file(source: str, destination: str) -> str:
@@ -482,7 +539,7 @@ def move_file(source: str, destination: str) -> str:
                     f"The move did not complete.")
         return f"Moved to {dst}."
     except Exception as e:
-        return f"Error moving {src}: {e}"
+        return _failed("move", src, e)
 
 
 def delete_file(path: str) -> str:
@@ -509,7 +566,7 @@ def delete_file(path: str) -> str:
         return (f"Error: asked Finder to trash {os.path.basename(target)} but it "
                 f"is still on disk. Nothing was deleted.")
     except Exception as e:
-        return f"Error deleting {target}: {e}"
+        return _failed("delete", target, e)
 
 
 # ─── Shell ───────────────────────────────────────────────────────────────────
@@ -546,6 +603,51 @@ def run_shell(command: str, working_directory: str = "desktop") -> str:
         return "Error: the command ran for over three minutes and was stopped."
     out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
     return _clip(out.strip() or f"Command finished with exit code {proc.returncode} and no output.")
+
+
+def calculate(expression: str) -> str:
+    """
+    Exact arithmetic, done by sympy rather than by the model.
+
+    This exists because the 4B is confidently wrong at sums. On a three-row CSV
+    totalling 115 it has returned 135, 125 and 111 on three separate runs — a
+    different wrong answer each time, which is what arithmetic-by-language-model
+    looks like. There is no prompt that fixes that; there is only not asking it
+    to do the arithmetic.
+
+    Exact stays exact: a third is 1/3, not 0.333. A decimal is given alongside
+    when the exact form is not something you would say out loud.
+    """
+    text = (expression or "").strip()
+    if not text:
+        return "Error: nothing to calculate."
+    # Words people say, in the forms they say them.
+    text = re.sub(r"\b(x|times|multiplied by)\b", "*", text, flags=re.I)
+    text = re.sub(r"\bdivided by\b", "/", text, flags=re.I)
+    text = re.sub(r"\b(plus|and)\b", "+", text, flags=re.I)
+    text = re.sub(r"\bminus\b", "-", text, flags=re.I)
+    text = re.sub(r"\bpercent of\b", "/100*", text, flags=re.I)
+    text = text.replace("^", "**").replace("\u00d7", "*").replace("\u00f7", "/")
+    text = re.sub(r"[^0-9+\-*/().,%\s]", "", text).replace(",", "")
+    if not text.strip():
+        return "Error: that is not an expression I can work out."
+    try:
+        import sympy
+        from sympy.parsing.sympy_parser import (
+            parse_expr, standard_transformations, implicit_multiplication_application)
+        value = parse_expr(
+            text, transformations=standard_transformations
+            + (implicit_multiplication_application,))
+        exact = sympy.nsimplify(value, rational=True)
+        number = float(exact)
+    except Exception as e:
+        print(f"  [Tools] calculate({expression!r}) failed: {type(e).__name__}: {e}")
+        return "Error: I could not read that as a sum."
+    if exact == int(number) if float(number).is_integer() else False:
+        return f"{int(number)}"
+    if getattr(exact, "is_Rational", False) and exact.q != 1:
+        return f"{exact} (about {number:.4g})"
+    return f"{number:.10g}"
 
 
 def python_snippet(code: str) -> str:
@@ -600,7 +702,7 @@ def set_brightness(level: int) -> str:
             skill.set_brightness(max(0, min(100, int(level))))
             return f"Brightness set to {level}%."
         except Exception as e:
-            return f"Error setting brightness: {e}"
+            return _failed("set the brightness", "", e)
     return "Error: brightness control is unavailable on this machine."
 
 
@@ -621,7 +723,7 @@ def system_status() -> str:
                 f"disk {psutil.disk_usage('/').percent}% used"
                 + (f", battery {int(battery.percent)}%" if battery else ""))
     except Exception as e:
-        return f"Error reading system status: {e}"
+        return _failed("read the system status", "", e)
 
 
 def read_screen(target: str = "") -> str:
@@ -638,7 +740,7 @@ def read_screen(target: str = "") -> str:
             return "Error: screen reading is unavailable."
         return _clip(screen_context.look(target))
     except Exception as e:
-        return f"Error reading the screen: {type(e).__name__}: {e}"
+        return _failed("read the screen", "", e)
 
 
 def explain_screen(question: str = "", target: str = "") -> str:
@@ -655,7 +757,7 @@ def explain_screen(question: str = "", target: str = "") -> str:
             return "Error: screen reading is unavailable."
         return _clip(screen_context.explain(question, target))
     except Exception as e:
-        return f"Error understanding the screen: {type(e).__name__}: {e}"
+        return _failed("make sense of the screen", "", e)
 
 
 
@@ -667,7 +769,7 @@ def point_at(description: str, target: str = "") -> str:
             return "Error: screen pointing is unavailable."
         return _clip(module.point_at(description, target))
     except Exception as e:
-        return f"Error pointing at the screen: {type(e).__name__}: {e}"
+        return _failed("point at that", "", e)
 
 
 def find_on_screen(description: str, target: str = "") -> str:
@@ -685,7 +787,7 @@ def find_on_screen(description: str, target: str = "") -> str:
                          f"of the {hit['app']} window (match {hit['score']:.0%})")
         return _clip("\n".join(lines))
     except Exception as e:
-        return f"Error searching the screen: {type(e).__name__}: {e}"
+        return _failed("search the screen", "", e)
 
 
 def list_windows() -> str:
@@ -696,7 +798,7 @@ def list_windows() -> str:
             return "Error: screen reading is unavailable."
         return _clip(screen_context.look_everything())
     except Exception as e:
-        return f"Error listing windows: {type(e).__name__}: {e}"
+        return _failed("list the windows", "", e)
 
 
 def describe_visually(question: str, target: str = "") -> str:
@@ -707,7 +809,7 @@ def describe_visually(question: str, target: str = "") -> str:
             return "Error: screen reading is unavailable."
         return _clip(screen_context.describe_visually(question, target))
     except Exception as e:
-        return f"Error looking at the screen: {type(e).__name__}: {e}"
+        return _failed("look at the screen", "", e)
 
 
 # ─── Communication ───────────────────────────────────────────────────────────
@@ -731,7 +833,7 @@ def send_whatsapp(contact: str, message: str) -> str:
         skill.send_whatsapp_msg(target, message)
         return f"WhatsApp message sent to {contact}."
     except Exception as e:
-        return f"Error sending to {contact}: {e}"
+        return _failed(f"send to {contact}", "", e)
 
 
 def send_imessage(contact: str, message: str) -> str:
@@ -745,7 +847,7 @@ def send_imessage(contact: str, message: str) -> str:
         skill.send_imessage(contact, message)
         return f"iMessage sent to {contact}."
     except Exception as e:
-        return f"Error sending to {contact}: {e}"
+        return _failed(f"send to {contact}", "", e)
 
 
 def search_contact(name: str) -> str:
@@ -755,7 +857,7 @@ def search_contact(name: str) -> str:
     try:
         return str(skill.search_contact(name))
     except Exception as e:
-        return f"Error searching contacts: {e}"
+        return _failed("search your contacts", "", e)
 
 
 # ─── Media ───────────────────────────────────────────────────────────────────
@@ -808,7 +910,7 @@ def play_music(query: str = "") -> str:
                     "Sir. Name something and I will find it.")
         return str(skill.search_and_play(query))
     except Exception as e:
-        return f"Error controlling music: {e}"
+        return _failed("control the music", "", e)
 
 
 def music_transport(action: str) -> str:
@@ -826,7 +928,7 @@ def music_transport(action: str) -> str:
         skill.play_pause()
         return "Playback toggled."
     except Exception as e:
-        return f"Error controlling playback: {e}"
+        return _failed("control playback", "", e)
 
 
 def play_youtube(query: str) -> str:
@@ -837,7 +939,7 @@ def play_youtube(query: str) -> str:
         skill.search_youtube(query)
         return f"Playing '{query}' on YouTube."
     except Exception as e:
-        return f"Error opening YouTube: {e}"
+        return _failed("open YouTube", "", e)
 
 
 # ─── Knowledge (these leave the machine) ─────────────────────────────────────
@@ -849,7 +951,7 @@ def search_wikipedia(query: str) -> str:
     try:
         return _clip(str(skill.search_wikipedia(query)))
     except Exception as e:
-        return f"Error searching Wikipedia: {e}"
+        return _failed("search Wikipedia", "", e)
 
 
 def web_search(query: str, show: bool = False) -> str:
@@ -1032,7 +1134,7 @@ def create_presentation(topic: str) -> str:
     try:
         return str(skill.create_presentation(topic))
     except Exception as e:
-        return f"Error building the deck: {e}"
+        return _failed("build the deck", "", e)
 
 
 def generate_image(prompt: str) -> str:
@@ -1042,7 +1144,7 @@ def generate_image(prompt: str) -> str:
     try:
         return str(skill.generate_image(prompt))
     except Exception as e:
-        return f"Error generating the image: {e}"
+        return _failed("generate the image", "", e)
 
 
 # ─── Talking back ────────────────────────────────────────────────────────────
@@ -1155,6 +1257,13 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
           "Run a shell command in a workspace folder. Use for git, ls, wc, pandoc, ffmpeg.",
           {"command": _S, "working_directory": _S}, ["command"],
           "shell terminal command run git bash script execute"),
+    _tool("calculate", calculate,
+          "Work out an exact arithmetic result. Use this for every sum, total, "
+          "average, percentage or product, however small — never do the "
+          "arithmetic yourself.",
+          {"expression": _S}, ["expression"],
+          "calculate compute total sum add average percentage multiply times "
+          "product divide how much how many arithmetic maths math number"),
     _tool("python_snippet", python_snippet,
           "Run a short Python program. The way into Excel (openpyxl), Word (python-docx) and data work.",
           {"code": _S}, ["code"],
@@ -1420,7 +1529,7 @@ def execute(name: str, arguments: Dict[str, Any]) -> str:
         try:
             return _clip(module.call(name, arguments))
         except Exception as e:
-            return f"Error calling {name}: {type(e).__name__}: {e}"
+            return _failed(f"call {name}", "", e)
 
     tool = TOOLS.get(name)
     if not tool:
@@ -1437,11 +1546,17 @@ def execute(name: str, arguments: Dict[str, Any]) -> str:
         return _clip(tool["fn"](**arguments))
     except TypeError as e:
         wanted = tool["schema"]["function"]["parameters"]["properties"]
-        return f"Error: wrong arguments for {name} ({e}). It takes: {', '.join(wanted)}"
+        return (f"Error: wrong arguments for {name}. It takes: "
+                f"{', '.join(wanted)}.")
     except ValueError as e:
+        # _resolve's refusal is written to be read: it names the allowed roots,
+        # which is how the model recovers from a path outside them. Routing it
+        # through _failed replaced "'/etc/passwd' is outside the folders I am
+        # allowed to touch" with "it did not work" and broke the sandbox's
+        # whole explanation. Authored messages pass through; exceptions do not.
         return f"Error: {e}"
     except Exception as e:
-        return f"Error running {name}: {type(e).__name__}: {e}"
+        return _failed(f"run {name}", "", e)
 
 
 def available_workspaces() -> Dict[str, str]:
