@@ -70,18 +70,20 @@ def scenario_2():
     front = screen_context.frontmost_window()
     if not front:
         return say("no window", "nothing in front")
-    from skills import pointing
-    hits, took = timed(pointing.locate, "", "")
-    labels = [h["text"] for h in pointing.locate("the", "")[:0]] or []
-    # Ask about something that is genuinely on this screen: the first readable
-    # label, found by measurement rather than chosen by a model.
+    # Ask about something genuinely on this screen: a real label found by
+    # measurement, rather than a thing a model decided was probably there.
     frame = screen.capture_this_window(front)
     try:
         if not frame.ok:
             return say("could not read it", frame.problem)
         fragments = screen_context._ocr_fragments(frame.path, front)
-        words = [f["text"] for f in fragments if isinstance(fragments, list)
-                 and len(f["text"].strip()) > 3][:6] if not isinstance(fragments, str) else []
+        if isinstance(fragments, str):
+            return say("could not read it", fragments)
+        # Words, not OCR debris. A fragment like "-> C" matches itself
+        # perfectly and demonstrates nothing.
+        words = [f["text"].strip() for f in fragments
+                 if len(f["text"].strip()) > 4
+                 and sum(c.isalpha() for c in f["text"]) >= 4][:6]
     finally:
         frame.release()
     if not words:
