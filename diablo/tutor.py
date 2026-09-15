@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from skills import config  # noqa: E402
 from skills import pointing  # noqa: E402
+from skills import guidance
 from skills import screen_context  # noqa: E402
 from skills.voice import EXPLAIN_WPM  # noqa: E402
 
@@ -1336,7 +1337,19 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                 break
             counter = f"{index} of {len(steps)}"
             if step.get("found"):
-                light = background_is_light(capture, window, step["x"], step["y"])
+                # Sample where the CAPTION will land, not where the ring will.
+                #
+                # Diablo now stands a standoff away from the target, so the
+                # caption sits roughly 90 points off it — often on a different
+                # surface entirely. Sampling the target meant a dark caption
+                # chosen for a dark button, drawn onto the pale panel next to
+                # it. guidance.place is pure arithmetic, so asking it twice
+                # costs nothing.
+                spot = guidance.place(step["x"], step["y"],
+                                      step.get("say", ""), window)
+                sample = ((spot.marker_x, spot.marker_y) if spot
+                          else (step["x"], step["y"]))
+                light = background_is_light(capture, window, sample[0], sample[1])
                 marker.move(step["x"], step["y"], step.get("matched", ""),
                             counter, on_light=light)
                 # A beat for the eye to find the marker before the sentence

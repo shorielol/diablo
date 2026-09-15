@@ -34,30 +34,76 @@ sys.path.insert(0, DIABLO_HOME)
 
 from skills import pointing, tutor  # noqa: E402
 
-OVERLAY_W, OVERLAY_H = 420, 260
 DRAW = os.getenv("DIABLO_TEST_OVERLAY", "1") not in ("0", "", "false")
 
 
 # ─── Ground truth ────────────────────────────────────────────────────────────
+#
+# These used to identify the guide by its size: layer 25 and exactly 420x260,
+# because the overlay window was a fixed box centred on the target.
+#
+# It is not a fixed box any more, and that is the point of the redesign. The
+# window now spans a ring on the target, Diablo standing a standoff away on
+# whichever side has room, and a caption whose width depends on its text — so
+# its size varies per step and its centre is deliberately NOT the target. The
+# whole reason for the change is that a marker centred on the target covers
+# the target.
+#
+# So identity comes from the process instead, which is exact and survives any
+# geometry, and the assertions below check what actually matters now: that the
+# guide window contains the target and that it is the same window moving.
+
+def _overlay_pids():
+    found = subprocess.run(["pgrep", "-f", "overlay" + ".py"],
+                           capture_output=True, text=True).stdout.split()
+    return {int(pid) for pid in found if pid.isdigit()}
+
 
 def markers():
-    """Every overlay window actually composited, from the window server."""
+    """Every guide window actually composited, from the window server."""
     import Quartz
+    pids = _overlay_pids()
+    if not pids:
+        return []
     windows = Quartz.CGWindowListCopyWindowInfo(
         Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []
     return [w for w in windows
             if w.get("kCGWindowLayer") == 25
-            and int(w["kCGWindowBounds"]["Width"]) == OVERLAY_W
-            and int(w["kCGWindowBounds"]["Height"]) == OVERLAY_H]
+            and int(w.get("kCGWindowOwnerPID") or 0) in pids
+            and int(w["kCGWindowBounds"]["Width"]) > 40]
 
 
-def marker_centre():
+def guide_box():
+    """The guide window's rectangle, Quartz top-left."""
     found = markers()
     if not found:
         return None
-    bounds = found[0]["kCGWindowBounds"]
-    return (bounds["X"] + bounds["Width"] / 2.0,
-            bounds["Y"] + bounds["Height"] / 2.0)
+    b = found[0]["kCGWindowBounds"]
+    return (b["X"], b["Y"], b["Width"], b["Height"])
+
+
+def _clear_of_target(x, y):
+    """
+    Whether Diablo is standing off the target rather than on it.
+
+    Asked of guidance.place directly: the window server can say where the
+    window is, not which part of it holds the face.
+    """
+    from skills import guidance
+    spot = guidance.place(float(x), float(y), "Continue", step="1 of 3")
+    if spot is None:
+        return False
+    apart = ((spot.marker_x - x) ** 2 + (spot.marker_y - y) ** 2) ** 0.5
+    return apart >= guidance.RING + guidance.MARKER
+
+
+def holds(x, y):
+    """Whether the guide window covers a target point at all."""
+    box = guide_box()
+    if not box:
+        return False
+    bx, by, bw, bh = box
+    return bx <= x <= bx + bw and by <= y <= by + bh
 
 
 def pixels(window_id):
@@ -118,10 +164,11 @@ def main() -> int:
                     "created, visible, drawn, and not on screen is the classic "
                     "failure here")
             if found:
-                centre = marker_centre()
-                r.check("  at the point requested",
-                        abs(centre[0] - 700) < 2 and abs(centre[1] - 400) < 2,
-                        f"{centre}")
+                r.check("  covering the point requested", holds(700, 400),
+                        f"window {guide_box()}")
+                r.check("  without standing on it",
+                        _clear_of_target(700, 400),
+                        "the ring goes on the target; Diablo goes beside it")
                 r.check("  above ordinary windows",
                         found[0]["kCGWindowLayer"] == 25)
                 r.check("  and has something drawn in it",
@@ -132,11 +179,10 @@ def main() -> int:
         with guard(r, "one marker moves between steps"):
             before = markers()[0]["kCGWindowNumber"]
             marker.move(1100, 600, "Export", "2 of 3")
-            moved = wait_for(lambda: (marker_centre() or (0, 0))[0] > 1000)
-            r.check("it moved", bool(moved), str(marker_centre()))
-            r.check("  to the second point",
-                    abs(marker_centre()[0] - 1100) < 2
-                    and abs(marker_centre()[1] - 600) < 2, str(marker_centre()))
+            moved = wait_for(lambda: holds(1100, 600))
+            r.check("it moved", bool(moved), str(guide_box()))
+            r.check("  to cover the second point", holds(1100, 600), str(guide_box()))
+            r.check("  and no longer the first", not holds(700, 400), str(guide_box()))
             r.check("  as the same window, not a new one",
                     markers()[0]["kCGWindowNumber"] == before,
                     "respawning per step blinks, and reads as two pointers")
