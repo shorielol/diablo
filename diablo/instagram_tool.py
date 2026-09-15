@@ -15,7 +15,7 @@ def focus_zen():
 
 def send_ig_reply(recipient: str, message: str):
     """
-    Automates Instagram Web (Zen Browser) to send a reply.
+    Automates Instagram Web (in your default browser) to send a reply.
     Now force-navigates to the DM inbox first for maximum reliability.
     """
     print(f"  [IG Tool] Starting reply to {recipient}...")

@@ -114,8 +114,10 @@ class ContextFull(BrainOffline):
 # Ollama says this several ways depending on version and endpoint, so the test
 # is on the words rather than on a code — a 400 can also mean a malformed
 # request, which is a different sentence and a different fix.
-_CONTEXT_SIGNS = ("exceeds the available context", "context size",
-                  "context length", "too many tokens", "maximum context")
+_CONTEXT_SIGNS = ("exceeds the available context", "exceeds context",
+                  "context size", "context length", "context window",
+                  "too many tokens", "maximum context", "prompt is too long",
+                  "input is too long")
 
 
 def _refusal(code: int, body: str) -> BrainOffline:

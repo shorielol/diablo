@@ -55,6 +55,10 @@ SESSION_TIMEOUT = config.env_int("DIABLO_SESSION_TIMEOUT", 900)  # 15 minutes
 # capped at 600 here, and twelve calls covers a two-source research run with
 # room over. The prompt budget is smaller again, because the working goes in
 # alongside the conversation rather than instead of it.
+TASK_SOURCES = config.env_int("DIABLO_TASK_SOURCES", 8, low=1, high=40)
+TASK_FINDINGS = config.env_int("DIABLO_TASK_FINDINGS", 6, low=1, high=30)
+TASK_FINDING_CHARS = config.env_int("DIABLO_TASK_FINDING_CHARS", 400, low=80, high=2000)
+TASK_RESULT = config.env_int("DIABLO_TASK_RESULT", 600, low=100, high=4000)
 WORKING_STEPS = config.env_int("DIABLO_WORKING_STEPS", 12, low=2, high=40)
 WORKING_RESULT = config.env_int("DIABLO_WORKING_RESULT", 600, low=100, high=4000)
 WORKING_BUDGET = config.env_int("DIABLO_WORKING_BUDGET", 1800, low=200, high=8000)
@@ -111,6 +115,50 @@ SUMMARY_PROMPT = (
 )
 
 
+# Tools whose results carry provenance, and what to take from each.
+# Both the registered tool name and the underlying function name, because the
+# two differ for search and the mismatch is silent: a name not in this set
+# simply contributes no evidence, and the follow-up comes back empty with
+# nothing anywhere saying why. test_architecture asserts every registered name
+# here still exists.
+_SOURCE_TOOLS = {"research", "web_search", "search_web", "read_page",
+                 "search_wikipedia", "wiki", "browse"}
+_NUMBER_TOOLS = {"python_snippet", "solve", "calculate"}
+_URL = re.compile(r"https?://[^\s,)\]\"']+")
+
+
+def _absorb(record: Dict[str, Any], step: Dict[str, str]) -> None:
+    """
+    Pull the durable part out of one tool result.
+
+    Sources, findings and numbers survive. Everything else — the arguments, the
+    full page text, the listings that led nowhere — is dropped here rather than
+    carried around for the rest of the session.
+    """
+    tool = str(step.get("tool", ""))
+    result = str(step.get("result", ""))
+    if not result or result.startswith(("Error", "Refused", "Cancelled")):
+        return
+    if tool in _SOURCE_TOOLS:
+        seen = {s["url"] for s in record["sources"]}
+        # The arguments as well as the result. read_page's source is the URL it
+        # was asked for, which never appears in the text it returns.
+        for url in (_URL.findall(str(step.get("args", "")))
+                    + _URL.findall(result))[:6]:
+            url = url.rstrip(".,;")
+            if url not in seen:
+                seen.add(url)
+                record["sources"].append({"url": url[:200], "title": ""})
+        first = " ".join(result.split())[:TASK_FINDING_CHARS]
+        if first:
+            record["findings"].append(first)
+    elif tool in _NUMBER_TOOLS:
+        record["calculations"].append(
+            f"{step.get('args', '')[:80]} -> {' '.join(result.split())[:160]}")
+    elif tool == "read_the_question":
+        record["findings"].append(" ".join(result.split())[:TASK_FINDING_CHARS])
+
+
 class Session:
     """One rolling conversation. Not thread-safe by design — there is one voice."""
 
@@ -131,7 +179,9 @@ class Session:
         # would push the conversation itself out of the window to answer a
         # question he has not asked yet. This sits to one side and is pulled in
         # only when he asks how the answer was reached.
-        self.working: Dict[str, List[Dict[str, str]]] = {}
+        # Task state, keyed by task id. Structure, not a transcript: what was
+        # established and where it came from. See record_task.
+        self.tasks: Dict[str, Dict[str, Any]] = {}
 
     def _summarise_oldest(self) -> None:
         """
@@ -171,7 +221,7 @@ class Session:
             self.earlier = ""
             self.last_screen_app = None
             self.focus = None
-            self.working = {}
+            self.tasks = {}
 
     def remember(self, role: str, content: str) -> None:
         self.turns.append({"role": role, "content": content})
@@ -179,49 +229,82 @@ class Session:
             self._summarise_oldest()
         self.last_spoke_at = time.time()
 
-    def remember_working(self, agent_id: str,
-                         steps: List[Dict[str, str]]) -> None:
+    def record_task(self, agent_id: str, title: str,
+                    steps: List[Dict[str, str]], result: str = "",
+                    task_id: str = "") -> Dict[str, Any]:
         """
-        Keep what an agent actually did, so it can be asked about afterwards.
+        Keep what a task actually established, as structure rather than as a
+        transcript of the model thinking.
 
-        This used to be thrown away on purpose. run_parallel collected every
-        sub-agent's narration and then discarded it whenever the final answer
-        came back non-empty, which is every time it worked. So "where did you
-        find that?" had nothing behind it — not because the agent was a
-        separate thread, but because the sources were deleted the moment they
-        stopped being needed for the answer.
+        The first version of this stored the raw tool calls and replayed them
+        into the prompt on a follow-up. That works and it is the wrong shape:
+        it makes answering "where did you get that?" depend on keeping the
+        model's own working, it grows without limit, and most of what it keeps
+        is noise — the arguments of a listing, the text of a page that turned
+        out to be irrelevant.
+
+        What a follow-up actually needs is what was established and where it
+        came from: the sources, the findings, the numbers. Those are extracted
+        here, once, at the point where the tool results are still structured,
+        and the raw calls are dropped.
         """
-        if not agent_id or not steps:
-            return
-        kept = []
-        for step in steps[-WORKING_STEPS:]:
-            kept.append({"tool": str(step.get("tool", ""))[:60],
-                         "args": str(step.get("args", ""))[:200],
-                         "result": str(step.get("result", ""))[:WORKING_RESULT]})
-        self.working[agent_id] = kept
+        record = self.tasks.get(task_id or agent_id) or {
+            "task_id": task_id or agent_id,
+            "agent": agent_id,
+            "title": (title or "")[:120],
+            "objective": (title or "")[:400],
+            "status": "running",
+            "created_at": time.time(),
+            "sources": [],
+            "findings": [],
+            "calculations": [],
+            "result": "",
+        }
+        for step in steps or []:
+            _absorb(record, step)
+        if result:
+            record["result"] = result[:TASK_RESULT]
+            record["status"] = "done"
+        record["updated_at"] = time.time()
+        record["sources"] = record["sources"][:TASK_SOURCES]
+        record["findings"] = record["findings"][-TASK_FINDINGS:]
+        record["calculations"] = record["calculations"][-TASK_FINDINGS:]
+        self.tasks[record["task_id"]] = record
         self.last_spoke_at = time.time()
+        return record
 
-    def working_for(self, agent_id: Optional[str]) -> str:
-        """That agent's working, written out for a prompt, or empty."""
-        steps = self.working.get(agent_id or "", [])
-        if not steps:
+    def task_for(self, agent_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        """The most recent task this agent ran, or None."""
+        mine = [t for t in self.tasks.values() if t["agent"] == agent_id]
+        return max(mine, key=lambda t: t.get("updated_at", 0)) if mine else None
+
+    def evidence_for(self, agent_id: Optional[str]) -> str:
+        """That task's provenance, written out for a prompt, or empty."""
+        record = self.task_for(agent_id)
+        if not record:
             return ""
-        lines, budget = [], WORKING_BUDGET
-        for step in steps:
-            line = f"{step['tool']}({step['args']}) returned: {step['result']}"
-            if budget - len(line) < 0:
-                break
-            budget -= len(line)
-            lines.append(line)
-        return "\n".join(lines)
-
+        lines = [f"Task: {record['title']} ({record['status']})"]
+        if record["sources"]:
+            lines.append("Sources actually opened:")
+            for source in record["sources"]:
+                title = f" — {source['title']}" if source.get("title") else ""
+                lines.append(f"  {source['url']}{title}")
+        if record["findings"]:
+            lines.append("What came back:")
+            lines += [f"  {f}" for f in record["findings"]]
+        if record["calculations"]:
+            lines.append("Worked out:")
+            lines += [f"  {c}" for c in record["calculations"]]
+        if record["result"]:
+            lines.append(f"Reported: {record['result']}")
+        return "\n".join(lines)[:WORKING_BUDGET]
 
     def reset(self) -> None:
         self.turns = []
         self.earlier = ""
         self.last_screen_app = None
         self.focus = None
-        self.working = {}
+        self.tasks = {}
 
     def is_followup(self) -> bool:
         """True if he is still mid-conversation rather than starting one."""
@@ -300,7 +383,7 @@ class Session:
         # ask. Here it costs nothing until he asks, and then it is the only
         # thing he wants.
         if self.focus and asks_how_you_know(text):
-            notes = self.working_for(self.focus)
+            notes = self.evidence_for(self.focus)
             if notes:
                 messages.append({"role": "system", "content":
                     "He is asking how you reached your answer. This is what you "

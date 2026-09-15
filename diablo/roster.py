@@ -424,6 +424,26 @@ def _structural_split(task: str) -> List[str]:
     return []
 
 
+def structural_parts(task: str) -> List[str]:
+    """
+    The errands in a sentence, cut on conjunctions, or [].
+
+    split() asks a different question — is this worth running several agents in
+    parallel — and its gate is deliberately conservative, because splitting a
+    single request in two and answering both halves separately is worse than
+    not splitting it. Separating work that must be delegated from work that
+    must not is not that question: "research this company and lower my volume"
+    is one errand too few for a fan-out and one errand too many to hand to an
+    agent whole. This applies the same cut without the fan-out gate.
+    """
+    parts = _structural_split(task)
+    if len(parts) < 2:
+        return []
+    if not _covers(task, parts) or not _distinct(parts):
+        return []
+    return parts
+
+
 def split(task: str) -> List[Tuple[str, str]]:
     """
     The task as a list of (subtask, agent_id).

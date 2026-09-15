@@ -68,17 +68,43 @@ MAX_CONCURRENT = config.env_int("DIABLO_MAX_CONCURRENT_AGENTS", 1)
 # single word cannot — "look into" is research, "look at my screen" is not.
 RESEARCH_CUES = (
     "research", "look into", "looking into", "read up on", "dig into",
-    "find out about", "find out what", "investigate", "compare the",
+    "find out about", "find out what", "find out whether", "find out if",
+    "investigate", "compare the",
     "compare these", "what are the best", "which are the best",
     "options for", "gather", "summarise everything", "summarize everything",
     "go through the", "shortlist", "pros and cons of", "review the options",
+    "deep research", "look up everything", "verify whether", "fact check",
+)
+
+# Things that are on this machine rather than on the web. A research cue
+# pointing at one of these is not research — "look into my downloads folder" is
+# a directory listing and Diablo does it in 200ms.
+LOCAL_OBJECTS = (
+    "my screen", "the screen", "this screen", "my downloads", "downloads folder",
+    "my desktop", "desktop folder", "my documents", "documents folder",
+    "my folder", "this folder", "that folder", "my files", "this file",
+    "that file", "my drive", "this window", "that window", "my notes app",
+    "my calendar", "my inbox", "my messages",
+    # Demonstrative plus a thing that is already on the machine. "Compare these
+    # two windows" is about the glass in front of him, not about the web.
+    "these windows", "two windows", "both windows", "these tabs", "these files",
+    "these folders", "these documents", "my apps", "these apps", "my photos",
+    "my mac", "this mac", "my machine", "my laptop", "these two tracks",
+    "this track", "my music", "my library", "my volume", "the volume",
 )
 
 AGENT_REQUESTS = (
     "spin up", "spawn", "assign an agent", "assign someone", "put someone on",
     "get someone on", "put an agent on", "delegate", "hand this to",
-    "hand it to", "in the background", "work on it in the background",
+    "hand it to",
+    # "in the background" on its own is too weak: it is also just a place, as
+    # in "in the background music is playing, pause it". It has to attach to a
+    # request for it to be one.
+    "this in the background", "it in the background", "that in the background",
+    "running in the background", "work on it in the background",
     "while i", "go away and", "take your time on",
+    "create an agent", "make an agent", "new agent", "start an agent",
+    "set up an agent", "an agent for this", "agent on this",
 )
 
 # How many times Diablo may come back with a question before it either commits
@@ -222,7 +248,8 @@ def _fan_out(job: dict, ask, confirm) -> str:
         working: list = []
         answer = agent_core.run(subtask, quiet, ask=sub_ask,
                                 confirm=sub_confirm, working=working)
-        conversation.session.remember_working(agent_id, working)
+        conversation.session.record_task(agent_id, subtask, working, answer,
+                                         task_id=f"{job['id']}:{agent_id}")
         return answer
 
     def started(agent_id, subtask):
@@ -261,8 +288,9 @@ def _worker() -> None:
                 working: list = []
                 summary = agent_core.run(job["task"], speak, ask=ask,
                                          confirm=confirm, working=working)
-                conversation.session.remember_working(
-                    job.get("agent") or "diablo", working)
+                conversation.session.record_task(
+                    job.get("agent") or "diablo", job["task"], working, summary,
+                    task_id=job["id"])
             store.update(job["id"], status="done", finished_at=time.time(),
                          summary=summary)
             # Fold the result into the conversation so a follow-up like "what
@@ -396,7 +424,7 @@ def handle(
         # What was read off the screen and what sympy did with it, so "walk me
         # through your maths" is answered from the record instead of the model
         # reconstructing a plausible method backwards from the answer.
-        conversation.session.remember_working("vassago", working)
+        conversation.session.record_task("vassago", text, working, summary)
         trace.event("done", route="teach", summary=summary[:120])
         return "taught"
 
@@ -475,37 +503,24 @@ def handle(
             trace.event("route", route="escalate_failed", reason=str(e)[:100])
             # Fall through and let the small model try rather than giving up.
 
-    if not needs_its_own_agent(task, text):
-        # Diablo does it, here, now.
-        #
-        # The old condition was `depth < LONG_TASK_WORDS and not store.active()`
-        # — a word count, plus a rule that any queued work pushed everything
-        # else into the queue behind it. So asking for the volume down while a
-        # research job ran spawned a second agent for a one-line AppleScript
-        # call. Running inline during other work is safe: the tool context is
-        # thread-local and the sub-agents are on their own threads.
-        #
-        # "Immediate" still means a model round trip and one or more tools, and
-        # from the other side of a speaker that is several seconds of nothing.
-        # Say something first. It is cached audio, so it costs no latency of
-        # its own and it starts playing while the model is still loading.
-        pieces_inline = [(task, roster.assign(task))]
-        trace.event("route", route="inline", words=depth, task=task[:120],
-                    agent=pieces_inline[0][1])
-        speak(persona.working())
-        summary = agent_core.run(task, speak, ask=ask, confirm=confirm)
-        trace.event("done", route="inline", summary=summary[:120])
-        conversation.session.remember("user", text)
-        conversation.session.remember("assistant", summary)
-        if pieces_inline and pieces_inline[0][1] not in (None, "diablo"):
-            conversation.session.focus = pieces_inline[0][1]
-        speak(summary)
-        # Nothing goes in the job store. It did before, which is the other half
-        # of the cluttered sidebar: even correctly-inlined actions left a row
-        # behind, so every "volume down" became a permanent entry in a list
-        # meant for work you might want to go back to. A finished one-liner is
-        # not something to go back to — it is in the conversation, which is
-        # where it belongs.
+    # ── The routing decision ─────────────────────────────────────────────
+    # One call, one recorded reason. Nothing below re-derives it.
+    routing = decide(task)
+    trace.event("decide", route=routing.route, reason=routing.reason,
+                matched=routing.matched, task=task[:120])
+
+    if not routing.delegates:
+        return _run_inline(task, text, speak, ask, confirm, routing.reason)
+
+    # It delegates — but a sentence can hold one errand for an agent and one
+    # for Diablo. "Research this company and lower my volume" must not spawn an
+    # agent for the volume.
+    direct_parts, pieces = split_by_route(task)
+    for part in direct_parts:
+        trace.event("decide", route=DIRECT, reason="direct half of a mixed request",
+                    task=part[:120])
+        _run_inline(part, part, speak, ask, confirm, "direct half of a mixed request")
+    if not pieces:
         return "inline"
 
     # Several errands in one sentence, and none of them waiting on another.
@@ -526,39 +541,209 @@ def handle(
     return "queued"
 
 
+def _run_inline(task: str, text: str, speak, ask, confirm,
+                reason: str = "") -> str:
+    """
+    Diablo does it, here, on this thread.
+
+    Running inline while other work is in flight is safe: the tool context is
+    thread-local and sub-agents are on their own threads. The old gate refused
+    to, which is why asking for the volume during a research job spawned a
+    second agent for a one-line AppleScript call.
+
+    Nothing is written to the job store. That was the other half of the
+    cluttered sidebar — even correctly-inlined actions left a row behind, so
+    every "volume down" became a permanent entry in a list meant for work worth
+    going back to. A finished one-liner lives in the conversation instead.
+    """
+    trace.event("route", route="inline", task=task[:120], reason=reason)
+    # Cached audio, so it costs no latency of its own and starts playing while
+    # the model is still loading.
+    speak(persona.working())
+    summary = agent_core.run(task, speak, ask=ask, confirm=confirm)
+    trace.event("done", route="inline", summary=summary[:120])
+    conversation.session.remember("user", text)
+    conversation.session.remember("assistant", summary)
+    # Focus is deliberately not touched. It used to be set to whichever agent
+    # name assign() voted for, so turning the volume down handed the
+    # conversation to Seere and the next ordinary question came back in Seere's
+    # voice. Focus follows a task agent, and an inline action is not one.
+    speak(summary)
+    return "inline"
+
+
 # ─── Voice status ────────────────────────────────────────────────────────────
 
-def asks_for_an_agent(text: str) -> bool:
-    """He said to put someone on it."""
+# ─── The delegation decision ─────────────────────────────────────────────────
+#
+# One function decides this, and it is the only one that may. The history here
+# is a sequence of proxies standing in for the decision and each being wrong in
+# its own way: a word count (LONG_TASK_WORDS = 4, so "decrease the system
+# volume" spawned an agent), then whether a research tool appeared in the tool
+# menu (research's tags include "the", "what" and "are", so "what time is it"
+# spawned one). Tool availability and delegation intent are different things
+# and neither may stand in for the other.
+#
+# Two doors, and nothing else opens one:
+#
+#   1. he asked for an agent
+#   2. the task is genuinely substantial research
+#
+# Everything else is Diablo's, including anything uncertain. A false delegation
+# costs a spurious task, a row in the rail and an announcement; a false direct
+# costs nothing at all, because Diablo has every capability the agents have.
+# So the fallback is DIRECT and it is enforced here rather than requested in a
+# prompt.
+
+DIRECT = "direct"
+DELEGATE = "delegate"
+
+
+class Decision:
+    """Why a request went where it went. Inspectable, and logged verbatim."""
+
+    __slots__ = ("route", "reason", "pieces", "matched")
+
+    def __init__(self, route: str, reason: str,
+                 pieces: Optional[List[tuple]] = None, matched: str = ""):
+        self.route = route
+        self.reason = reason
+        self.pieces = pieces or []
+        self.matched = matched
+
+    @property
+    def delegates(self) -> bool:
+        return self.route == DELEGATE
+
+    def __repr__(self) -> str:
+        return f"<Decision {self.route} because {self.reason!r}>"
+
+
+def _flatten(text: str) -> str:
     lowered = " " + re.sub(r"[^a-z0-9 ]+", " ", (text or "").lower()) + " "
-    lowered = re.sub(r"\s+", " ", lowered)
-    if any(phrase in lowered for phrase in AGENT_REQUESTS):
-        return True
-    # Naming a worker and giving it a job. conversation.addressed_to() finds
-    # the same openers — "ask Vassago to", "get Marbas to" — and by the time
-    # this is reached the turn has already been classified as an action rather
-    # than chat, so this is an assignment and not a follow-up question.
+    return re.sub(r"\s+", " ", lowered)
+
+
+# Words that turn a cue into its opposite, or into a description of something
+# that already happened. Found by attacking the matcher rather than by
+# imagining cases: "do not create an agent for this, just do it" delegated,
+# "never put someone on this" delegated, and "I was researching yesterday,
+# what time is it" delegated. A phrase match with no sense of negation reads
+# every one of those backwards.
+_NEGATORS = ("not", "dont", "don t", "do not", "never", "no need to", "without",
+             "rather than", "instead of", "stop", "cancel", "avoid", "wont",
+             "will not", "cannot", "can t", "shouldn t", "should not")
+_PAST = ("was", "were", "had", "been", "yesterday", "earlier", "already",
+         "last night", "this morning", "previously")
+
+
+def _cue_is_live(flat: str, cue: str) -> bool:
+    """
+    Is this cue a request, or is it being negated or merely described?
+
+    Looks at the few words in front of it. Crude, and deliberately so: the
+    alternative is asking the model, and a model call to decide whether to make
+    a model call is both slow and another thing that can be wrong. Crude in the
+    safe direction — an unrecognised negation delegates something that could
+    have stayed here, and a false negation keeps work that could have been
+    delegated, which costs nothing.
+    """
+    position = flat.find(f" {cue}")
+    if position < 0:
+        return False
+    before = flat[:position + 1]
+    window = " ".join(before.split()[-4:])
+    if any(f" {n} " in f" {window} " for n in _NEGATORS):
+        return False
+    if any(f" {pmark} " in f" {window} " for pmark in _PAST):
+        return False
+    return True
+
+
+def asks_for_an_agent(text: str) -> tuple:
+    """(True, the phrase that said so). He asked for someone to be put on it."""
+    flat = _flatten(text)
+    for phrase in AGENT_REQUESTS:
+        if f" {phrase}" in flat and _cue_is_live(flat, phrase):
+            return True, phrase
     named = conversation.addressed_to(text)
-    return bool(named and named != "diablo")
+    if named and named != "diablo":
+        return True, f"addressed {named}"
+    return False, ""
+
+
+def is_substantial_research(text: str) -> tuple:
+    """
+    (True, the phrase that said so). Real investigation, not a turn of phrase.
+
+    "look into" is the awkward one and it is why this is not a plain phrase
+    match. "Look into NVIDIA's history" is research. "Look into my Downloads
+    folder" is a directory listing, and delegating it spawns an agent to do
+    something Diablo does in 200ms. So a cue that can point either way has to
+    be followed by something that is not on this machine.
+    """
+    flat = _flatten(text)
+    for phrase in LOCAL_OBJECTS:
+        if f" {phrase}" in flat:
+            return False, ""            # it is about his own machine
+    for cue in RESEARCH_CUES:
+        if f" {cue}" in flat and _cue_is_live(flat, cue):
+            return True, cue
+    return False, ""
+
+
+def decide(text: str) -> Decision:
+    """
+    The single authoritative routing decision. Fails toward Diablo.
+
+    Deliberately ignorant of which tools were selected, how long the request
+    is, and whether anything else is running. None of those is the question.
+    """
+    if not (text or "").strip():
+        return Decision(DIRECT, "nothing to route")
+
+    asked, phrase = asks_for_an_agent(text)
+    if asked:
+        return Decision(DELEGATE, f"explicitly asked: {phrase!r}", matched=phrase)
+
+    research, cue = is_substantial_research(text)
+    if research:
+        return Decision(DELEGATE, f"substantial research: {cue!r}", matched=cue)
+
+    return Decision(DIRECT, "no agent asked for and not research")
+
+
+def split_by_route(text: str) -> tuple:
+    """
+    (direct_parts, delegated_pieces) for a request that is several errands.
+
+    Each piece is classified on its own. "Research apprenticeships in Delhi and
+    pause the music" used to fan out both halves, so pausing the music became a
+    delegated task with a row in the rail, purely because a research clause sat
+    next to it. Direct execution and delegation are independent classifications
+    and this is where that is enforced.
+    """
+    pieces = roster.split(text)
+    if len(pieces) < 2:
+        # split() declined, which only means it is not worth several agents at
+        # once. It may still be one errand for an agent and one for Diablo.
+        parts = roster.structural_parts(text)
+        if len(parts) >= 2:
+            pieces = [(part, roster.assign(part)) for part in parts]
+    if len(pieces) < 2:
+        return ([], pieces) if decide(text).delegates else ([text], [])
+    direct, delegated = [], []
+    for subtask, agent_id in pieces:
+        if decide(subtask).delegates:
+            delegated.append((subtask, agent_id))
+        else:
+            direct.append(subtask)
+    return direct, delegated
 
 
 def needs_its_own_agent(task: str, text: str = "") -> bool:
-    """
-    Whether this is worth spawning for, or whether Diablo should just do it.
-
-    Diablo holds every capability the others do, so handing work over buys
-    nothing unless the work is long enough to be worth watching separately.
-    Two things qualify and nothing else does: he asked for an agent, or the
-    task is real research — several pages opened and read, minutes rather than
-    seconds. A volume change, a track, a window read and a one-line lookup all
-    finish here, before an announcement about them would have played.
-    """
-    if asks_for_an_agent(text or task):
-        return True
-    both = f" {(task or '')} {(text or '')} ".lower()
-    both = re.sub(r"[^a-z0-9 ]+", " ", both)
-    both = re.sub(r"\s+", " ", both)
-    return any(f" {cue}" in both for cue in RESEARCH_CUES)
+    """Kept as the one-line form. decide() is the authority."""
+    return decide(f"{task or ''} {text or ''}".strip()).delegates
 
 
 def status_report() -> str:

@@ -47,15 +47,19 @@ def main():
 
     # ── 1. It is kept at all ─────────────────────────────────────────────
     r.head("The working survives the answer")
-    session.remember_working("vassago", RESEARCH)
-    r.check("what the agent did is recorded", len(session.working["vassago"]) == 2)
-    notes = session.working_for("vassago")
-    r.check("the real sources come back out", "Manoj Aggarwal" in notes
-            and "Cushman" in notes, notes[:80])
-    r.check("so do the calls that produced them", "search_web" in notes
-            and "read_page" in notes)
-    r.check("an agent that did nothing has nothing", session.working_for("levi") == "")
-    r.check("nor does an unknown one", session.working_for(None) == "")
+    session.record_task("vassago", "Delhi apprenticeships", RESEARCH)
+    r.check("the task is recorded", "vassago" in session.tasks)
+    notes = session.evidence_for("vassago")
+    r.check("what it found comes back out",
+            "Manoj Aggarwal" in notes and "Cushman" in notes, notes[:90])
+    r.check("and so does the page it actually opened",
+            "in.linkedin.com" in notes,
+            "read_page's source is its argument, not its output")
+    r.check("as structure, not a transcript of tool calls",
+            "search_web(" not in notes and '{"query"' not in notes,
+            "the raw calls are dropped; the evidence is kept")
+    r.check("an agent that did nothing has nothing", session.evidence_for("levi") == "")
+    r.check("nor does an unknown one", session.evidence_for(None) == "")
 
     # ── 2. It is asked for, not carried ──────────────────────────────────
     # The whole reason this is affordable. If these fire on ordinary turns,
@@ -79,22 +83,25 @@ def main():
     for question in ordinary:
         r.check(f"{question!r} does not",
                 not conversation.asks_how_you_know(question))
-
     # ── 3. It cannot blow the context window ─────────────────────────────
-    r.head("Bounded, because the context is 4096 tokens")
+    r.head("Bounded, because the context is finite")
     huge = [{"tool": "read_page", "args": '{"url": "https://example.com/%d"}' % i,
              "result": "x" * 20000} for i in range(60)]
-    session.remember_working("marbas", huge)
-    kept = session.working["marbas"]
-    r.check("the number of steps is capped",
-            len(kept) <= conversation.WORKING_STEPS, f"{len(kept)} kept")
-    r.check("each result is truncated",
-            all(len(s["result"]) <= conversation.WORKING_RESULT for s in kept))
-    rendered = session.working_for("marbas")
+    session.record_task("marbas", "big read", huge)
+    record = session.tasks["marbas"]
+    r.check("findings are capped",
+            len(record["findings"]) <= conversation.TASK_FINDINGS,
+            f'{len(record["findings"])} kept')
+    r.check("each one is truncated",
+            all(len(f) <= conversation.TASK_FINDING_CHARS for f in record["findings"]))
+    r.check("sources are capped too",
+            len(record["sources"]) <= conversation.TASK_SOURCES,
+            f'{len(record["sources"])} sources')
+    rendered = session.evidence_for("marbas")
     r.check("and what reaches a prompt is capped again",
-            len(rendered) <= conversation.WORKING_BUDGET + 400,
-            f"{len(rendered)} chars against a {conversation.WORKING_BUDGET} budget")
-    r.check("1.2 MB of pages becomes something a 4096 context can hold",
+            len(rendered) <= conversation.WORKING_BUDGET,
+            f"{len(rendered)} chars against {conversation.WORKING_BUDGET}")
+    r.check("1.2 MB of pages becomes something a prompt can hold",
             len(rendered) < 3000, f"{len(rendered)} chars")
 
     # ── 4. It is never spoken ────────────────────────────────────────────
@@ -111,14 +118,14 @@ def main():
     # ── 5. It is forgotten with everything else ──────────────────────────
     r.head("It expires with the conversation")
     session.reset()
-    r.check("a reset clears the working too", session.working == {},
+    r.check("a reset clears the working too", session.tasks == {},
             "sources from a finished conversation must not resurface in the next")
 
     stale = conversation.Session()
-    stale.remember_working("vassago", RESEARCH)
+    stale.record_task("vassago", "Delhi apprenticeships", RESEARCH)
     stale.last_spoke_at = 1.0          # long ago
     stale._expire_if_stale()
-    r.check("and so does a timeout", stale.working == {})
+    r.check("and so does a timeout", stale.tasks == {})
 
     # ── 6. One list per agent ────────────────────────────────────────────
     # Sub-agents run at once in their own threads. Shared state here was a
@@ -126,15 +133,14 @@ def main():
     # agent to start owned everyone's callbacks.
     r.head("Agents do not share a scratchpad")
     both = conversation.Session()
-    both.remember_working("vassago", [dict(RESEARCH[0])])
-    both.remember_working("marbas", [{"tool": "read_file",
-                                      "args": '{"path": "notes.md"}',
-                                      "result": "Budget is 40 lakh."}])
-    r.check("each agent keeps its own", "Manoj" in both.working_for("vassago")
-            and "40 lakh" in both.working_for("marbas"))
+    both.record_task("vassago", "Delhi apprenticeships", [dict(RESEARCH[0])])
+    both.record_task("marbas", "budget", [{"tool": "research",
+                                  "args": "budget", "result": "Budget is 40 lakh."}])
+    r.check("each agent keeps its own", "Manoj" in both.evidence_for("vassago")
+            and "40 lakh" in both.evidence_for("marbas"))
     r.check("and neither can see the other's",
-            "40 lakh" not in both.working_for("vassago")
-            and "Manoj" not in both.working_for("marbas"))
+            "40 lakh" not in both.evidence_for("vassago")
+            and "Manoj" not in both.evidence_for("marbas"))
 
     # ── 7. Who does the work ─────────────────────────────────────────────
     # "Decrease the system volume" is four words. The old gate was a word

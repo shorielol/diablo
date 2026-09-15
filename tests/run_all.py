@@ -21,6 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 
 SUITES = [
+    ("test_architecture.py", False, "the invariants: who owns what, and what delegates"),
     ("test_diablo.py",       False, "tool contracts, clarify loop, fast path"),
     ("test_mcp.py",          False, "MCP wire protocol against an embedded server"),
     ("test_filesystem.py",   False, "every file tool, and the sandbox boundary"),

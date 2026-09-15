@@ -14,7 +14,7 @@ def focus_zen():
 
 def send_whatsapp_msg(recipient: str, message: str):
     """
-    Automates WhatsApp Web (Zen Browser) to send a message.
+    Automates WhatsApp Web (in your default browser) to send a message.
     Force-navigates to web.whatsapp.com first.
     """
     print(f"  [WhatsApp Tool] Starting message to {recipient}...")
