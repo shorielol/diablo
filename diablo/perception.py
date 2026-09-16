@@ -53,6 +53,139 @@ FLOOR = config.env_float("DIABLO_LOCATE_FLOOR", 0.45, low=0.1, high=0.95)
 # confidence, and choosing between them is a guess wearing a number.
 AMBIGUOUS_WITHIN = config.env_float("DIABLO_AMBIGUOUS_WITHIN", 0.12, low=0.01, high=0.5)
 
+# ─── Arbitration ─────────────────────────────────────────────────────────────
+#
+# How much clear water the best candidate needs before Diablo acts on it
+# instead of asking.
+#
+# This was a flat 0.12 for every case, and the measured consequence was that
+# `_score` cannot express a strong preference. The scorer has tiers:
+#
+#     exact normalised match                 1.000
+#     every asked-for word present           0.930 - 0.02 per extra word
+#     fragment entirely inside the request   0.850
+#
+# so the distance from an exact match to the best possible partial match is
+# 0.070, and from "save" to "Save a Copy" it is 0.090. Both are below 0.12.
+# An exact match therefore could not out-resolve a partial one — not because
+# the threshold was badly chosen, but because a single absolute number cannot
+# separate tiers that are 0.07 apart while also being cautious about two weak
+# guesses 0.09 apart. Measured on the Build 1 corpus: four of fusion's five
+# regressions against accessibility alone were exactly this, at top confidence
+# 0.93 to 1.00.
+#
+# The rule that replaces it asks for less separation as the evidence gets
+# stronger:
+#
+#     required = SEPARATION * (1 - top_confidence)
+#
+# The reasoning is about what a near-tie means at each end of the scale. At
+# 0.50 the top candidate is a poor match in its own right, so a runner-up
+# close behind it says "I do not really know which, or whether either" — that
+# deserves a question. At 1.00 the top candidate is exactly what was asked
+# for, and a runner-up at 0.91 does not make it less exactly that.
+#
+# SEPARATION is not a new free parameter. It is set so the new rule agrees
+# with the old one at the midpoint of the confidence scale: at a top
+# confidence of 0.5 it requires 0.12, which is what every case required
+# before. Above 0.5 it is more permissive, below 0.5 stricter. One number,
+# derived from the number it replaces.
+SEPARATION = config.env_float("DIABLO_SEPARATION", AMBIGUOUS_WITHIN * 2.0,
+                              low=0.02, high=1.0)
+
+# Below this a candidate is reported as weakly evidenced even when it wins.
+# Reuses the bar the cascade already applies in `_needs_a_second_opinion`:
+# under it, locate() does not consider accessibility decisive on its own.
+DECISIVE = 0.92
+
+# "absolute" restores the pre-Build-2 rule, for A/B measurement and rollback.
+ARBITRATION = os.getenv("DIABLO_ARBITRATION", "relative").strip().lower()
+
+
+class Verdict:
+    """
+    What arbitration concluded. Five states that used to be two.
+
+    `ambiguous` alone could not tell a caller whether the screen had even been
+    read, whether anything matched, or whether the winner was weakly evidenced.
+    """
+
+    RESOLVED = "resolved"                      # one candidate satisfies the rule
+    AMBIGUOUS = "ambiguous"                    # several remain indistinguishable
+    LOW_CONFIDENCE = "low_confidence"          # one wins, on weak evidence
+    NOT_FOUND = "not_found"                    # nothing cleared the floor
+    INVALID_OBSERVATION = "invalid_observation"  # the screen could not be read
+
+
+def _discriminating(top: Candidate, runner: Optional[Candidate]) -> bool:
+    """
+    Whether the top candidate's corroboration actually tells the two apart.
+
+    Measured case that produced this rule. Asked for "the done button" against
+    a window holding "Mark Done" and "Mark Done Later", accessibility scored
+    them 0.910 and 0.890 — a 0.020 gap. OCR then read both labels and agreed
+    with both, lifting them to 0.959 and 0.949. Corroboration had raised the
+    winner's confidence, which under the separation rule lowers the bar it has
+    to clear, while simultaneously compressing the gap to 0.010. The two
+    effects nearly cancelled and the case resolved by 0.0002 — a genuine tie
+    decided by rounding.
+
+    Agreement between instruments is only evidence about *which* candidate is
+    right when the instruments do not agree equally about both. When the
+    runner-up carries the same sources, the corroboration is common-mode: it
+    says both labels are really on screen, which was never in doubt.
+    """
+    if runner is None:
+        return True
+    return set(top.sources) > set(runner.sources)
+
+
+def _separation(top: Candidate, runner: Optional[Candidate],
+                fused_margin: float) -> tuple:
+    """
+    The gap to judge, and the confidence to judge it against.
+
+    When corroboration does not discriminate, it is ignored on BOTH sides of
+    the comparison — the gap and the bar. Ignoring it on only one side was the
+    first version of this rule and it produced a theme-dependent answer.
+
+    The reason is a property of how `_fuse` combines agreement:
+
+        fused = c + (1 - c) * other * 0.6
+
+    That curve is concave, so it lifts a weaker candidate further than a
+    stronger one. Two candidates corroborated by the same instruments
+    therefore converge. Measured on the controls fixture asking for "the Save
+    button": accessibility alone scores Save 0.930 and "Save a Copy" 0.910, a
+    gap of 0.0200. In dark mode OCR can also read the labels, agrees with
+    both, and the fused pair becomes 0.969 and 0.959 — the same two controls,
+    the same evidence, a gap compressed to 0.0099.
+
+    Under the light theme that case resolved and under the dark theme it asked
+    a question. Whether OCR happens to be able to read the glass is not
+    information about which button the user meant, so it must not change the
+    answer.
+    """
+    if runner is None:
+        return fused_margin, top.confidence
+    if _discriminating(top, runner):
+        return fused_margin, top.confidence
+    return (top.best_single - runner.best_single), top.best_single
+
+
+def required_margin(top_confidence: float) -> float:
+    """
+    The separation the best candidate needs over the runner-up.
+
+    Falls linearly to zero as the top candidate approaches certainty. Bounded
+    on both sides by construction: `top` is clamped to 0..1 by every source, so
+    the result is always between 0 and SEPARATION.
+    """
+    if ARBITRATION == "absolute":
+        return AMBIGUOUS_WITHIN
+    top = max(0.0, min(1.0, float(top_confidence)))
+    return SEPARATION * (1.0 - top)
+
 # How near two candidates must be, in points, to be treated as the same
 # control seen by two different instruments.
 SAME_CONTROL = config.env_float("DIABLO_SAME_CONTROL", 26.0, low=4.0, high=200.0)
@@ -77,6 +210,13 @@ class Candidate:
     # Carries the frame it was looking at, so the evidence can be checked for
     # staleness rather than trusted because it exists.
     vision: Any = None
+    # What each instrument said on its own, before fusion combined them.
+    #
+    # `confidence` is the fused figure and _fuse overwrites it when sources
+    # agree, which used to destroy the only record of what any single source
+    # actually claimed. Keeping both means "accessibility was 0.62 and OCR was
+    # 0.58, together 0.84" is answerable; before, only the 0.84 survived.
+    source_confidence: Dict[str, float] = field(default_factory=dict)
 
     @property
     def centre(self) -> Tuple[float, float]:
@@ -86,6 +226,17 @@ class Candidate:
     def corroborated(self) -> bool:
         """Seen by more than one instrument."""
         return len(set(self.sources)) > 1
+
+    @property
+    def best_single(self) -> float:
+        """
+        The strongest claim any one instrument made, before fusion combined
+        them. Falls back to the fused figure for a candidate built before
+        source confidences were recorded.
+        """
+        if self.source_confidence:
+            return max(self.source_confidence.values())
+        return self.confidence
 
     def describe(self) -> str:
         what = (self.role or "control").replace("AX", "").lower()
@@ -131,6 +282,7 @@ def _from_accessibility(intent: str, window: Dict[str, Any]) -> List[Candidate]:
             label=element.label, role=element.role,
             x=element.x, y=element.y, width=element.width, height=element.height,
             confidence=score, sources=["accessibility"], evidence=evidence,
+            source_confidence={"accessibility": score},
             enabled=element.enabled, app=element.app))
     return out
 
@@ -162,7 +314,7 @@ def _from_ocr(intent: str, window: Dict[str, Any],
             x=float(hit["x"]) - 30.0, y=float(hit["y"]) - 10.0,
             width=60.0, height=20.0,
             confidence=float(hit.get("score", 0.0)),
-            sources=["ocr"],
+            sources=["ocr"], source_confidence={"ocr": float(hit.get("score", 0.0))},
             evidence=[f"the words “{hit.get('text','')[:40]}” are on screen there"],
             app=window.get("app", "")))
     return out
@@ -188,6 +340,28 @@ def _same_control(a: Candidate, b: Candidate) -> bool:
     ax_, ay = a.centre
     bx, by = b.centre
     return ((ax_ - bx) ** 2 + (ay - by) ** 2) ** 0.5 <= SAME_CONTROL
+
+
+def _same_frame(a: Candidate, b: Candidate) -> bool:
+    """
+    Whether two candidates were seen on the same screen.
+
+    Only the vision layer records which frame it was looking at, so this can
+    only ever catch vision evidence that has drifted — which is exactly the
+    case worth catching, because a vision candidate is the one produced from a
+    cached crop that may predate the current screen. When neither side carries
+    a fingerprint there is nothing to compare and the merge proceeds as before.
+    """
+    fa = getattr(getattr(a, "vision", None), "frame_fingerprint", None)
+    fb = getattr(getattr(b, "vision", None), "frame_fingerprint", None)
+    if not fa or not fb:
+        return True
+    if len(fa) != len(fb):
+        return False
+    # The same tolerance ScreenFrame comparison uses for "the screen has not
+    # materially changed", rather than a second notion of sameness.
+    drift = sum(abs(int(x) - int(y)) for x, y in zip(fa, fb)) / float(len(fa))
+    return drift <= 6.0
 
 
 def _fuse(candidates: List[Candidate]) -> List[Candidate]:
@@ -216,8 +390,16 @@ def _fuse(candidates: List[Candidate]) -> List[Candidate]:
                 continue
             if set(candidate.sources) <= set(existing.sources):
                 break
+            if not _same_frame(existing, candidate):
+                # Two instruments looking at different screens are not two
+                # instruments agreeing. Merging them would manufacture
+                # corroboration out of a stale crop, so they stay separate
+                # candidates and arbitration sees the disagreement.
+                continue
             existing.sources.extend(candidate.sources)
             existing.evidence.extend(candidate.evidence)
+            for name, value in (candidate.source_confidence or {}).items():
+                existing.source_confidence.setdefault(name, value)
             # Agreement raises confidence toward certainty without ever
             # reaching it, and never lowers it.
             existing.confidence = min(
@@ -331,6 +513,84 @@ class Reading:
                       if isinstance(note, dict) and note.get("ok") is False)
 
     @property
+    def required(self) -> float:
+        """The separation this reading's top candidate had to clear."""
+        if not self.best:
+            return 0.0
+        runner = self.candidates[1] if len(self.candidates) > 1 else None
+        return required_margin(_separation(self.best, runner, self.margin)[1])
+
+    @property
+    def separation(self) -> float:
+        """The gap arbitration actually judged, which is not always `margin`."""
+        if not self.best:
+            return 0.0
+        runner = self.candidates[1] if len(self.candidates) > 1 else None
+        return _separation(self.best, runner, self.margin)[0]
+
+    @property
+    def verdict(self) -> str:
+        """
+        One of five states, which `ambiguous` alone could not express.
+
+        Order matters. An unreadable screen is reported as such even when a
+        source that could see returned something, because a caller deciding
+        whether to act should know one of its instruments was blind.
+        """
+        if self.unreadable and not self.candidates:
+            return Verdict.INVALID_OBSERVATION
+        if not self.candidates:
+            return Verdict.NOT_FOUND
+        if self.ambiguous:
+            return Verdict.AMBIGUOUS
+        if self.best is not None and self.best.confidence < DECISIVE:
+            return Verdict.LOW_CONFIDENCE
+        return Verdict.RESOLVED
+
+    def explain(self) -> str:
+        """
+        Why arbitration concluded what it did. For `diablo trace` and debug
+        output, never for the spoken reply.
+        """
+        state = self.verdict
+        if state == Verdict.INVALID_OBSERVATION:
+            why = "; ".join(
+                f"{name}: {(self.observation.get(name) or {}).get('problem', '')}"
+                for name in self.unreadable)
+            return f"INVALID_OBSERVATION\n  the screen could not be read — {why}"
+        if state == Verdict.NOT_FOUND:
+            return ("NOT_FOUND\n  no candidate cleared the acceptance floor "
+                    f"of {FLOOR}")
+        best = self.best
+        runner = self.candidates[1] if len(self.candidates) > 1 else None
+        lines = [
+            f"{state.upper()}: {best.describe()}",
+            f"  confidence   {best.confidence:.3f}"
+            f"  from {'+'.join(sorted(set(best.sources)))}",
+            f"  runner-up    " + (f"{runner.confidence:.3f}  {runner.describe()}"
+                                  if runner else "none"),
+            f"  separation   {self.separation:.3f} against {self.required:.3f} required"
+            + ("  (judged on single-source evidence: agreement did not "
+               "separate them)" if abs(self.separation - self.margin) > 1e-9 else ""),
+            f"  rule         {ARBITRATION}: "
+            + (f"{SEPARATION} x (1 - {best.confidence:.3f})"
+               if ARBITRATION != "absolute" else f"flat {AMBIGUOUS_WITHIN}"),
+        ]
+        if best.corroborated:
+            lines.append("  agreement    "
+                         + ", ".join(sorted(set(best.sources))) + " concur")
+        for note in best.evidence:
+            lines.append(f"  evidence     {note}")
+        if state == Verdict.AMBIGUOUS:
+            lines.append("  the evidence does not separate these two")
+        if state == Verdict.LOW_CONFIDENCE:
+            lines.append(f"  wins, but below the decisive bar of {DECISIVE}")
+        if self.unreadable:
+            lines.append("  note         " + ", ".join(self.unreadable)
+                         + " could not read the screen")
+        return "\n".join(lines)
+
+    @property
     def best(self) -> Optional[Candidate]:
         return self.candidates[0] if self.candidates else None
 
@@ -355,8 +615,16 @@ def read(intent: str, window: Optional[Dict[str, Any]] = None) -> Reading:
         return Reading(observation=seen)
     margin = (candidates[0].confidence - candidates[1].confidence
               if len(candidates) > 1 else 1.0)
+    # Strictly greater, so two candidates that score identically are always
+    # ambiguous — including two at 1.000, where the required margin is zero.
+    # Two controls genuinely labelled the same thing must never resolve by
+    # arriving in a particular order.
+    top = candidates[0]
+    runner = candidates[1] if len(candidates) > 1 else None
+    separation, basis = _separation(top, runner, margin)
+    decisive = separation > required_margin(basis)
     return Reading(candidates=candidates,
-                   ambiguous=len(candidates) > 1 and margin < AMBIGUOUS_WITHIN,
+                   ambiguous=len(candidates) > 1 and not decisive,
                    margin=margin, observation=seen)
 
 
@@ -691,6 +959,7 @@ def _from_vision(intent: str, window: Dict[str, Any],
             # a real label always wins, and rises only through corroboration.
             confidence=min(confidence, 0.88),
             sources=["vision"],
+            source_confidence={"vision": min(confidence, 0.88)},
             evidence=[f"it looks like {icon}" + (f" — {evidence.reason}"
                                                  if evidence.reason else "")],
             enabled=element.enabled, app=element.app, vision=evidence))

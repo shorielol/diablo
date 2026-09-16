@@ -576,3 +576,81 @@ unsynchronised), G8 (permission modelled twice), G9 (59% of trace events
 unattributed outside the benchmark), G10 (no persistence). G4 is partly
 addressed: the structured reading survives into the trace, but no production
 consumer receives it as data, because there is not yet a consumer that wants it.
+
+
+---
+
+## 15. Build 2 corrections — fusion arbitration
+
+The audit's §12 recommended Build 2 after the OCR validity gap was closed.
+That happened in Build 1.5; this is the arbitration change it unblocked.
+
+**The defect, stated structurally rather than as a disliked number.**
+`pointing._score` returns values in tiers: an exact normalised match is 1.000,
+every asked-for word present is 0.930 minus 0.02 per extra word, and a fragment
+wholly inside the request is 0.850. The largest possible gap from an exact match
+to the best partial match is therefore 0.070, and the measured gap from "save"
+to "Save a Copy" is 0.090. Both sit below the flat `AMBIGUOUS_WITHIN` of 0.120,
+so **an exact match could not out-resolve a partial one** — not because the
+threshold was badly chosen, but because one absolute number cannot separate
+tiers 0.07 apart while staying cautious about two weak guesses 0.09 apart.
+
+**BEFORE.** `ambiguous = margin < 0.12`, applied identically at every confidence.
+Fusion scored 56% top-1 against accessibility's 72%, with four false
+ambiguities at top confidence 0.93 to 1.00.
+
+**AFTER.** `resolved = separation > SEPARATION * (1 - basis)`, strictly greater,
+with `SEPARATION = 2 * AMBIGUOUS_WITHIN`. The doubling is not a free parameter:
+it makes the new rule require exactly the old 0.12 at a top confidence of 0.5,
+so the rule is anchored to the one it replaces and is more permissive only above
+that midpoint.
+
+Two measurements changed the design during the build, both worth recording:
+
+1. **Corroboration was relaxing the bar without discriminating.** Asked for "the
+   done button" against "Mark Done" and "Mark Done Later", accessibility scored
+   0.910 and 0.890; OCR then agreed with both, lifting them to 0.959 and 0.949.
+   Higher confidence lowered the required margin while the gap compressed, and
+   the case resolved by 0.0002 — a genuine tie decided by rounding.
+
+2. **The compression is a property of `_fuse`.** Its combination rule
+   `c + (1 - c) * other * 0.6` is concave, so it lifts the weaker candidate
+   further. The same two Save buttons resolved under the light theme, where OCR
+   read nothing, and asked a question under the dark theme, where OCR read both
+   labels. Whether OCR can read the glass is not information about which button
+   the user meant.
+
+So corroboration is now ignored on **both** sides — separation and basis — when
+the top candidate's sources do not strictly contain the runner-up's. The answer
+is theme-independent, which is the property that says the rule is right.
+
+**Result, three runs per arm because the vision model is sampled:**
+
+| | before | after |
+|---|---:|---:|
+| fusion top-1 | 56.0% | **72.0%** |
+| fusion precision | 66.7% | **85.7%** |
+| correct resolutions | 14 | **18** |
+| false ambiguity | 4 | **0** |
+| **wrong targets** | **0** | **0** |
+| cases answered | 21 | 21 |
+
+Four cases changed, all false ambiguity becoming correct. None regressed.
+Fusion now matches accessibility's 72% while also covering the two categories
+accessibility cannot see at all.
+
+**A methodological note that cost a rebuild.** A single run of each arm reported
+72% against 60% with two wrong targets, which looked like the new rule breaking
+the safety invariant. Three vision-only runs on the same four icon cases
+returned 2, 0 and 3 correct. The wrong targets were the vision model labelling a
+gear as "search", not arbitration. Any future A/B on this corpus needs repeats.
+
+`Candidate` gained `source_confidence` so fusion no longer destroys what each
+instrument claimed on its own, and `Reading` now reports five states —
+RESOLVED, AMBIGUOUS, LOW_CONFIDENCE, NOT_FOUND, INVALID_OBSERVATION — where
+`ambiguous` alone could express two. `Reading.explain()` renders the arbitration
+for `diablo trace`, never for speech.
+
+Safety unchanged: `computer_use` unconnected, `do_engine` without a production
+consumer, 48 tools with no click, type or press, and `tests/test_fusion.py`
+asserting all of it.

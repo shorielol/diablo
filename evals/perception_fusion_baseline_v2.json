@@ -1,0 +1,533 @@
+{
+  "version": 2,
+  "corpus": "evals/perception_cases.json (25 cases, unchanged from Build 1)",
+  "methodology": "Same corpus, same ground truth, same source detectors. Only the arbitration rule differs, switched by DIABLO_ARBITRATION. Three runs per arm because the vision model is sampled and not deterministic: a single run of each arm produced 72% vs 60% and two wrong targets, all of which were vision variance rather than arbitration. Figures below are per-run values that were identical across all three runs unless a range is given.",
+  "old_algorithm": "ambiguous = margin < AMBIGUOUS_WITHIN (0.12), a flat absolute threshold applied at every confidence level.",
+  "new_algorithm": "resolved = separation > SEPARATION * (1 - basis), SEPARATION = 2 * AMBIGUOUS_WITHIN = 0.24, strictly greater. When the top candidate's corroboration does not distinguish it from the runner-up, both the separation and the basis come from each candidate's strongest single source instead of the fused figures.",
+  "before": {
+    "ax": {
+      "runs": 3,
+      "measurements": 75,
+      "correct": 18,
+      "top1_per_run": [
+        0.72,
+        0.72,
+        0.72
+      ],
+      "in_top3": 0,
+      "wrong_target": 0,
+      "off_target": 0,
+      "not_found": 5,
+      "abstained": 2,
+      "ambiguous_right": 0,
+      "false_ambiguity": 0,
+      "ambiguity_missed": 0,
+      "should_have_abstained": 0,
+      "median_ms": 6.2,
+      "p95_ms": 35.4
+    },
+    "ocr": {
+      "runs": 3,
+      "measurements": 75,
+      "correct": 6,
+      "top1_per_run": [
+        0.24,
+        0.24,
+        0.24
+      ],
+      "in_top3": 0,
+      "wrong_target": 0,
+      "off_target": 0,
+      "not_found": 17,
+      "abstained": 2,
+      "ambiguous_right": 0,
+      "false_ambiguity": 0,
+      "ambiguity_missed": 0,
+      "should_have_abstained": 0,
+      "median_ms": 176.7,
+      "p95_ms": 211.1
+    },
+    "vision": {
+      "runs": 3,
+      "measurements": 75,
+      "correct": 2,
+      "top1_per_run": [
+        0.08,
+        0.12,
+        0.12
+      ],
+      "in_top3": 0,
+      "wrong_target": 0,
+      "off_target": 0,
+      "not_found": 20,
+      "abstained": 2,
+      "ambiguous_right": 0,
+      "false_ambiguity": 0,
+      "ambiguity_missed": 0,
+      "should_have_abstained": 0,
+      "median_ms": 11.5,
+      "p95_ms": 6341.7
+    },
+    "fusion": {
+      "runs": 3,
+      "measurements": 75,
+      "correct": 14,
+      "top1_per_run": [
+        0.56,
+        0.56,
+        0.56
+      ],
+      "in_top3": 0,
+      "wrong_target": 0,
+      "off_target": 0,
+      "not_found": 2,
+      "abstained": 2,
+      "ambiguous_right": 1,
+      "false_ambiguity": 4,
+      "ambiguity_missed": 1,
+      "should_have_abstained": 0,
+      "median_ms": 180.1,
+      "p95_ms": 511.5
+    }
+  },
+  "after": {
+    "ax": {
+      "runs": 3,
+      "measurements": 75,
+      "correct": 18,
+      "top1_per_run": [
+        0.72,
+        0.72,
+        0.72
+      ],
+      "in_top3": 0,
+      "wrong_target": 0,
+      "off_target": 0,
+      "not_found": 5,
+      "abstained": 2,
+      "ambiguous_right": 0,
+      "false_ambiguity": 0,
+      "ambiguity_missed": 0,
+      "should_have_abstained": 0,
+      "median_ms": 7.2,
+      "p95_ms": 34.8
+    },
+    "ocr": {
+      "runs": 3,
+      "measurements": 75,
+      "correct": 6,
+      "top1_per_run": [
+        0.24,
+        0.24,
+        0.24
+      ],
+      "in_top3": 0,
+      "wrong_target": 0,
+      "off_target": 0,
+      "not_found": 17,
+      "abstained": 2,
+      "ambiguous_right": 0,
+      "false_ambiguity": 0,
+      "ambiguity_missed": 0,
+      "should_have_abstained": 0,
+      "median_ms": 174.0,
+      "p95_ms": 238.5
+    },
+    "vision": {
+      "runs": 3,
+      "measurements": 75,
+      "correct": 2,
+      "top1_per_run": [
+        0.08,
+        0.12,
+        0.12
+      ],
+      "in_top3": 0,
+      "wrong_target": 0,
+      "off_target": 0,
+      "not_found": 20,
+      "abstained": 2,
+      "ambiguous_right": 0,
+      "false_ambiguity": 0,
+      "ambiguity_missed": 0,
+      "should_have_abstained": 0,
+      "median_ms": 10.9,
+      "p95_ms": 6368.8
+    },
+    "fusion": {
+      "runs": 3,
+      "measurements": 75,
+      "correct": 18,
+      "top1_per_run": [
+        0.72,
+        0.72,
+        0.72
+      ],
+      "in_top3": 0,
+      "wrong_target": 0,
+      "off_target": 0,
+      "not_found": 2,
+      "abstained": 2,
+      "ambiguous_right": 1,
+      "false_ambiguity": 0,
+      "ambiguity_missed": 1,
+      "should_have_abstained": 0,
+      "median_ms": 167.5,
+      "p95_ms": 517.3
+    }
+  },
+  "cases": [
+    {
+      "case": "abs-delete",
+      "ground_truth": null,
+      "wanted": "abstain",
+      "category": "absent",
+      "accessibility": "abstained",
+      "old_fusion": "abstained",
+      "new_fusion": "abstained",
+      "top_confidence": null,
+      "sources": null,
+      "changed": false
+    },
+    {
+      "case": "abs-print",
+      "ground_truth": null,
+      "wanted": "abstain",
+      "category": "absent",
+      "accessibility": "abstained",
+      "old_fusion": "abstained",
+      "new_fusion": "abstained",
+      "top_confidence": null,
+      "sources": null,
+      "changed": false
+    },
+    {
+      "case": "btn-save",
+      "ground_truth": "save",
+      "wanted": "found",
+      "category": "labelled_button",
+      "accessibility": "correct",
+      "old_fusion": "false_ambiguity",
+      "new_fusion": "correct",
+      "top_confidence": 0.93,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": true
+    },
+    {
+      "case": "btn-save-copy",
+      "ground_truth": "save_copy",
+      "wanted": "found",
+      "category": "labelled_button",
+      "accessibility": "correct",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 1.0,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": false
+    },
+    {
+      "case": "btn-submit",
+      "ground_truth": "submit",
+      "wanted": "found",
+      "category": "labelled_button",
+      "accessibility": "correct",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 1.0,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": false
+    },
+    {
+      "case": "chk-notify",
+      "ground_truth": "notify",
+      "wanted": "found",
+      "category": "checkbox",
+      "accessibility": "correct",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 1.0,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": false
+    },
+    {
+      "case": "chk-subscribe",
+      "ground_truth": "subscribe",
+      "wanted": "found",
+      "category": "checkbox",
+      "accessibility": "correct",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 0.85,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": false
+    },
+    {
+      "case": "dark-edge",
+      "ground_truth": "edge_right",
+      "wanted": "found",
+      "category": "dark_mode",
+      "accessibility": "correct",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 0.93,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": false
+    },
+    {
+      "case": "dark-notify",
+      "ground_truth": "notify",
+      "wanted": "found",
+      "category": "dark_mode",
+      "accessibility": "correct",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 1.0,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": false
+    },
+    {
+      "case": "dark-save",
+      "ground_truth": "save",
+      "wanted": "found",
+      "category": "dark_mode",
+      "accessibility": "correct",
+      "old_fusion": "false_ambiguity",
+      "new_fusion": "correct",
+      "top_confidence": 0.969,
+      "sources": [
+        "accessibility",
+        "ocr"
+      ],
+      "changed": true
+    },
+    {
+      "case": "dis-archive",
+      "ground_truth": "archived",
+      "wanted": "found",
+      "category": "disabled",
+      "accessibility": "correct",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 0.93,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": false
+    },
+    {
+      "case": "edge-bottom",
+      "ground_truth": "edge_bottom",
+      "wanted": "found",
+      "category": "near_edge",
+      "accessibility": "correct",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 0.93,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": false
+    },
+    {
+      "case": "edge-left",
+      "ground_truth": "edge_left",
+      "wanted": "found",
+      "category": "near_edge",
+      "accessibility": "correct",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 0.93,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": false
+    },
+    {
+      "case": "edge-right",
+      "ground_truth": "edge_right",
+      "wanted": "found",
+      "category": "near_edge",
+      "accessibility": "correct",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 0.93,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": false
+    },
+    {
+      "case": "icon-gear-dup",
+      "ground_truth": "gear_one",
+      "wanted": "ambiguous",
+      "category": "duplicate",
+      "accessibility": "not_found",
+      "old_fusion": "ambiguous_right",
+      "new_fusion": "ambiguous_right",
+      "top_confidence": 0.88,
+      "sources": [
+        "vision"
+      ],
+      "changed": false
+    },
+    {
+      "case": "icon-home",
+      "ground_truth": "house",
+      "wanted": "found",
+      "category": "icon_unlabelled",
+      "accessibility": "not_found",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 0.88,
+      "sources": [
+        "vision"
+      ],
+      "changed": false
+    },
+    {
+      "case": "icon-save-label",
+      "ground_truth": "save_label",
+      "wanted": "found",
+      "category": "labelled_button",
+      "accessibility": "correct",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 1.0,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": false
+    },
+    {
+      "case": "icon-search",
+      "ground_truth": "magnifier",
+      "wanted": "found",
+      "category": "icon_unlabelled",
+      "accessibility": "not_found",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 0.88,
+      "sources": [
+        "vision"
+      ],
+      "changed": false
+    },
+    {
+      "case": "sim-ambiguous",
+      "ground_truth": "save",
+      "wanted": "ambiguous",
+      "category": "similar_labels",
+      "accessibility": "correct",
+      "old_fusion": "ambiguity_missed",
+      "new_fusion": "ambiguity_missed",
+      "top_confidence": 0.85,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": false
+    },
+    {
+      "case": "sim-save",
+      "ground_truth": "save",
+      "wanted": "found",
+      "category": "similar_labels",
+      "accessibility": "correct",
+      "old_fusion": "false_ambiguity",
+      "new_fusion": "correct",
+      "top_confidence": 1.0,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": true
+    },
+    {
+      "case": "tgt-done",
+      "ground_truth": "mark_done",
+      "wanted": "found",
+      "category": "similar_labels",
+      "accessibility": "correct",
+      "old_fusion": "false_ambiguity",
+      "new_fusion": "correct",
+      "top_confidence": 0.99,
+      "sources": [
+        "accessibility",
+        "ocr"
+      ],
+      "changed": true
+    },
+    {
+      "case": "tgt-later",
+      "ground_truth": "mark_done_later",
+      "wanted": "found",
+      "category": "similar_labels",
+      "accessibility": "correct",
+      "old_fusion": "correct",
+      "new_fusion": "correct",
+      "top_confidence": 1.0,
+      "sources": [
+        "accessibility"
+      ],
+      "changed": false
+    },
+    {
+      "case": "tgt-vague",
+      "ground_truth": "mark_done",
+      "wanted": "ambiguous",
+      "category": "similar_labels",
+      "accessibility": "correct",
+      "old_fusion": "ambiguous_right",
+      "new_fusion": "ambiguous_right",
+      "top_confidence": 0.959,
+      "sources": [
+        "accessibility",
+        "ocr"
+      ],
+      "changed": false
+    },
+    {
+      "case": "txt-email",
+      "ground_truth": "email_field",
+      "wanted": "found",
+      "category": "text_field",
+      "accessibility": "not_found",
+      "old_fusion": "not_found",
+      "new_fusion": "not_found",
+      "top_confidence": null,
+      "sources": null,
+      "changed": false
+    },
+    {
+      "case": "txt-first",
+      "ground_truth": "name_field",
+      "wanted": "found",
+      "category": "text_field",
+      "accessibility": "not_found",
+      "old_fusion": "not_found",
+      "new_fusion": "not_found",
+      "top_confidence": null,
+      "sources": null,
+      "changed": false
+    }
+  ],
+  "limitations": [
+    "25 cases, one display, one machine.",
+    "Vision is sampled and varies run to run: three vision-only runs on the four icon cases gave 2, 0 and 3 correct. Every vision-dependent figure carries that variance.",
+    "Two unlabelled AXTextField cases remain unreachable by every source; they are not an arbitration problem.",
+    "sim-ambiguous remains ambiguity_missed under both rules. The corpus expects 'the save control' to be ambiguous; both rules resolve it.",
+    "The frame-identity guard in _fuse is reached only when two candidates carry vision evidence and neither's source set contains the other's, because the source-subset check deduplicates first."
+  ]
+}

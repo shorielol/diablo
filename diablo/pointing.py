@@ -348,8 +348,10 @@ def _record(intent: str, reading, window: Optional[Dict[str, Any]]) -> None:
         note = {
             "intent": intent[:80],
             "found": bool(best),
+            "verdict": getattr(reading, "verdict", ""),
             "ambiguous": reading.ambiguous,
             "margin": round(reading.margin, 3),
+            "required": round(getattr(reading, "required", 0.0), 3),
             "candidates": len(reading.candidates),
             "app": (window or {}).get("app", ""),
             "window": ((window or {}).get("title") or "")[:60],
@@ -366,6 +368,10 @@ def _record(intent: str, reading, window: Optional[Dict[str, Any]]) -> None:
                 "role": best.role,
                 "confidence": round(best.confidence, 3),
                 "sources": "+".join(sorted(set(best.sources))),
+                "source_confidence": "; ".join(
+                    f"{k}={v:.3f}" for k, v in
+                    sorted((best.source_confidence or {}).items())),
+                "corroborated": best.corroborated,
                 "evidence": "; ".join(best.evidence)[:180],
                 "enabled": best.enabled,
                 "x": round(best.x, 1), "y": round(best.y, 1),
