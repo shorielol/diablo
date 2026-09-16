@@ -1,0 +1,297 @@
+{
+  "commit": "b58a7c0",
+  "generated": "2026-09-16",
+  "method": "resolved static imports + source execution tracing; graphify used for discovery only",
+  "matrix": [
+    {
+      "capability": "Intent",
+      "exists": true,
+      "production_entry": "route.classify (delegation_tool.py:399)",
+      "production_consumer": "delegation_tool.handle",
+      "test_consumer": "test_diablo, test_routing_live",
+      "feedback_path": "yes - Decision gates the router",
+      "status": "CONNECTED",
+      "note": ""
+    },
+    {
+      "capability": "Conversation",
+      "exists": true,
+      "production_entry": "conversation.talk (delegation_tool.py:440)",
+      "production_consumer": "voice_bridge, server",
+      "test_consumer": "test_brain, test_memory",
+      "feedback_path": "yes - session.remember",
+      "status": "CONNECTED",
+      "note": ""
+    },
+    {
+      "capability": "Context",
+      "exists": true,
+      "production_entry": "agent_core._system_prompt / conversation.look_if_asked",
+      "production_consumer": "agent_core.run",
+      "test_consumer": "test_agent",
+      "feedback_path": "partial - no owner, assembled per call site",
+      "status": "PARTIAL",
+      "note": "No Context Engine. Screen text attached ad hoc; no persistent or task context."
+    },
+    {
+      "capability": "Memory",
+      "exists": true,
+      "production_entry": "conversation.Session (in-memory)",
+      "production_consumer": "conversation, roster",
+      "test_consumer": "test_memory, test_working",
+      "feedback_path": "no - nothing survives restart",
+      "status": "PARTIAL",
+      "note": "JobStore persists jobs.json; Session and task evidence are RAM only."
+    },
+    {
+      "capability": "Task state",
+      "exists": true,
+      "production_entry": "do_engine.TaskState",
+      "production_consumer": "NONE",
+      "test_consumer": "test_do_engine, run_planner_eval",
+      "feedback_path": "no",
+      "status": "TEST-ONLY",
+      "note": "14-state machine with zero production consumers."
+    },
+    {
+      "capability": "Goal",
+      "exists": true,
+      "production_entry": "do_engine.Goal",
+      "production_consumer": "NONE",
+      "test_consumer": "test_do_engine",
+      "feedback_path": "no",
+      "status": "TEST-ONLY",
+      "note": "Goal.verified(window) exists; nothing in production constructs a Goal."
+    },
+    {
+      "capability": "Planner (task)",
+      "exists": true,
+      "production_entry": "agent_core.plan (agent_core.py:390)",
+      "production_consumer": "agent_core.run",
+      "test_consumer": "test_agent",
+      "feedback_path": "no - plan is prompt text, never revisited",
+      "status": "PARTIAL",
+      "note": ""
+    },
+    {
+      "capability": "Planner (action)",
+      "exists": true,
+      "production_entry": "do_engine.model_planner",
+      "production_consumer": "NONE",
+      "test_consumer": "run_planner_eval (stubbed screen)",
+      "feedback_path": "no",
+      "status": "TEST-ONLY",
+      "note": ""
+    },
+    {
+      "capability": "Plan step",
+      "exists": true,
+      "production_entry": "do_engine.Step",
+      "production_consumer": "NONE",
+      "test_consumer": "test_do_engine",
+      "feedback_path": "no",
+      "status": "TEST-ONLY",
+      "note": ""
+    },
+    {
+      "capability": "Tool selection",
+      "exists": true,
+      "production_entry": "agent_tools.select (agent_core.py:513)",
+      "production_consumer": "agent_core.run",
+      "test_consumer": "test_diablo",
+      "feedback_path": "yes",
+      "status": "CONNECTED",
+      "note": ""
+    },
+    {
+      "capability": "Tool execution",
+      "exists": true,
+      "production_entry": "agent_tools.execute (agent_core.py:708)",
+      "production_consumer": "agent_core.run",
+      "test_consumer": "test_filesystem, test_safety",
+      "feedback_path": "yes - result appended to messages",
+      "status": "CONNECTED",
+      "note": ""
+    },
+    {
+      "capability": "Skills",
+      "exists": false,
+      "production_entry": "skill_registry.discover_skills",
+      "production_consumer": "agent_tools._skill (dynamic import)",
+      "test_consumer": "none",
+      "feedback_path": "n/a",
+      "status": "PLANNED",
+      "note": "skill_registry is a module indexer, not a skill engine."
+    },
+    {
+      "capability": "ScreenFrame",
+      "exists": true,
+      "production_entry": "screen.capture_window / capture_this_window",
+      "production_consumer": "screen_context, perception(vision), agent_tools",
+      "test_consumer": "test_screen",
+      "feedback_path": "yes - frame.context()",
+      "status": "CONNECTED",
+      "note": ""
+    },
+    {
+      "capability": "Accessibility",
+      "exists": true,
+      "production_entry": "ax.elements_for_window",
+      "production_consumer": "perception._from_accessibility",
+      "test_consumer": "test_perception, test_perception_eval",
+      "feedback_path": "yes - Candidate",
+      "status": "CONNECTED",
+      "note": ""
+    },
+    {
+      "capability": "OCR",
+      "exists": true,
+      "production_entry": "screen_context._ocr_fragments",
+      "production_consumer": "pointing.locate, screen_context.look",
+      "test_consumer": "test_pointing",
+      "feedback_path": "yes - Candidate",
+      "status": "CONNECTED",
+      "note": "Bypasses ScreenFrame and the validity gate."
+    },
+    {
+      "capability": "Vision",
+      "exists": true,
+      "production_entry": "perception._from_vision",
+      "production_consumer": "perception.locate",
+      "test_consumer": "test_vision_targets",
+      "feedback_path": "yes - Candidate + VisionEvidence",
+      "status": "CONNECTED",
+      "note": ""
+    },
+    {
+      "capability": "Candidate",
+      "exists": true,
+      "production_entry": "perception.Candidate",
+      "production_consumer": "perception.locate/read",
+      "test_consumer": "test_perception",
+      "feedback_path": "yes",
+      "status": "CONNECTED",
+      "note": ""
+    },
+    {
+      "capability": "Fusion",
+      "exists": true,
+      "production_entry": "perception._fuse (perception.py:181)",
+      "production_consumer": "perception.locate",
+      "test_consumer": "test_perception, run_perception_eval",
+      "feedback_path": "yes",
+      "status": "CONNECTED",
+      "note": ""
+    },
+    {
+      "capability": "Policy",
+      "exists": true,
+      "production_entry": "computer_use.risk_of / decide",
+      "production_consumer": "NONE (only via do_engine)",
+      "test_consumer": "test_perception, golden_path",
+      "feedback_path": "no",
+      "status": "TEST-ONLY",
+      "note": ""
+    },
+    {
+      "capability": "Permission",
+      "exists": true,
+      "production_entry": "computer_use.Grant / ask",
+      "production_consumer": "NONE (only via do_engine)",
+      "test_consumer": "golden_path",
+      "feedback_path": "no",
+      "status": "TEST-ONLY",
+      "note": "agent_tools.CONTEXT['confirm'] is the LIVE permission gate; Grant is separate and unreached."
+    },
+    {
+      "capability": "Computer use",
+      "exists": true,
+      "production_entry": "computer_use.act_on (do_engine.py:605)",
+      "production_consumer": "state() only, via agent_tools.screen_privacy",
+      "test_consumer": "golden_path, test_perception",
+      "feedback_path": "no",
+      "status": "DISCONNECTED",
+      "note": "Only live reach is a read-only status call. ENABLED defaults off."
+    },
+    {
+      "capability": "Action executor",
+      "exists": true,
+      "production_entry": "computer_use._post_click",
+      "production_consumer": "NONE",
+      "test_consumer": "golden_path",
+      "feedback_path": "no",
+      "status": "DISCONNECTED",
+      "note": ""
+    },
+    {
+      "capability": "Verification (action)",
+      "exists": true,
+      "production_entry": "computer_use compare / do_engine.classify",
+      "production_consumer": "NONE",
+      "test_consumer": "test_do_engine",
+      "feedback_path": "no",
+      "status": "TEST-ONLY",
+      "note": ""
+    },
+    {
+      "capability": "Verification (answer)",
+      "exists": true,
+      "production_entry": "agent_core guards (7)",
+      "production_consumer": "agent_core.run",
+      "test_consumer": "test_agent, test_tidying",
+      "feedback_path": "yes - retry or rephrase",
+      "status": "CONNECTED",
+      "note": ""
+    },
+    {
+      "capability": "Recovery",
+      "exists": true,
+      "production_entry": "do_engine recovery (11 failure classes)",
+      "production_consumer": "NONE",
+      "test_consumer": "test_do_engine",
+      "feedback_path": "no",
+      "status": "TEST-ONLY",
+      "note": ""
+    },
+    {
+      "capability": "Guide",
+      "exists": true,
+      "production_entry": "agent_tools.point_at -> pointing.point_at",
+      "production_consumer": "agent_core.run (tool)",
+      "test_consumer": "test_pointing, test_walkthrough",
+      "feedback_path": "partial - returns a string, marker is fire-and-forget",
+      "status": "PARTIAL",
+      "note": ""
+    },
+    {
+      "capability": "Voice",
+      "exists": true,
+      "production_entry": "voice.speak / speak_stream",
+      "production_consumer": "voice_bridge, companion_manager",
+      "test_consumer": "test_voice",
+      "feedback_path": "yes - audio callbacks drive DiabloState",
+      "status": "CONNECTED",
+      "note": ""
+    },
+    {
+      "capability": "Trace",
+      "exists": true,
+      "production_entry": "trace.event",
+      "production_consumer": "delegation_tool, route, agent_core, roster, server",
+      "test_consumer": "test_perception_eval",
+      "feedback_path": "partial - 59% of events lack a turn id",
+      "status": "PARTIAL",
+      "note": ""
+    },
+    {
+      "capability": "Missions",
+      "exists": false,
+      "production_entry": "none",
+      "production_consumer": "none",
+      "test_consumer": "none",
+      "feedback_path": "n/a",
+      "status": "PLANNED",
+      "note": "No Mission, scheduler, or trigger code exists."
+    }
+  ]
+}

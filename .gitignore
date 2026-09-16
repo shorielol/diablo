@@ -30,3 +30,6 @@ audio_cache/
 # The app's vendored React is committed on purpose — the app must work with no
 # network, and 148 KB of pinned files is a smaller liability than a CDN.
 !app/vendor/*.js
+
+# graphify build artifacts — regenerable, ~3.7MB
+graphify-out/
