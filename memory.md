@@ -54,3 +54,37 @@ Diablo does not need to guess. `_ocr_fragments()` already returns exact boxes
 from Apple's Vision framework and `CGWindowList` already has window bounds, so
 absolute screen coordinates are arithmetic. Spiked and verified, including a
 window at x=-1512 on a second display, which worked without special handling.
+
+## 2026-09-16 — architecture audit, before the overhaul
+
+Read-only audit at `83598eb`. Full writeup in
+`docs/architecture/diablo_overhaul_audit.md`. The five findings worth
+remembering:
+
+- **The action layer has no caller.** `computer_use` and `do_engine` are 1,373
+  tested lines that nothing in production imports. Diablo can point at a button
+  and cannot press one. Deliberate, but they will rot if left in this state.
+- **The trace cannot attribute 59% of its own events** (1,800 of 3,072 real
+  records; 944 of 961 tool calls). `trace._turn` is `threading.local()` and
+  roster agents run on their own threads. `agent_tools.CONTEXT` uses the same
+  mechanism and is *correct*, because callbacks must not be shared — correlation
+  must be inherited, which needs `contextvars`.
+- **No boundary between untrusted text and instructions.** OCR and web content
+  enter `agent_core` messages and the planner prompt raw. The rule is written in
+  claude.md and enforced nowhere.
+- **The planner never sees outcomes.** `Step.describe()` renders the verb only;
+  `Step.state` is never rendered. Best explanation so far for 82% first-step
+  against 50% later-step advancement.
+- **The planner benchmark stubs perception** (`run_planner_eval.py:310`), so
+  74.6% is an upper bound. Perception itself has no benchmark at all.
+
+Baseline corrections: the suite is **33 suites, 31 passing**, and the two
+failures are not the pair recorded on 2026-09-13. `test_agent` passed.
+`test_screen` failed on a real capture leak — `screen.py:388` and `:565` return
+before the `finally` that releases the frame, so the capture Diablo rejected as
+untrustworthy is the one it leaves in `/var/folders`. `test_app` failed on a
+stale 92×92 constant; the orb is 66×66 by construction (`ORB 44 + HALO 11×2`)
+and the source is self-consistent.
+
+Also: 48 tools, not the 33 in README or the 39 in claude.md. No Swift anywhere.
+Every frame costs a `screencapture` subprocess, measured at 147 ms median.
