@@ -24,6 +24,33 @@ import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from harness import Results, guard, Timer  # noqa: E402
 
+
+def _orb_canvas():
+    """
+    The orb window's edge in points, read from app_shell's own constants.
+
+    Returns (edge, where_it_came_from). The running app is launched from the
+    install, so that copy is the one that produced the window on screen; the
+    repository copy is the fallback for a checkout with nothing running.
+    """
+    import re
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        (os.path.join(os.path.expanduser("~/.diablo"), "app_shell.py"), "the install"),
+        (os.path.join(os.path.dirname(here), "app_shell.py"), "the repository"),
+    ]
+    for path, whence in candidates:
+        try:
+            source = open(path, encoding="utf-8").read()
+        except OSError:
+            continue
+        orb = re.search(r"^ORB\s*=\s*([\d.]+)", source, re.M)
+        halo = re.search(r"^HALO\s*=\s*([\d.]+)", source, re.M)
+        if orb and halo:
+            return float(orb.group(1)) + float(halo.group(1)) * 2, whence
+    return None, "nowhere — app_shell.py was not readable"
+
+
 BASE = os.getenv("DIABLO_UI_URL", "http://127.0.0.1:17494")
 r = Results()
 
@@ -233,10 +260,19 @@ def run():
             # Square, and small. The 300x56 capsule this replaced sat across
             # whatever was underneath it all day; the point of the orb is that
             # it does not.
+            #
+            # Derived, not hardcoded. This assertion carried a literal 92 long
+            # after the orb became 44 + 11*2 = 66, so it failed for a year's
+            # worth of the wrong reason and told nobody anything. Read the
+            # design constants out of the shell the running app was launched
+            # from, and the test follows the design instead of arguing with it.
+            edge, whence = _orb_canvas()
             r.check("it is at the orb's size",
-                    abs(bounds.get("Width", 0) - 92) < 2
-                    and abs(bounds.get("Height", 0) - 92) < 2,
-                    f"{bounds.get('Width')}x{bounds.get('Height')}")
+                    edge is not None
+                    and abs(bounds.get("Width", 0) - edge) < 2
+                    and abs(bounds.get("Height", 0) - edge) < 2,
+                    f"{bounds.get('Width')}x{bounds.get('Height')}, "
+                    f"expected {edge}x{edge} from {whence}")
             r.check("above ordinary windows", pill.get("kCGWindowLayer", 0) >= 20,
                     f"layer {pill.get('kCGWindowLayer')}")
 

@@ -26,6 +26,8 @@ Design constraints that shaped this:
   It must not grow forever. Rotates at 5 MB, keeps one previous file.
 """
 
+import contextlib
+import contextvars
 import json
 import os
 import threading
@@ -39,31 +41,87 @@ MAX_BYTES = int(os.getenv("DIABLO_TRACE_MAX_BYTES", str(5 * 1024 * 1024)))
 ENABLED = os.getenv("DIABLO_TRACE_ENABLED", "1") not in ("0", "", "false", "False")
 
 _lock = threading.Lock()
-_turn = threading.local()
+
+# A ContextVar, not threading.local(), and the difference is the whole point.
+#
+# This was thread-local until the audit measured what that cost: 1,800 of 3,072
+# real records carried no turn id at all, including 944 of 961 tool calls,
+# because roster agents run on their own threads and a thread-local starts
+# every thread empty. The correlation has to be inherited; the callbacks in
+# agent_tools.CONTEXT must NOT be, which is why that one stays thread-local.
+# Same mechanism, opposite requirement.
+#
+# Measured caveat, so nobody assumes this swap was sufficient on its own:
+#
+#     threading.Thread(target=work)                 -> context NOT inherited
+#     threading.Thread(target=lambda: ctx.run(work)) -> inherited
+#     ThreadPoolExecutor.submit(work)               -> NOT inherited
+#
+# So a spawn site still has to carry copy_context() across. `carry()` below is
+# that, and the roster's worker at roster.py:620 is not yet using it.
+_context: "contextvars.ContextVar[Dict[str, Any]]" = contextvars.ContextVar(
+    "diablo_trace_context", default=None)
+
+
+def _current() -> Dict[str, Any]:
+    return _context.get() or {}
 
 
 def new_turn(source: str = "voice") -> str:
-    """
-    Begin a turn and return its id.
-
-    Thread-local, because the wake listener, the capture thread and the agent
-    worker all emit events and all of them belong to the same utterance. Tying
-    the id to the thread means nothing has to pass it around.
-    """
+    """Begin a turn and return its id."""
     turn_id = uuid.uuid4().hex[:8]
-    _turn.id = turn_id
-    _turn.started = time.time()
+    _context.set({"turn": turn_id, "started": time.time()})
     event("turn_start", source=source)
     return turn_id
 
 
 def current_turn() -> Optional[str]:
-    return getattr(_turn, "id", None)
+    return _current().get("turn")
 
 
 def elapsed_ms() -> Optional[float]:
-    started = getattr(_turn, "started", None)
+    started = _current().get("started")
     return round((time.time() - started) * 1000, 1) if started else None
+
+
+@contextlib.contextmanager
+def scope(**fields: Any):
+    """
+    Bind correlation fields for everything traced inside the block.
+
+    Used by the evaluation harnesses so a record can say which run, which
+    scenario and which perception source produced it, without threading those
+    three arguments through every function that might want to trace.
+
+        with trace.scope(run="abc123", scenario="gear-01", source="ax"):
+            ...
+
+    Restores the previous binding on the way out, including on an exception.
+    """
+    merged = dict(_current())
+    merged.update({k: v for k, v in fields.items() if v is not None})
+    token = _context.set(merged)
+    try:
+        yield merged.get("turn")
+    finally:
+        _context.reset(token)
+
+
+def bound() -> Dict[str, Any]:
+    """The correlation fields currently in scope, minus the bookkeeping."""
+    return {k: v for k, v in _current().items() if k not in ("turn", "started")}
+
+
+def carry():
+    """
+    A snapshot of the current context, for handing to a new thread.
+
+    A plain thread inherits nothing, so the spawn site has to do this:
+
+        ctx = trace.carry()
+        threading.Thread(target=lambda: ctx.run(work, arg)).start()
+    """
+    return contextvars.copy_context()
 
 
 def event(stage: str, **fields: Any) -> None:
@@ -82,6 +140,9 @@ def event(stage: str, **fields: Any) -> None:
             "stage": stage,
             "ms": elapsed_ms(),
         }
+        # Whatever scope() bound, so a benchmark record says which run and
+        # which scenario it belongs to. Explicit fields on the call win.
+        record.update(bound())
         for key, value in fields.items():
             # Keep it to things json can hold and a human can read. A tool
             # result can be thousands of characters; the decision is what

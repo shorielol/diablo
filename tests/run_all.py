@@ -38,6 +38,7 @@ SUITES = [
     ("test_vision_targets.py", False, "vision as the third candidate source"),
     ("test_do_engine.py",     False, "a goal, a closed loop, and honest completion"),
     ("test_planner_eval.py",  False, "the benchmark that measures the planner"),
+    ("test_perception_eval.py", False, "the benchmark that measures perception"),
     ("test_roster.py",       True,  "delegation: who gets what, and several at once"),
     ("test_scenarios.py",    True,  "what a person says, and what actually happens"),
     ("test_walkthrough.py",  False, "the marker on screen, and waiting for a click"),

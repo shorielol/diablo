@@ -21,6 +21,14 @@ competence.
     python3 evals/run_planner_eval.py --repeat 5 --category ambiguous
     python3 evals/run_planner_eval.py --variant strict   # an A/B arm
     python3 evals/run_planner_eval.py --json out.json
+
+NOTE ON WHAT THIS MEASURES — added after the perception baseline.
+
+This is the PLANNER BENCHMARK WITH STUBBED PERCEPTION. `run_case` replaces
+`_screen_summary` with a fixture string, so every number here describes the
+planner's judgement given a perfect reading of the screen. It is a real and
+useful measurement and it is not end-to-end. Perception's own accuracy is in
+`run_perception_eval.py`; the historical 74.6% stands, correctly labelled.
 """
 
 import argparse
@@ -306,6 +314,14 @@ def run_case(case, engine, variant, repeat=1):
     for run in range(repeat):
         # The state is supplied, never read from the live screen. A benchmark
         # that peeks at the real display measures the display.
+        # PLANNER BENCHMARK WITH STUBBED PERCEPTION.
+        #
+        # This line is why the planner's 74.6% advancement is an upper bound
+        # rather than an estimate: the planner is handed a screen description
+        # that is correct by construction and never misread. Real perception
+        # is measured separately by `run_perception_eval.py`, which found
+        # accessibility at 72% top-1 and fusion at 56% on a 25-case corpus.
+        # An end-to-end number needs both together and does not exist yet.
         original = engine._screen_summary
         engine._screen_summary = lambda w, limit=900, _c=case: observed(_c)
         started = time.perf_counter()

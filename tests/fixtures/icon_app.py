@@ -121,6 +121,7 @@ def main() -> int:
 
     handler = Handler.alloc().init()
 
+    drawn = []
     for index, (name, draw) in enumerate(GLYPHS):
         button = NSButton.alloc().initWithFrame_(
             NSMakeRect(24 + index * 54, 120, 44, 44))
@@ -131,6 +132,7 @@ def main() -> int:
         button.setTarget_(handler)
         button.setAction_("tapped:")
         window.contentView().addSubview_(button)
+        drawn.append((name, button))
 
     saved = NSButton.alloc().initWithFrame_(NSMakeRect(300, 120, 130, 44))
     saved.setTitle_("Save")
@@ -141,6 +143,17 @@ def main() -> int:
 
     window.makeKeyAndOrderFront_(None)
     app.activateIgnoringOtherApps_(True)
+
+    # Two of these are the same gear on purpose, so they get distinct ids and
+    # the corpus can say "either of these is correct" for 'the gear'.
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import _layout
+    ids = ["gear_one", "magnifier", "house", "gear_two"]
+    controls = [(ids[i], "icon", "", "AXButton", button, {"glyph": name})
+                for i, (name, button) in enumerate(drawn)]
+    controls.append(("save_label", "button", "Save", "AXButton", saved, {}))
+    _layout.emit(window, controls)
     print("READY", flush=True)
     app.run()
     return 0

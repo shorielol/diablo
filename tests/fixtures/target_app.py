@@ -65,6 +65,16 @@ def main() -> int:
 
     window.makeKeyAndOrderFront_(None)
     app.activateIgnoringOtherApps_(True)
+
+    # Where the two buttons actually are, for the perception corpus. Printed
+    # before READY so every existing consumer, which reads until READY, is
+    # unaffected.
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import _layout
+    _layout.emit(window, [
+        ("mark_done",       "button", "Mark Done",       "AXButton", done,  {}),
+        ("mark_done_later", "button", "Mark Done Later", "AXButton", later, {}),
+    ])
     print("READY", flush=True)
     app.run()
     return 0

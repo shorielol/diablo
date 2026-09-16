@@ -385,9 +385,13 @@ def under_cursor(radius: float = 60.0) -> Optional[Dict[str, Any]]:
         return None
 
     frame = capture_this_window(window)
-    if not frame.ok:
-        return None
     try:
+        # Inside the try, not before it. A rejected frame is still a file on
+        # disk, and returning here used to skip the release below — so the one
+        # capture Diablo had decided it could not trust was the one it left in
+        # /var/folders. Caught by the privacy check in test_screen.
+        if not frame.ok:
+            return None
         fragments = _sc._ocr_fragments(frame.path, window)
     finally:
         frame.release()
@@ -562,10 +566,11 @@ def what_changed(target: str = "") -> str:
     """
     previous = last_moment()
     frame = capture_window(target)
-    if not frame.ok:
-        return frame.problem.capitalize() + "."
-
     try:
+        # See under_cursor: the rejection has to happen inside the try or the
+        # rejected capture never reaches release().
+        if not frame.ok:
+            return frame.problem.capitalize() + "."
         fragments = _sc._ocr_fragments(frame.path, {"width": frame.width,
                                                     "height": frame.height})
         lines = ([f["text"].strip() for f in fragments if f.get("text", "").strip()]

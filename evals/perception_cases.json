@@ -1,0 +1,291 @@
+{
+  "version": 1,
+  "note": "Ground truth is a control id, not a coordinate. The fixture reports its own layout on startup and the runner resolves ids against that, so a window that opens somewhere else does not invalidate the corpus.",
+  "cases": [
+    {
+      "id": "btn-save",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "the Save button",
+      "category": "labelled_button",
+      "expect": "save",
+      "outcome": "found",
+      "alternatives": [],
+      "why": "the plainest case there is; anything that fails here fails everywhere"
+    },
+    {
+      "id": "btn-submit",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "Submit",
+      "category": "labelled_button",
+      "expect": "submit",
+      "outcome": "found",
+      "alternatives": [],
+      "why": "a bare label with no article"
+    },
+    {
+      "id": "btn-save-copy",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "Save a Copy",
+      "category": "labelled_button",
+      "expect": "save_copy",
+      "outcome": "found",
+      "alternatives": [],
+      "why": "a multi-word label that contains another control's whole label"
+    },
+    {
+      "id": "sim-save",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "save",
+      "category": "similar_labels",
+      "expect": "save",
+      "outcome": "found",
+      "alternatives": [
+        "save_copy"
+      ],
+      "why": "'save' is a prefix of 'Save a Copy'; picking the longer one is wrong"
+    },
+    {
+      "id": "sim-ambiguous",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "the save control",
+      "category": "similar_labels",
+      "expect": "save",
+      "outcome": "ambiguous",
+      "alternatives": [
+        "save_copy"
+      ],
+      "why": "two controls match equally well, so asking is the right answer"
+    },
+    {
+      "id": "chk-subscribe",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "the Subscribe checkbox",
+      "category": "checkbox",
+      "expect": "subscribe",
+      "outcome": "found",
+      "alternatives": [],
+      "why": ""
+    },
+    {
+      "id": "chk-notify",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "Notify me",
+      "category": "checkbox",
+      "expect": "notify",
+      "outcome": "found",
+      "alternatives": [],
+      "why": "also the selected-state case: this one is checked"
+    },
+    {
+      "id": "dis-archive",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "the Archive button",
+      "category": "disabled",
+      "expect": "archived",
+      "outcome": "found",
+      "alternatives": [],
+      "why": "must be found AND reported disabled; finding it is not permission to press it"
+    },
+    {
+      "id": "txt-first",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "the first text field",
+      "category": "text_field",
+      "expect": "name_field",
+      "outcome": "found",
+      "alternatives": [],
+      "why": "an unlabelled AXTextField; accessibility publishes the box and no name"
+    },
+    {
+      "id": "txt-email",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "the email field",
+      "category": "text_field",
+      "expect": "email_field",
+      "outcome": "found",
+      "alternatives": [],
+      "why": "named by what a person would call it, which nothing on screen says"
+    },
+    {
+      "id": "edge-left",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "the Left Edge button",
+      "category": "near_edge",
+      "expect": "edge_left",
+      "outcome": "found",
+      "alternatives": [],
+      "why": ""
+    },
+    {
+      "id": "edge-right",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "the Right Edge button",
+      "category": "near_edge",
+      "expect": "edge_right",
+      "outcome": "found",
+      "alternatives": [],
+      "why": ""
+    },
+    {
+      "id": "edge-bottom",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "the Bottom Edge button",
+      "category": "near_edge",
+      "expect": "edge_bottom",
+      "outcome": "found",
+      "alternatives": [],
+      "why": ""
+    },
+    {
+      "id": "abs-delete",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "the Delete button",
+      "category": "absent",
+      "expect": null,
+      "outcome": "abstain",
+      "alternatives": [],
+      "why": "there is no Delete here; inventing one is the failure that matters most"
+    },
+    {
+      "id": "abs-print",
+      "fixture": "controls_app",
+      "variant": "light",
+      "intent": "the print icon",
+      "category": "absent",
+      "expect": null,
+      "outcome": "abstain",
+      "alternatives": [],
+      "why": "a visual request for something that is not drawn"
+    },
+    {
+      "id": "dark-save",
+      "fixture": "controls_app",
+      "variant": "dark",
+      "intent": "the Save button",
+      "category": "dark_mode",
+      "expect": "save",
+      "outcome": "found",
+      "alternatives": [],
+      "why": "same target, inverted background"
+    },
+    {
+      "id": "dark-notify",
+      "fixture": "controls_app",
+      "variant": "dark",
+      "intent": "Notify me",
+      "category": "dark_mode",
+      "expect": "notify",
+      "outcome": "found",
+      "alternatives": [],
+      "why": ""
+    },
+    {
+      "id": "dark-edge",
+      "fixture": "controls_app",
+      "variant": "dark",
+      "intent": "the Right Edge button",
+      "category": "dark_mode",
+      "expect": "edge_right",
+      "outcome": "found",
+      "alternatives": [],
+      "why": ""
+    },
+    {
+      "id": "icon-search",
+      "fixture": "icon_app",
+      "variant": "light",
+      "intent": "the search icon",
+      "category": "icon_unlabelled",
+      "expect": "magnifier",
+      "outcome": "found",
+      "alternatives": [],
+      "why": "no text anywhere; accessibility has the box, vision has to name it"
+    },
+    {
+      "id": "icon-home",
+      "fixture": "icon_app",
+      "variant": "light",
+      "intent": "the home button",
+      "category": "icon_unlabelled",
+      "expect": "house",
+      "outcome": "found",
+      "alternatives": [],
+      "why": ""
+    },
+    {
+      "id": "icon-gear-dup",
+      "fixture": "icon_app",
+      "variant": "light",
+      "intent": "the gear",
+      "category": "duplicate",
+      "expect": "gear_one",
+      "outcome": "ambiguous",
+      "alternatives": [
+        "gear_two"
+      ],
+      "why": "two identical gears; choosing one is guessing"
+    },
+    {
+      "id": "icon-save-label",
+      "fixture": "icon_app",
+      "variant": "light",
+      "intent": "Save",
+      "category": "labelled_button",
+      "expect": "save_label",
+      "outcome": "found",
+      "alternatives": [],
+      "why": "a named control in an icon toolbar must not cost a vision call"
+    },
+    {
+      "id": "tgt-done",
+      "fixture": "target_app",
+      "variant": "light",
+      "intent": "Mark Done",
+      "category": "similar_labels",
+      "expect": "mark_done",
+      "outcome": "found",
+      "alternatives": [
+        "mark_done_later"
+      ],
+      "why": "'Mark Done' is a complete prefix of 'Mark Done Later'"
+    },
+    {
+      "id": "tgt-later",
+      "fixture": "target_app",
+      "variant": "light",
+      "intent": "Mark Done Later",
+      "category": "similar_labels",
+      "expect": "mark_done_later",
+      "outcome": "found",
+      "alternatives": [],
+      "why": ""
+    },
+    {
+      "id": "tgt-vague",
+      "fixture": "target_app",
+      "variant": "light",
+      "intent": "the done button",
+      "category": "similar_labels",
+      "expect": "mark_done",
+      "outcome": "ambiguous",
+      "alternatives": [
+        "mark_done_later"
+      ],
+      "why": "both contain 'done'"
+    }
+  ]
+}

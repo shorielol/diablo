@@ -609,6 +609,34 @@ def run():
         r.check("reading the screen repeatedly leaves no files behind",
                 not leaked, f"{len(leaked)} left: {sorted(leaked)[:2]}")
 
+    # A rejected capture is the case that leaked. The privacy check above only
+    # catches it when a real capture happens to fail, which depends on what is
+    # on screen — so force the rejection instead and watch the file.
+    with guard(r, "a rejected capture is still deleted"):
+        import tempfile as _tf
+        made = _tf.mkstemp(prefix="diablo_reject_", suffix=".png")[1]
+        with open(made, "wb") as handle:
+            handle.write(b"not a real png")
+
+        real_capture = screen.capture_window
+        screen.capture_window = lambda target=None, _p=made: screen.ScreenFrame(
+            path=_p, captured_at=time.time(), source="window",
+            ok=False, problem="forced rejection for the regression test")
+        try:
+            said = screen.what_changed()
+        finally:
+            screen.capture_window = real_capture
+
+        r.check("what_changed releases a frame it refused",
+                not os.path.exists(made),
+                "file survived the rejection" if os.path.exists(made)
+                else "deleted")
+        r.check("  and it still says what went wrong",
+                isinstance(said, str) and "rejection" in said.lower(),
+                (said or "")[:60])
+        if os.path.exists(made):
+            os.unlink(made)
+
     with guard(r, "nothing captures in the background"):
         before = set(glob.glob(os.path.join(tempfile.gettempdir(), "diablo_*")))
         time.sleep(1.5)

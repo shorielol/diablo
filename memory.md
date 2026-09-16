@@ -88,3 +88,57 @@ and the source is self-consistent.
 
 Also: 48 tools, not the 33 in README or the 39 in claude.md. No Swift anywhere.
 Every frame costs a `screencapture` subprocess, measured at 147 ms median.
+
+## 2026-09-16 — Build 1: perception ground truth
+
+DIABLO PERCEPTION BASELINE V1. 25 cases, 10 target categories, four sources
+measured separately, 100 measurements. Artefacts:
+`evals/perception_cases.json`, `evals/run_perception_eval.py`,
+`evals/perception_baseline_v1.json`, `tests/test_perception_eval.py` (66
+checks), `tests/fixtures/controls_app.py`, `tests/fixtures/_layout.py`.
+
+| source | top-1 | precision | answered | wrong target | median |
+|---|---|---|---|---|---|
+| accessibility | 72% | 100% | 18 | 0 | 6.5 ms |
+| OCR | 24% | 100% | 6 | 0 | 180 ms |
+| vision | 12% | 100% | 3 | 0 | 6344 ms when it engages |
+| fusion | 56% | **67%** | 21 | 0 | 189 ms |
+
+The two findings worth keeping:
+
+- **No source ever pointed at the wrong control. Zero wrong targets in 100
+  measurements.** Perception either gets it right or says nothing. Every error
+  in the baseline comes from the fusion layer, and every one of those is a
+  mis-flagged ambiguity rather than a mis-identified control.
+- **Fusion scores lower than accessibility alone (56% against 72%)** because
+  `AMBIGUOUS_WITHIN = 0.12` is an *absolute* margin. A perfect label match at
+  confidence 1.000 with a runner-up at 0.910 is treated exactly like two vague
+  matches at 0.50 and 0.41, so "save" is flagged ambiguous while the vaguer
+  "the save control" (margin 0.125) is treated as decisive. Five of 25 cases
+  regress under fusion; four are false ambiguity at confidence 0.93–1.00.
+
+Unlabelled `AXTextField`s are unfindable by every source — no title, no text,
+no distinguishing shape. The only 0% category.
+
+Vision's 12% is not a verdict on the model. It is asked about all 25 cases and
+is only for unlabelled icons; on those it is 100%, and it correctly declines
+the rest. Measure a source on precision over what it answered, not top-1 over
+everything.
+
+Cache: 6531 ms cold, 337 ms warm, 94.8% saved, keyed on the frame fingerprint
+so a changed screen invalidates it.
+
+Two process notes that cost real time:
+
+- **Tests and evals import from `~/.diablo/skills/`, not the repo.** There is no
+  `install.sh` in this tree and the launcher has no sync command, so the two
+  are kept identical by hand. A fix edited in the repo did not exist as far as
+  the tests were concerned. `run_perception_eval.py` now refuses to run when
+  the measured modules differ, because a benchmark measuring stale code is
+  worse than no benchmark.
+- **contextvars does not cross a plain `threading.Thread`.** Swapping
+  `threading.local()` for a `ContextVar` fixes nothing on its own; the spawn
+  site has to carry `copy_context()`. `trace.carry()` exists for that and
+  `roster.py:620` is not yet using it, so the 59% attribution gap is still
+  open outside the benchmark. Both behaviours are asserted in the suite so
+  nobody assumes the swap was sufficient.
