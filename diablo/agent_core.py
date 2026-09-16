@@ -534,6 +534,11 @@ def run(
 
     agent_tools.CONTEXT["ask"] = ask
     agent_tools.CONTEXT["confirm"] = confirm
+    # Where a tool puts a structured result. Drained onto the working step
+    # after each call, so the evidence a tool produced survives next to the
+    # sentence it returned instead of only inside it.
+    observations: List[Any] = []
+    agent_tools.CONTEXT["observations"] = observations
     # Tools that narrate as they work — the walkthrough is the only one so far
     # — need the voice, not just a return value.
     agent_tools.CONTEXT["speak"] = speak
@@ -737,10 +742,31 @@ def run(
                     saw.append(result)
                     if name == "read_file":
                         file_reads.append(result)
+                seen_now = list(observations)
+                del observations[:]
                 if working is not None:
-                    working.append({"tool": name,
-                                    "args": json.dumps(args)[:200],
-                                    "result": result[:600]})
+                    step_record: Dict[str, Any] = {
+                        "tool": name,
+                        "args": json.dumps(args)[:200],
+                        "result": result[:600],
+                    }
+                    if seen_now:
+                        # The object itself, not a rendering of it. This list
+                        # is held in memory and handed to record_task; nothing
+                        # serialises it, so there is no reason to flatten a
+                        # Reading here and every reason not to.
+                        step_record["observation"] = seen_now[0]
+                    working.append(step_record)
+                for reading in seen_now:
+                    best = getattr(reading, "best", None)
+                    trace.event("observed", tool=name,
+                                verdict=getattr(reading, "verdict", ""),
+                                label=getattr(best, "label", "") if best else "",
+                                confidence=(round(best.confidence, 3)
+                                            if best is not None else None),
+                                sources=("+".join(sorted(set(best.sources)))
+                                         if best is not None else ""),
+                                kept=working is not None)
                 trace.event("tool", tool=name,
                             ok=not result.startswith(("Error", "Refused", "Cancelled")),
                             ms_call=round((time.time() - began_call) * 1000, 1),

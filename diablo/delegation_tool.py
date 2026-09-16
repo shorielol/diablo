@@ -569,11 +569,27 @@ def _run_inline(task: str, text: str, speak, ask, confirm,
     # decision carried, not dropped. The audit's first break was exactly here:
     # handle() held kind, confidence, risk, needs_screen and needs_tools, and
     # passed four arguments on.
+    #
+    # `working` collected too. The delegated and taught paths have always
+    # passed one and recorded it; this one never did, so an inline action —
+    # which is most of them, and every "point at the Save button" — left no
+    # evidence at all. "Where did you get that?" had nothing to answer from.
+    working: list = []
     summary = agent_core.run(task, speak, ask=ask, confirm=confirm,
-                             decision=decision)
+                             decision=decision, working=working)
     trace.event("done", route="inline", summary=summary[:120])
     conversation.session.remember("user", text)
     conversation.session.remember("assistant", summary)
+    if working:
+        # Recorded against Diablo rather than an agent: an inline action is not
+        # a task in the rail, and focus stays where it was. The record is what
+        # a follow-up reads, not a row in the sidebar.
+        record = conversation.session.record_task("diablo", task, working, summary)
+        trace.event("recorded", into="conversation.session",
+                    steps=len(working),
+                    observations=sum(1 for w in working if w.get("observation")),
+                    findings=len(record.get("findings") or []),
+                    sources=len(record.get("sources") or []))
     # Focus is deliberately not touched. It used to be set to whichever agent
     # name assign() voted for, so turning the volume down handed the
     # conversation to Seere and the next ordinary question came back in Seere's

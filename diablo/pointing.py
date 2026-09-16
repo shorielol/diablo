@@ -387,7 +387,8 @@ def _record(intent: str, reading, window: Optional[Dict[str, Any]]) -> None:
         pass
 
 
-def point_at(description: str, target: str = "", seconds: float = 3.0) -> str:
+def point_at(description: str, target: str = "", seconds: float = 3.0,
+             reading_out: Optional[List[Any]] = None) -> str:
     """
     Find something on screen and mark it, then say where it is.
 
@@ -413,6 +414,12 @@ def point_at(description: str, target: str = "", seconds: float = 3.0) -> str:
         window = (screen_context.find_window(target) if target
                   else screen_context.frontmost_window())
         reading = perception.read(description, window)
+        # Hand the structured reading back to whoever asked for it, before the
+        # sentence is built. A list the caller owns, the same shape `locate`
+        # uses for `observation` and `agent_core.run` uses for `working`; a
+        # caller that passes nothing is unaffected and still gets prose.
+        if reading_out is not None:
+            reading_out.append(reading)
         # The structured reading, recorded before it becomes a sentence.
         #
         # What this function returns is prose, because its caller is a tool and

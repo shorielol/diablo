@@ -41,6 +41,7 @@ SUITES = [
     ("test_perception_eval.py", False, "the benchmark that measures perception"),
     ("test_boundaries.py",     False, "what survives the boundaries between subsystems"),
     ("test_fusion.py",         False, "how arbitration decides between candidates"),
+    ("test_handoff.py",        False, "structured perception reaching a real consumer"),
     ("test_roster.py",       True,  "delegation: who gets what, and several at once"),
     ("test_scenarios.py",    True,  "what a person says, and what actually happens"),
     ("test_walkthrough.py",  False, "the marker on screen, and waiting for a click"),

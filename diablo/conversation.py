@@ -180,6 +180,84 @@ def _evidence_near(text: str, url: str) -> str:
     return _near(text, url, 200)[:EVIDENCE_CHARS]
 
 
+def _absorb_observation(record: Dict[str, Any], tool: str, reading: Any) -> None:
+    """
+    Keep what perception established, as evidence rather than as a sentence.
+
+    Read with getattr throughout so this module does not depend on the
+    perception types. It stores what the reading actually said — which control,
+    how sure, which instruments, and which frame it came from — so a follow-up
+    is answered from the observation instead of from the wording of the reply.
+
+    Frame identity is kept for the same reason the source list keeps
+    `retrieved_at`: an observation is a statement about one screen at one
+    moment, and a later question has to be able to tell whether that moment
+    has passed.
+    """
+    try:
+        verdict = str(getattr(reading, "verdict", "") or "")
+        best = getattr(reading, "best", None)
+        unreadable = list(getattr(reading, "unreadable", []) or [])
+
+        if best is None:
+            note = ("could not read the screen (" + ", ".join(unreadable) + ")"
+                    if unreadable else "looked at the screen and found nothing")
+            record["findings"].append(f"{tool}: {note}")
+            record["observations"].append({
+                "tool": tool, "verdict": verdict or "not_found",
+                "label": "", "confidence": None, "sources": [],
+                # Carried here too. The first version dropped it in this branch
+                # and only in this branch, which is the one where it decides
+                # the answer: without it, "I could not see the screen" was
+                # rendered back as "I looked and found nothing".
+                "unreadable": unreadable,
+                "observed_at": time.time(),
+            })
+            return
+
+        sources = sorted(set(getattr(best, "sources", []) or []))
+        frame = {}
+        note = (getattr(reading, "observation", None) or {}).get("ocr") or {}
+        if isinstance(note, dict) and isinstance(note.get("frame"), dict):
+            seen = note["frame"]
+            frame = {
+                "window_id": seen.get("window_id"),
+                "app": seen.get("app"),
+                "title": seen.get("title"),
+                "fingerprint": list(seen.get("fingerprint") or [])[:16],
+                "display_scale": seen.get("display_scale"),
+                "captured_at": seen.get("captured_at"),
+            }
+
+        record["observations"].append({
+            "tool": tool,
+            "verdict": verdict,
+            "label": str(getattr(best, "label", "") or "")[:80],
+            "role": str(getattr(best, "role", "") or ""),
+            "confidence": round(float(getattr(best, "confidence", 0.0)), 3),
+            "source_confidence": dict(getattr(best, "source_confidence", {}) or {}),
+            "sources": sources,
+            "evidence": list(getattr(best, "evidence", []) or [])[:4],
+            "bounds": {"x": getattr(best, "x", 0.0), "y": getattr(best, "y", 0.0),
+                       "width": getattr(best, "width", 0.0),
+                       "height": getattr(best, "height", 0.0)},
+            "app": str(getattr(best, "app", "") or ""),
+            "ambiguous": bool(getattr(reading, "ambiguous", False)),
+            "margin": round(float(getattr(reading, "margin", 0.0)), 3),
+            "unreadable": unreadable,
+            "frame": frame,
+            "observed_at": time.time(),
+        })
+        record["findings"].append(
+            f"{tool}: {verdict} — {getattr(best, 'label', '') or 'a control'} "
+            f"at {int(getattr(best, 'x', 0))},{int(getattr(best, 'y', 0))} "
+            f"({', '.join(sources) or 'unknown source'}, "
+            f"{float(getattr(best, 'confidence', 0.0)):.2f})")
+    except Exception:
+        # Evidence keeping must never break the turn that produced it.
+        pass
+
+
 def _absorb(record: Dict[str, Any], step: Dict[str, str]) -> None:
     """
     Pull the durable part out of one tool result.
@@ -190,6 +268,15 @@ def _absorb(record: Dict[str, Any], step: Dict[str, str]) -> None:
     """
     tool = str(step.get("tool", ""))
     result = str(step.get("result", ""))
+
+    # A structured perception result, if the tool produced one. Read before the
+    # error check, because a reading that could not see the screen is exactly
+    # the thing worth remembering: "I could not look" and "I looked and found
+    # nothing" are different answers to "why did you say that?".
+    observed = step.get("observation")
+    if observed is not None:
+        _absorb_observation(record, tool, observed)
+
     if not result or result.startswith(("Error", "Refused", "Cancelled")):
         return
     if tool in _SOURCE_TOOLS:
@@ -340,6 +427,9 @@ class Session:
             "sources": [],
             "findings": [],
             "calculations": [],
+            # What perception established, kept beside the web sources rather
+            # than mixed into them: a control on screen is not a citation.
+            "observations": [],
             "result": "",
         }
         for step in steps or []:
@@ -351,6 +441,8 @@ class Session:
         record["sources"] = record["sources"][:TASK_SOURCES]
         record["findings"] = record["findings"][-TASK_FINDINGS:]
         record["calculations"] = record["calculations"][-TASK_FINDINGS:]
+        record.setdefault("observations", [])
+        record["observations"] = record["observations"][-TASK_FINDINGS:]
         self.tasks[record["task_id"]] = record
         self.last_spoke_at = time.time()
         return record
@@ -379,6 +471,26 @@ class Session:
             # there is none, said plainly so the model has no gap to fill.
             lines.append("No sources were opened for this task. If he asks "
                          "which source supports something, say there is none.")
+        for seen in record.get("observations") or []:
+            age = time.time() - float(seen.get("observed_at") or 0)
+            # Said plainly, with its age, because a reading is a statement
+            # about one screen at one moment. Whether it still holds is a
+            # question about now, and the answer must not be assumed from the
+            # fact that the record exists.
+            if seen.get("label"):
+                lines.append(
+                    f"Seen on screen {int(age)}s ago: {seen['label']!r} "
+                    f"({seen.get('verdict', '?')}, "
+                    f"{', '.join(seen.get('sources') or []) or 'unknown source'}, "
+                    f"confidence {seen.get('confidence')})")
+                for why in (seen.get("evidence") or [])[:2]:
+                    lines.append(f"      because {why}")
+            else:
+                lines.append(
+                    f"Looked at the screen {int(age)}s ago and "
+                    f"{'could not read it' if seen.get('unreadable') else 'found nothing'}.")
+            lines.append("      That was the screen then, not necessarily now. "
+                         "Look again before saying it is still there.")
         if record["findings"]:
             lines.append("What came back:")
             lines += [f"  {f}" for f in record["findings"]]

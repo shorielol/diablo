@@ -94,7 +94,11 @@ class _RunContext:
         return f"_RunContext({self._slot()!r})"
 
 
-CONTEXT = _RunContext(ask=None, confirm=None, speak=None)
+# `observations` is an output channel rather than a callback: a tool that
+# produces a structured result puts it here, and agent_core.run drains it onto
+# the working step for that call. Thread-local like the rest of CONTEXT, so two
+# agents running at once cannot read each other's perception.
+CONTEXT = _RunContext(ask=None, confirm=None, speak=None, observations=None)
 
 
 # ─── Diablo skill access ─────────────────────────────────────────────────────
@@ -877,13 +881,34 @@ def explain_screen(question: str = "", target: str = "") -> str:
 
 
 
+def _observed(readings: List[Any]) -> None:
+    """Publish structured perception results for the current run to collect."""
+    if not readings:
+        return
+    try:
+        sink = CONTEXT.get("observations")
+        if sink is not None:
+            sink.extend(readings)
+    except Exception:
+        # A tool must not fail because nobody was listening.
+        pass
+
+
 def point_at(description: str, target: str = "") -> str:
     """Put a marker on screen over the thing the user is looking for."""
     try:
         module = _skill("pointing")
         if module is None:
             return "Error: screen pointing is unavailable."
-        return _clip(module.point_at(description, target))
+        # The spoken sentence AND the structured reading behind it. The
+        # sentence is what this returns, because a tool result is text; the
+        # reading goes to CONTEXT so the run can keep what the sentence
+        # cannot carry — which control, how sure, which instrument, which
+        # frame.
+        readings: List[Any] = []
+        said = module.point_at(description, target, reading_out=readings)
+        _observed(readings)
+        return _clip(said)
     except Exception as e:
         return _failed("point at that", "", e)
 
