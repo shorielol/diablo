@@ -494,6 +494,7 @@ def run(
     confirm: Confirm = None,
     on_step: Optional[Callable[[int, str, str], None]] = None,
     working: Optional[List[Dict[str, str]]] = None,
+    decision: Any = None,
 ) -> str:
     """
     Work the task to completion. Returns the spoken summary.
@@ -507,6 +508,30 @@ def run(
     a global, because several agents run this at once in their own threads and
     each one needs its own; sharing it was already a bug in this project once.
     """
+    # What the router already worked out about this request.
+    #
+    # `route.classify` produces a Decision carrying kind, confidence, risk,
+    # needs_screen and needs_tools, and until now handle() passed on four
+    # arguments and dropped it. Nothing below acts on it yet — this build does
+    # not add a goal, a plan or an action — but the loop can no longer claim it
+    # was never told. Optional and defaulted, so every existing caller is
+    # unaffected.
+    if decision is not None:
+        # No try/except around this. trace.event swallows its own failures by
+        # design, and wrapping it again hid a real one: the first version of
+        # this call passed stage= as a keyword when event() already takes it
+        # positionally, so every carry raised TypeError and said nothing. The
+        # project rule is that no failure is silent, and a tracing call is not
+        # an exception to it.
+        trace.event("carry", into="agent_core.run",
+                    kind=getattr(decision, "kind", ""),
+                    confidence=getattr(decision, "confidence", None),
+                    risk=getattr(decision, "risk", ""),
+                    needs_screen=getattr(decision, "needs_screen", None),
+                    needs_tools=getattr(decision, "needs_tools", None),
+                    needs_plan=getattr(decision, "needs_plan", None),
+                    reason=str(getattr(decision, "reason", ""))[:120])
+
     agent_tools.CONTEXT["ask"] = ask
     agent_tools.CONTEXT["confirm"] = confirm
     # Tools that narrate as they work — the walkthrough is the only one so far

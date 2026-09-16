@@ -141,7 +141,41 @@ def _ordinal_in(query: str) -> Optional[int]:
     return None
 
 
-def locate(description: str, target: str = "", limit: int = 5) -> List[Hit]:
+def _observed(sink: Optional[Dict[str, Any]], ok: bool, problem: str = "",
+              frame=None, window: Optional[Dict[str, Any]] = None) -> None:
+    """
+    Record whether the screen was actually read, for a caller that asked.
+
+    An empty list of hits answers "did anything match". It cannot answer "was
+    there anything to match against", and those are different states: a black
+    frame and a window with no matching text both produced [] before this.
+
+    A dict the caller owns and this fills in, which is how `agent_core.run`
+    already hands back its working. No global, no second return value, and a
+    caller that does not pass one is unaffected.
+    """
+    if sink is None:
+        return
+    sink["ok"] = ok
+    sink["problem"] = problem
+    if frame is not None:
+        sink["frame"] = {
+            "window_id": frame.window_id,
+            "app": frame.app,
+            "title": frame.title,
+            "fingerprint": list(frame.fingerprint or []),
+            "display_index": frame.display_index,
+            "display_scale": frame.display_scale,
+            "captured_at": frame.captured_at,
+        }
+    elif window is not None:
+        sink["frame"] = {"window_id": window.get("id", 0),
+                         "app": window.get("app", ""),
+                         "title": window.get("title", "")}
+
+
+def locate(description: str, target: str = "", limit: int = 5,
+           observation: Optional[Dict[str, Any]] = None) -> List[Hit]:
     """
     Find where something is, in absolute screen points.
 
@@ -157,21 +191,49 @@ def locate(description: str, target: str = "", limit: int = 5) -> List[Hit]:
     window = screen_context.find_window(target) if target else None
     if window is None:
         window = screen_context.frontmost_window()
-    if not window or window.get("sensitive"):
+    if not window:
+        _observed(observation, False, "I cannot see any windows to read")
+        return []
+    if window.get("sensitive"):
+        _observed(observation, False,
+                  f"{window.get('app', 'that window')} looks like a password "
+                  f"manager or banking window, so I will not read it")
         return []
 
-    path = screen_context.capture_window(window["id"])
-    if not path:
-        return []
+    # Through ScreenFrame, the same way the vision source captures.
+    #
+    # This used to call screen_context.capture_window() for a raw path, which
+    # skips the validity gate that capture_this_window() applies. A window on
+    # another Space captures as a well-formed, solid black PNG; OCR then finds
+    # no text in it, and an empty list came back meaning "nothing matched"
+    # when the truth was "I could not see". The vision source rejected exactly
+    # the same frame. Both feed the same fusion, so the two sources disagreed
+    # about whether an observation had even happened.
+    #
+    # Imported here rather than at module scope: perception imports this module
+    # for its scorer, and screen pulls in enough of the stack that a top-level
+    # import risks the cycle that point_at already guards against.
+    from skills import screen as _screen
+
+    frame = _screen.capture_this_window(window)
     try:
-        fragments = screen_context._ocr_fragments(path, window)
+        if not frame.ok:
+            _observed(observation, False, frame.problem, frame, window)
+            return []
+        fragments = screen_context._ocr_fragments(frame.path, window)
     finally:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
+        frame.release()
 
-    if isinstance(fragments, str) or not fragments:
+    if isinstance(fragments, str):
+        # _ocr_fragments reports its own failures as a string. That is a failed
+        # reading, not an empty one.
+        _observed(observation, False, fragments, frame, window)
+        return []
+
+    # The observation itself succeeded. Whether anything matched is a separate
+    # question, answered by the return value.
+    _observed(observation, True, "", frame, window)
+    if not fragments:
         return []
 
     # Reading order, so ordinals mean what a person means by them.
@@ -272,6 +334,53 @@ def show(x: float, y: float, label: str = "", seconds: float = 3.0) -> bool:
         return False
 
 
+def _record(intent: str, reading, window: Optional[Dict[str, Any]]) -> None:
+    """
+    Put the structured reading into the trace before it is flattened to prose.
+
+    Uses the trace that already exists rather than a new channel: it is
+    production-wired, it rotates, it swallows its own failures, and it is
+    already where every other gate in Diablo records what it decided.
+    """
+    try:
+        from skills import trace
+        best = reading.best
+        note = {
+            "intent": intent[:80],
+            "found": bool(best),
+            "ambiguous": reading.ambiguous,
+            "margin": round(reading.margin, 3),
+            "candidates": len(reading.candidates),
+            "app": (window or {}).get("app", ""),
+            "window": ((window or {}).get("title") or "")[:60],
+            "window_id": (window or {}).get("id", 0),
+        }
+        if reading.unreadable:
+            # The distinction Fix A preserves, carried all the way out.
+            note["unreadable"] = ",".join(reading.unreadable)
+            first = reading.observation.get(reading.unreadable[0]) or {}
+            note["why_unreadable"] = str(first.get("problem", ""))[:100]
+        if best is not None:
+            note.update({
+                "label": (best.label or "")[:60],
+                "role": best.role,
+                "confidence": round(best.confidence, 3),
+                "sources": "+".join(sorted(set(best.sources))),
+                "evidence": "; ".join(best.evidence)[:180],
+                "enabled": best.enabled,
+                "x": round(best.x, 1), "y": round(best.y, 1),
+                "width": round(best.width, 1), "height": round(best.height, 1),
+            })
+            frame_note = (reading.observation.get("ocr") or {}).get("frame") or {}
+            if frame_note.get("fingerprint"):
+                note["frame_fingerprint"] = ",".join(
+                    str(b) for b in frame_note["fingerprint"][:8])
+        trace.event("perceive", **note)
+    except Exception:
+        # Recording must never be the reason pointing fails.
+        pass
+
+
 def point_at(description: str, target: str = "", seconds: float = 3.0) -> str:
     """
     Find something on screen and mark it, then say where it is.
@@ -298,6 +407,16 @@ def point_at(description: str, target: str = "", seconds: float = 3.0) -> str:
         window = (screen_context.find_window(target) if target
                   else screen_context.frontmost_window())
         reading = perception.read(description, window)
+        # The structured reading, recorded before it becomes a sentence.
+        #
+        # What this function returns is prose, because its caller is a tool and
+        # the tool contract is a string a person can hear. Everything perception
+        # worked out to produce that sentence — which control, how sure, which
+        # instrument saw it, what the evidence was, where its box is, which
+        # frame it came from — used to stop here. `diablo trace` can answer
+        # "how sure was it?" now, and the runtime connectivity audit's R1 was
+        # exactly this boundary.
+        _record(description, reading, window)
         if reading.ambiguous and reading.question():
             return reading.question()
         if reading.best:

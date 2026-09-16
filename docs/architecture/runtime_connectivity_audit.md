@@ -473,3 +473,106 @@ is a read-only `state()` call from `screen_privacy`, and `golden_path.py` remain
 the sanctioned interactive harness. G3 records that the action edge cannot be
 traversed; it does not propose traversing it. Live applications remain
 read-only, and real interaction still requires explicit future authorization.
+
+---
+
+## 14. Build 1.5 corrections
+
+Applied 2026-09-16, commit after `ac1275c`. Three boundaries repaired. No
+capability was connected, no action path was added, and the arbitration this
+audit criticised was deliberately left alone for Build 2.
+
+### R2 / §8 — perception input validity
+
+**BEFORE.** `pointing.locate` captured through `screen_context.capture_window()`,
+a raw path with no `ScreenFrame` and no validity gate, while the vision source
+captured through `screen.capture_this_window()` which applies one. Four distinct
+outcomes returned the same empty list: no window, a sensitive window, a capture
+that failed, and a readable window with nothing matching. A window on another
+Space captures as a well-formed solid black PNG, so "I could not see" and "there
+was nothing there" were indistinguishable — to the caller and to fusion, which
+received both as silence.
+
+**AFTER.** `pointing.locate` captures through `screen.capture_this_window()`, the
+same gate as vision. It takes an optional `observation` dict, filled in the way
+`agent_core.run` already fills `working`:
+
+```python
+{"ok": False, "problem": "that window captured as solid black",
+ "frame": {"window_id": …, "app": …, "fingerprint": [...], "display_scale": …}}
+```
+
+`perception._from_ocr` passes one through, `locate` collects it per source, and
+`Reading` carries it with an `unreadable` property naming the sources that could
+not read the screen. **VALID OBSERVATION, INVALID OBSERVATION, NO MATCH and
+AMBIGUOUS MATCH are now four distinguishable states.** No second validity system
+was created; the existing one is now used by both sources.
+
+### R1 — structured perception results
+
+**BEFORE.** `perception.read` produced a `Candidate` carrying label, role,
+bounds, confidence, `sources`, `evidence`, `enabled` and vision evidence.
+`pointing.point_at` returned `"Top right of the toolbar, marked — 'Save'."` and
+everything else was discarded at the only production exit.
+
+**AFTER.** The sentence is unchanged — the caller is a tool and the contract is
+prose a person can hear. Before flattening, `_record()` writes the structured
+reading to the trace that already exists:
+
+```
+{"stage": "perceive", "label": "Save", "confidence": 0.93,
+ "sources": "accessibility", "role": "AXButton", "enabled": true,
+ "evidence": "the application calls it Button “Save”",
+ "x": 443.0, "y": 521.0, "width": 92.0, "height": 32.0,
+ "ambiguous": false, "margin": 0.42, "frame_fingerprint": "...",
+ "app": "Python", "window_id": 74495}
+```
+
+When a source could not read the screen the event carries `unreadable` and
+`why_unreadable` instead of inventing a candidate. `diablo trace` can now answer
+"how sure was it, and which instrument saw it?" — which nothing could before.
+`Candidate` was not redesigned and no parallel representation was introduced.
+
+### G1 — the Decision at the delegation boundary
+
+**BEFORE.** `handle()` held a `Decision` carrying kind, confidence, risk,
+`needs_screen`, `needs_tools` and `needs_plan`, and called
+`_run_inline(task, text, speak, ask, confirm, reason)` →
+`agent_core.run(task, speak, ask, confirm)`. The Decision was dropped at
+`delegation_tool.py:567`, which §10 named as the first break in the loop.
+
+**AFTER.** `_run_inline` and `agent_core.run` both take an optional `decision`,
+defaulted to `None` so every existing caller is unaffected, and `run` records it:
+
+```
+{"stage": "carry", "into": "agent_core.run", "kind": "action",
+ "confidence": 0.82, "risk": "medium", "needs_screen": false,
+ "needs_tools": true, "needs_plan": true}
+```
+
+**Nothing acts on it yet.** This build adds no goal, no plan revisiting and no
+action. The loop can no longer claim it was never told what the router already
+worked out; closing the loop on that information is later work.
+
+### What did not change
+
+`computer_use` remains unconnected for arbitrary actions, `do_engine` still has
+no production consumer, the tool menu still holds 48 tools with no click, type or
+press, `DIABLO_COMPUTER_USE` still defaults off, and the HIGH-risk threshold is
+still 1.01 and therefore unreachable. `tests/test_boundaries.py` asserts each of
+these, so a future change that quietly adds an action path fails a test rather
+than passing review.
+
+Fusion arbitration, `AMBIGUOUS_WITHIN`, confidence scoring and the planner were
+not touched. The perception benchmark is unchanged on every source and every
+category, with zero wrong targets, which is the evidence that these were
+boundary repairs and not behaviour changes.
+
+### Gaps from §11 that remain open
+
+G2 (no production `Goal`), G3 (no action tool — held deliberately by the safety
+boundary), G6 (the task plan is never re-read), G7 (`JobStore` and `DiabloState`
+unsynchronised), G8 (permission modelled twice), G9 (59% of trace events
+unattributed outside the benchmark), G10 (no persistence). G4 is partly
+addressed: the structured reading survives into the trace, but no production
+consumer receives it as data, because there is not yet a consumer that wants it.

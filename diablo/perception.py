@@ -135,12 +135,24 @@ def _from_accessibility(intent: str, window: Dict[str, Any]) -> List[Candidate]:
     return out
 
 
-def _from_ocr(intent: str, window: Dict[str, Any]) -> List[Candidate]:
-    """Candidates read off the glass."""
+def _from_ocr(intent: str, window: Dict[str, Any],
+              observation: Optional[Dict[str, Any]] = None) -> List[Candidate]:
+    """
+    Candidates read off the glass.
+
+    `observation` is filled in with whether the screen could be read at all.
+    An empty candidate list answers "did anything match"; it cannot answer
+    "was the frame readable", and a black frame used to produce the same
+    empty list as a perfectly readable window with no matching text.
+    """
     out = []
     try:
-        hits = pointing.locate(intent, window.get("app", ""), limit=8)
-    except Exception:
+        hits = pointing.locate(intent, window.get("app", ""), limit=8,
+                               observation=observation)
+    except Exception as e:
+        if observation is not None:
+            observation["ok"] = False
+            observation["problem"] = f"{type(e).__name__}: {e}"
         return []
     for hit in hits:
         # pointing returns a point; OCR fragments have a box, and the box is
@@ -221,7 +233,8 @@ def _fuse(candidates: List[Candidate]) -> List[Candidate]:
 
 
 def locate(intent: str, window: Optional[Dict[str, Any]] = None,
-           limit: int = 5) -> List[Candidate]:
+           limit: int = 5,
+           observation: Optional[Dict[str, Any]] = None) -> List[Candidate]:
     """
     Everything that might be what the user meant, best first.
 
@@ -244,7 +257,10 @@ def locate(intent: str, window: Optional[Dict[str, Any]] = None,
     found = _from_accessibility(intent, window)
     fused = _fuse(found)
     if _needs_a_second_opinion(fused):
-        found = found + _from_ocr(intent, window)
+        seen: Dict[str, Any] = {}
+        found = found + _from_ocr(intent, window, observation=seen)
+        if observation is not None and seen:
+            observation["ocr"] = seen
         fused = _fuse(found)
     if _needs_vision(intent, fused):
         found = found + _from_vision(intent, window)
@@ -302,6 +318,17 @@ class Reading:
     candidates: List[Candidate] = field(default_factory=list)
     ambiguous: bool = False
     margin: float = 0.0
+    # Per-source note on whether the screen could be read at all, keyed by
+    # source name. Separate from `candidates` on purpose: "I looked and found
+    # nothing" and "I could not look" are different answers and a caller that
+    # cannot tell them apart will report the wrong one.
+    observation: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def unreadable(self) -> List[str]:
+        """Sources that could not read the screen, rather than found nothing."""
+        return sorted(name for name, note in self.observation.items()
+                      if isinstance(note, dict) and note.get("ok") is False)
 
     @property
     def best(self) -> Optional[Candidate]:
@@ -322,14 +349,15 @@ class Reading:
 
 def read(intent: str, window: Optional[Dict[str, Any]] = None) -> Reading:
     """locate(), plus whether the answer is decisive enough to act on."""
-    candidates = locate(intent, window)
+    seen: Dict[str, Any] = {}
+    candidates = locate(intent, window, observation=seen)
     if not candidates:
-        return Reading()
+        return Reading(observation=seen)
     margin = (candidates[0].confidence - candidates[1].confidence
               if len(candidates) > 1 else 1.0)
     return Reading(candidates=candidates,
                    ambiguous=len(candidates) > 1 and margin < AMBIGUOUS_WITHIN,
-                   margin=margin)
+                   margin=margin, observation=seen)
 
 
 if __name__ == "__main__":

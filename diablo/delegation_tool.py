@@ -514,7 +514,8 @@ def handle(
                 matched=routing.matched, task=task[:120])
 
     if not routing.delegates:
-        return _run_inline(task, text, speak, ask, confirm, routing.reason)
+        return _run_inline(task, text, speak, ask, confirm, routing.reason,
+                           decision=decision)
 
     # It delegates — but a sentence can hold one errand for an agent and one
     # for Diablo. "Research this company and lower my volume" must not spawn an
@@ -523,7 +524,8 @@ def handle(
     for part in direct_parts:
         trace.event("decide", route=DIRECT, reason="direct half of a mixed request",
                     task=part[:120])
-        _run_inline(part, part, speak, ask, confirm, "direct half of a mixed request")
+        _run_inline(part, part, speak, ask, confirm,
+                    "direct half of a mixed request", decision=decision)
     if not pieces:
         return "inline"
 
@@ -546,7 +548,7 @@ def handle(
 
 
 def _run_inline(task: str, text: str, speak, ask, confirm,
-                reason: str = "") -> str:
+                reason: str = "", decision=None) -> str:
     """
     Diablo does it, here, on this thread.
 
@@ -564,7 +566,11 @@ def _run_inline(task: str, text: str, speak, ask, confirm,
     # Cached audio, so it costs no latency of its own and starts playing while
     # the model is still loading.
     speak(persona.working())
-    summary = agent_core.run(task, speak, ask=ask, confirm=confirm)
+    # decision carried, not dropped. The audit's first break was exactly here:
+    # handle() held kind, confidence, risk, needs_screen and needs_tools, and
+    # passed four arguments on.
+    summary = agent_core.run(task, speak, ask=ask, confirm=confirm,
+                             decision=decision)
     trace.event("done", route="inline", summary=summary[:120])
     conversation.session.remember("user", text)
     conversation.session.remember("assistant", summary)
