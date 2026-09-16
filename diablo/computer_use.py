@@ -421,6 +421,14 @@ class ActionRecord:
     confidence: float = 0.0
     evidence: List[str] = field(default_factory=list)
 
+    # What the vision layer contributed, when it was asked at all. Kept
+    # separate from the fused confidence on purpose: "the model was 0.88 sure
+    # it is a gear" and "the target is 0.88 likely correct" are different
+    # claims, and collapsing them hides which one was weak.
+    vision_label: str = ""
+    vision_confidence: Optional[float] = None
+    vision_crop: Optional[Tuple[float, float, float, float]] = None
+
     risk: str = LOW
     verdict: str = ""
     permission: str = DENY
@@ -446,6 +454,35 @@ class ActionRecord:
                    if self.verified is False else "")
         return (f"You asked me to {self.intent}. I clicked {who} because "
                 f"{because}{', ' + outcome if outcome else ''}.")
+
+    def debug(self) -> str:
+        """Everything, for a developer. Never shown to a user."""
+        lines = [
+            f"  intent        {self.intent!r}",
+            f"  application   {self.app} — {self.window_title[:44]}",
+            f"  target        {self.target}",
+            f"  sources       {'+'.join(self.target_sources) or 'none'}",
+            f"  confidence    {self.confidence}",
+        ]
+        if self.vision_label:
+            lines += [
+                f"  vision        {self.vision_label!r} at {self.vision_confidence}",
+                f"  vision crop   {tuple(round(v) for v in (self.vision_crop or ()))}",
+            ]
+        lines += [
+            f"  risk          {self.risk}",
+            f"  verdict       {self.verdict}",
+            f"  permission    {self.permission}",
+            f"  action        {self.action or 'none'}"
+            + (f" at ({self.x:.0f},{self.y:.0f})" if self.action else ""),
+            f"  expected      {self.expected or 'any change'}",
+            f"  observed      {self.observed or '—'}",
+            f"  verified      {self.verified}",
+            f"  retried       {self.retried}",
+        ]
+        for item in self.evidence:
+            lines.append(f"  evidence      {item}")
+        return "\n".join(lines)
 
 
 _history: List[ActionRecord] = []
@@ -532,6 +569,11 @@ def act_on(intent: str, task: str = "", expect: str = "",
         record.target_sources = sorted(set(reading.best.sources))
         record.confidence = round(reading.best.confidence, 3)
         record.evidence = list(reading.best.evidence)
+        seen = getattr(reading.best, "vision", None)
+        if seen is not None:
+            record.vision_label = seen.label
+            record.vision_confidence = round(seen.confidence, 3)
+            record.vision_crop = seen.crop
 
     chosen_risk = risk or risk_of(reading.best.label if reading.best else "", "click")
     record.risk = chosen_risk

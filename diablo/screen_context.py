@@ -788,7 +788,8 @@ def _for_vision(path: str) -> tuple:
     return (smaller, True) if smaller else (path, False)
 
 
-def read_image(path: str, instruction: str, num_predict: int = 300) -> str:
+def read_image(path: str, instruction: str, num_predict: int = 300,
+               schema: Optional[dict] = None) -> str:
     """
     Ask the vision model about an image already on disk.
 
@@ -814,9 +815,14 @@ def read_image(path: str, instruction: str, num_predict: int = 300) -> str:
             except OSError:
                 pass
     try:
+        # `schema` constrains the reply to a shape Ollama enforces. Free text
+        # from a vision model is a paragraph to parse with a regular
+        # expression, and that is how a misread becomes a confident wrong
+        # answer nobody can audit.
         message = local_brain.chat(
             [{"role": "user", "content": instruction, "images": [encoded]}],
             model=VISION_MODEL, num_predict=num_predict,
+            **({"fmt": schema} if schema else {}),
         )
         return (message.get("content") or "").strip()
     except local_brain.BrainOffline as e:

@@ -35,6 +35,7 @@ SUITES = [
     ("test_guidance.py",     False, "where Diablo stands when he points at something"),
     ("test_animation.py",    False, "the animation follows the audio, not the intention"),
     ("test_perception.py",   False, "finding a control, and deciding whether to touch it"),
+    ("test_vision_targets.py", False, "vision as the third candidate source"),
     ("test_roster.py",       True,  "delegation: who gets what, and several at once"),
     ("test_scenarios.py",    True,  "what a person says, and what actually happens"),
     ("test_walkthrough.py",  False, "the marker on screen, and waiting for a click"),
