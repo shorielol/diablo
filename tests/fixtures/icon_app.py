@@ -103,6 +103,14 @@ def main() -> int:
     status.setBezeled_(False)
     status.setDrawsBackground_(False)
     status.setFont_(status.font().fontWithSize_(19))
+    # Explicit black, not the default label colour.
+    #
+    # labelColor follows the system appearance, so in dark mode it resolves to
+    # near-white — and this window's background is set to white. The result is
+    # white text on white: the field renders, occupies its frame, reports
+    # itself to accessibility, and is invisible to a camera. It took a
+    # blank-looking capture and a failing goal check to find.
+    status.setTextColor_(NSColor.blackColor())
     window.contentView().addSubview_(status)
 
     class Handler(objc.lookUpClass("NSObject")):
