@@ -309,6 +309,23 @@ class Task:
 
 # ─── Planning one step at a time ─────────────────────────────────────────────
 
+# `target` and `value` are required, and that is not tidiness.
+#
+# They used to be optional, and constrained decoding took the invitation: on a
+# 59-goal benchmark the planner returned `click` with an empty target in 21 of
+# 59 decisions — 36% of everything it said, and a click that names nothing
+# cannot be carried out by anything downstream.
+#
+# Making them required, and saying so in the prompt, was measured as one
+# change against the same corpus and the same model:
+#
+#     advancement rate      44.1% -> 74.6%
+#     first step            48.9% -> 82.2%
+#     later steps           28.6% -> 50.0%
+#     empty-target decisions 33.9% -> 0.0%
+#
+# Repeated three times over the whole corpus: 46.9% against 74.0%. The 4B was
+# not the bottleneck. Its schema was.
 PLAN_SCHEMA = {
     "type": "object",
     "properties": {
@@ -318,7 +335,7 @@ PLAN_SCHEMA = {
         "expect": {"type": "string"},
         "why": {"type": "string"},
     },
-    "required": ["verb", "why"],
+    "required": ["verb", "target", "value", "why"],
 }
 
 PLAN_SYSTEM = """You decide the single next action in someone else's application.
@@ -336,7 +353,14 @@ carried out and the screen has been looked at afresh.
 - Use "wait" if the screen looks like it is still loading.
 - If the screen shows something you did not expect, deal with that first. An
   unexpected dialog is usually the next thing to handle, not an obstacle to
-  push past."""
+  push past.
+
+Fill in every field, using an empty string where one does not apply.
+
+- `click` MUST name a control in `target`, copied from the list of controls on
+  screen. A click with an empty target cannot be carried out by anything.
+- `type` MUST put the text in `value`, and `press` MUST put the key in `value`.
+- `target` is a name, never a coordinate."""
 
 
 def _screen_summary(window: Optional[Dict[str, Any]], limit: int = 900) -> str:
