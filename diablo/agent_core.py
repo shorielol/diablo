@@ -609,11 +609,18 @@ def run(
                     and _is_really_a_question(answer, performed)):
                 asked_aloud = True
                 trace.event("guard", guard="question_not_asked", text=answer[:120])
-                reply = ask(_speakable(answer))
+                asked = _speakable(answer)
+                reply = ask(asked)
                 if reply:
                     messages.append({"role": "user", "content":
                                      f"{reply}. Now finish the original request: {task}"})
                     continue
+                # Nobody answered. The text has been said aloud already, as the
+                # question, so the turn ends here. Carrying on made the caller
+                # say it a second time twenty seconds later, or sent the loop
+                # back to the model for a reworded version of the same answer.
+                trace.event("guard", guard="question_unanswered", text=asked[:120])
+                return AlreadySpoken(asked)
 
             if (_did_maths_in_its_head(task, answer, used_tools)
                     and not counted):
@@ -867,6 +874,15 @@ _OFFERS_A_CHOICE = re.compile(
     r"\b(which|would you like|do you want|should i|shall i|let me know which|"
     r"i found (two|three|several|multiple)|there are (two|three|several|multiple))\b",
     re.IGNORECASE)
+
+
+class AlreadySpoken(str):
+    """
+    A result the user has already heard: it was asked aloud and nobody answered.
+
+    Still a str, so every caller records it exactly as before. Only the point
+    that would say it out loud checks for it, and stays quiet.
+    """
 
 
 def _is_really_a_question(answer: str, performed: set) -> bool:

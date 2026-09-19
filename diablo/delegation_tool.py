@@ -283,6 +283,9 @@ def _speak_with_metadata(speak, text: str, **metadata):
     production bridge accepts metadata, so final task results get a stable
     admission key without making those small callers part of this phase.
     """
+    if isinstance(text, agent_core.AlreadySpoken):
+        # run() asked this aloud and nobody answered. It has been heard once.
+        return "already_spoken"
     try:
         parameters = inspect.signature(speak).parameters.values()
         accepts_metadata = any(
