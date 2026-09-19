@@ -254,9 +254,15 @@ def audio_callback(block):
     """
     if not MIC_LIVE.is_set():
         MIC_LIVE.set()
-    audio_queue.put((block * 32767).astype(np.int16))
     shaped = block.reshape(-1, 1)
+    # The pre-roll is the only thing kept while nobody owns the microphone:
+    # 400ms in a ring buffer, overwritten continuously, read only when a press
+    # begins. Nothing else below may see a block the hotkey did not ask for.
     _preroll.append(shaped.copy())
+    if not _mic_owned():
+        _barge.clear()
+        return
+    audio_queue.put((block * 32767).astype(np.int16))
     if is_capturing_command.is_set():
         command_capture_queue.put(shaped.copy())
 
@@ -447,6 +453,9 @@ def capture_speech(duration=5, prompt=None, precision=True, generation=None):
         # microphone or ask an obsolete question into the current interaction.
         return ""
 
+    if PTT_ONLY:
+        return _answer_by_press(prompt, generation)
+
     listener = globals().get("wake_listener")
     if listener is not None:
         listener.mute_for(duration + 2)
@@ -510,6 +519,69 @@ PTT_MAX_SECONDS = config.env_float("DIABLO_PTT_MAX", 30.0)
 # rollback and diagnostics, but do not let ambient audio create a command
 # session. Set DIABLO_PTT_ONLY=0 only for an explicit, temporary rollback.
 PTT_ONLY = config.env_bool("DIABLO_PTT_ONLY", True)
+
+# How long a spoken question waits for the press that answers it. A ceiling on
+# the user, not a timing fix: ownership is decided by the press itself.
+PTT_ANSWER_WAIT = config.env_float("DIABLO_PTT_ANSWER_WAIT", 20.0)
+
+# A question waiting for its answer, as (generation, queue). The next press
+# delivers its transcript here instead of dispatching a new command.
+_answer_waiter = None
+_answer_lock = threading.Lock()
+
+
+def _mic_owned() -> bool:
+    """
+    Whether Diablo may consume microphone audio right now.
+
+    Under PTT_ONLY a press owns the microphone from key-down until its worker
+    has drained the capture, and nothing else ever does: not a clarifying
+    question, not a confirmation, not barge-in. The legacy wake path
+    (DIABLO_PTT_ONLY=0) keeps its always-listening behaviour for rollback.
+    """
+    return _ptt_active.is_set() or not PTT_ONLY
+
+
+def _answer_by_press(prompt, generation):
+    """
+    Ask, then let the next press answer. The microphone is not opened here.
+
+    A question used to record five seconds of open microphone after asking,
+    which let ambient speech answer it, and let a stray "yes" approve a
+    confirmation. Now it is answered the way everything else is said to
+    Diablo: hold the key.
+    """
+    global _answer_waiter
+    answers = queue.Queue(maxsize=1)
+    with _answer_lock:
+        _answer_waiter = (generation, answers)
+    try:
+        if prompt:
+            speak(prompt, generation=generation)
+        return answers.get(timeout=PTT_ANSWER_WAIT)
+    except queue.Empty:
+        return ""
+    finally:
+        with _answer_lock:
+            if _answer_waiter is not None and _answer_waiter[1] is answers:
+                _answer_waiter = None
+
+
+def _deliver_answer(text) -> bool:
+    """Hand a press's transcript to a waiting question. False if none claims it."""
+    global _answer_waiter
+    with _answer_lock:
+        waiter, _answer_waiter = _answer_waiter, None
+    if waiter is None:
+        return False
+    generation, answers = waiter
+    if generation is not None and not voice.is_current_generation(generation):
+        # Something newer owns Diablo. Release the obsolete question at once
+        # and let this press be the command it was meant to be.
+        answers.put("")
+        return False
+    answers.put(text)
+    return True
 
 
 def _ptt_worker(on_text):
@@ -596,6 +668,8 @@ def _ptt_worker(on_text):
     print(f'  [PTT] held {held:.2f}s, transcribed in {time.time() - started:.2f}s: "{text}"')
     if not text:
         speak("I didn't catch that, Sir.", cached_key="error_1")
+        return
+    if _deliver_answer(text):
         return
     try:
         on_text(text) if on_text else process_command(text)
