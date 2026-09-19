@@ -519,12 +519,14 @@ class ConversationSubsystem(Subsystem):
         try:
             from skills import conversation
             session = conversation.session
-            age = (time.time() - session.last_spoke_at) if session.last_spoke_at else None
+            snapshot = session.snapshot()
+            age = ((time.time() - snapshot["last_spoke_at"])
+                   if snapshot["last_spoke_at"] else None)
             base.update({
-                "turn_count": len(session.turns) // 2,
+                "turn_count": len(snapshot["turns"]) // 2,
                 "is_followup": session.is_followup(),
                 "session_age": round(age, 1) if age is not None else None,
-                "last_screen_app": session.last_screen_app,
+                "last_screen_app": snapshot["last_screen_app"],
             })
         except BaseException as e:
             base["error"] = str(e)
@@ -739,7 +741,8 @@ class CompanionManager:
         began = time.time()
 
         try:
-            from skills import delegation_tool
+            from skills import delegation_tool, voice
+            generation = voice.begin_interaction()
 
             spoken: List[str] = []
 
@@ -749,7 +752,8 @@ class CompanionManager:
                 self.emit("response_ready", text=message, route=route)
                 self.transition(DiabloState.PROCESSING, "spoke, still working")
 
-            delegation_tool.handle(text, speak, ask=ask, confirm=confirm)
+            delegation_tool.handle(
+                text, speak, ask=ask, confirm=confirm, generation=generation)
             return spoken[-1] if spoken else ""
 
         except BaseException as e:

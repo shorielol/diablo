@@ -127,7 +127,7 @@ def _trace(limit: int = 12) -> List[List[Dict[str, Any]]]:
 def _conversation() -> List[Dict[str, str]]:
     try:
         from skills import conversation
-        return list(conversation.session.turns)
+        return conversation.session.snapshot()["turns"]
     except Exception:
         return []
 
@@ -321,7 +321,8 @@ class Handler(BaseHTTPRequestHandler):
                     try:
                         from skills import conversation, roster
                         if who in roster.BY_ID:
-                            conversation.session.focus = None if who == "diablo" else who
+                            conversation.session.set_focus(
+                                None if who == "diablo" else who)
                     except Exception:
                         pass
                 # Off the request thread: a task can take a minute and the UI
@@ -405,7 +406,9 @@ def _control(action: str) -> Dict[str, Any]:
             return {"ok": True, "dropped": dropped}
         if action == "reset":
             from skills import conversation
-            conversation.session.reset()
+            from skills import voice
+            generation = voice.begin_interaction()
+            conversation.session.reset(generation=generation)
             push("conversation_reset")
             return {"ok": True}
         if action == "listen" and _manager is not None:
@@ -443,9 +446,11 @@ def _control(action: str) -> Dict[str, Any]:
             from skills import conversation, roster
             if who and who not in roster.BY_ID:
                 return {"ok": False, "error": f"no agent called {who!r}"}
-            conversation.session.focus = None if who in ("", "diablo") else who
-            push("focus", agent=conversation.session.focus or "diablo")
-            return {"ok": True, "focus": conversation.session.focus or "diablo"}
+            conversation.session.set_focus(
+                None if who in ("", "diablo") else who)
+            focus = conversation.session.snapshot()["focus"]
+            push("focus", agent=focus or "diablo")
+            return {"ok": True, "focus": focus or "diablo"}
         if action == "recheck" and _manager is not None:
             perms = _manager.forget_permissions()
             push("permissions", permissions=perms)

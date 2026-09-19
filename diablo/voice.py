@@ -12,6 +12,7 @@ It streams the generated WAV audio directly and caches it to disk.
 """
 
 import hashlib
+import contextvars
 import os
 import queue
 import subprocess
@@ -37,6 +38,72 @@ _warned_ffmpeg = False
 _voice_fingerprint = None
 _voicebox_profile_id = None
 _profile_lock = threading.Lock()
+
+# A command gets one monotonically increasing identity at the authoritative
+# dispatch boundary in voice_bridge.  The identity is carried explicitly for
+# daemon/queue callbacks and is also available to same-thread reflexes through
+# this context variable.  Voice owns the final admission check so no caller
+# can bypass stale-result suppression by reaching TTS from a different path.
+_generation_lock = threading.Lock()
+_current_generation = 0
+_generation_context = contextvars.ContextVar(
+    "diablo_interaction_generation", default=None)
+
+# Playback is a physical resource.  A re-entrant lock serialises afplay/say
+# processes, while the separate process lock lets interrupt() terminate the
+# current process without waiting for the playback lock.
+_playback_lock = threading.RLock()
+_active_process_lock = threading.Lock()
+_active_process = None
+_interrupt_serial = 0
+
+# Optional speech identities protect final-result paths from accidentally
+# saying the same completion twice.  Ordinary progress lines deliberately do
+# not use this set, since one interaction may legitimately speak several lines.
+_speech_admission_lock = threading.Lock()
+_admitted_speech_ids = set()
+
+
+def begin_interaction() -> int:
+    """Make a new interaction current and supersede older speech."""
+    global _current_generation
+    with _generation_lock:
+        _current_generation += 1
+        generation = _current_generation
+    _generation_context.set(generation)
+    interrupt()
+    return generation
+
+
+def bind_interaction(generation: int):
+    """Bind an existing interaction identity to the current thread."""
+    return _generation_context.set(generation)
+
+
+def current_interaction_generation():
+    """Return the generation bound to this thread, if it has one."""
+    return _generation_context.get()
+
+
+def is_current_generation(generation) -> bool:
+    """Whether a speech request is still allowed to address the user."""
+    if generation is None:
+        return True
+    with _generation_lock:
+        return generation == _current_generation
+
+
+def _admit_speech(generation, speech_id=None):
+    if not is_current_generation(generation):
+        return False, "stale"
+    if speech_id is None:
+        return True, None
+    key = (generation, speech_id)
+    with _speech_admission_lock:
+        if key in _admitted_speech_ids:
+            return False, "duplicate"
+        _admitted_speech_ids.add(key)
+    return True, None
 
 
 def offline() -> bool:
@@ -372,34 +439,77 @@ def _fire(which: str) -> None:
             pass
 
 
-def _play(path: str) -> bool:
+def _terminate_process(process) -> None:
+    """Terminate a native audio process, escalating if it does not exit."""
+    if process is None:
+        return
     try:
+        process.terminate()
+    except Exception:
+        return
+    try:
+        process.wait(timeout=0.5)
+    except Exception:
+        try:
+            process.kill()
+        except Exception:
+            pass
+
+
+def _run_playback(command, generation=None) -> str:
+    """Run one native playback command under the single audio owner."""
+    global _active_process, _interrupt_serial
+
+    if not is_current_generation(generation):
+        return "stale"
+
+    with _playback_lock:
+        if not is_current_generation(generation):
+            return "stale"
+        try:
+            process = subprocess.Popen(command)
+        except Exception as e:
+            print(f"  [Voice] playback failed: {e}")
+            return "failed"
+
+        with _active_process_lock:
+            _active_process = process
+            started_interrupt = _interrupt_serial
         _fire("start")
-        subprocess.run(["afplay", path], timeout=120)
-        return True
-    except Exception as e:
-        print(f"  [Voice] playback failed: {e}")
-        return False
-    finally:
-        _fire("end")
+        try:
+            returncode = process.wait()
+            with _active_process_lock:
+                interrupted = _interrupt_serial != started_interrupt
+            if interrupted:
+                return "interrupted"
+            return "played" if returncode == 0 else "failed"
+        except Exception as e:
+            print(f"  [Voice] playback failed: {e}")
+            return "failed"
+        finally:
+            with _active_process_lock:
+                if _active_process is process:
+                    _active_process = None
+            _fire("end")
 
 
-def _say_locally(text: str, pace: Optional[int] = None) -> None:
-    """macOS speech synthesis. Never fails, never leaves the machine."""
+def _play(path: str, generation=None) -> str:
+    return _run_playback(["afplay", path], generation=generation)
+
+
+def _say_locally(text: str, pace: Optional[int] = None, generation=None) -> str:
+    """macOS speech synthesis under the same playback owner as afplay."""
     command = ["say", "-v", os.getenv("DIABLO_FALLBACK_VOICE", "Daniel")]
     if pace:
         # `say` takes words per minute directly, so the fallback voice gets the
         # same pacing without going near ffmpeg.
         command += ["-r", str(int(pace))]
     command.append(text)
-    _fire("start")
-    try:
-        subprocess.run(command, timeout=120)
-    finally:
-        _fire("end")
+    return _run_playback(command, generation=generation)
 
 
-def speak(text: str, pace: Optional[int] = None) -> str:
+def speak(text: str, pace: Optional[int] = None, generation=None,
+          speech_id=None, speech_kind="USER_RESPONSE") -> str:
     """
     Say it. `pace` is a words-per-minute target; None leaves the voice alone.
 
@@ -411,21 +521,44 @@ def speak(text: str, pace: Optional[int] = None) -> str:
     if not text:
         return "empty"
 
+    if generation is None:
+        generation = current_interaction_generation()
+    admitted, reason = _admit_speech(generation, speech_id=speech_id)
+    if not admitted:
+        return reason
+
     hit = cached_path(text)
     if hit:
         if pace:
             hit = repace(hit, text, pace)
-        if _play(hit):
+        route = _play(hit, generation=generation)
+        if route == "played":
             return "cache"
+        if route in ("stale", "interrupted"):
+            return route
 
     path = synthesize(text)
     if path and pace:
         path = repace(path, text, pace)
-    if path and _play(path):
-        return "voicebox"
+    if not is_current_generation(generation):
+        return "stale"
+    if path:
+        route = _play(path, generation=generation)
+        if route == "played":
+            return "voicebox"
+        if route in ("stale", "interrupted"):
+            return route
 
-    _say_locally(text, pace)
-    return "local"
+    if not is_current_generation(generation):
+        return "stale"
+    route = _say_locally(text, pace, generation=generation)
+    if route == "interrupted":
+        return "interrupted"
+    if route == "stale":
+        return "stale"
+    if route == "played":
+        return "local"
+    return "failed"
 
 
 
@@ -439,10 +572,16 @@ STOP = threading.Event()
 
 def interrupt() -> None:
     """Stop talking, now. Safe to call from any thread."""
+    global _interrupt_serial
     STOP.set()
+    with _active_process_lock:
+        _interrupt_serial += 1
+        process = _active_process
+    _terminate_process(process)
 
 
-def speak_stream(pieces, should_stop=None, pace: Optional[int] = None) -> str:
+def speak_stream(pieces, should_stop=None, pace: Optional[int] = None,
+                 generation=None, speech_id=None, speech_kind="USER_RESPONSE") -> str:
     """
     Speak sentence by sentence as they arrive, instead of waiting for the lot.
 
@@ -457,6 +596,14 @@ def speak_stream(pieces, should_stop=None, pace: Optional[int] = None) -> str:
 
     Returns the route the last segment took, or "interrupted".
     """
+    if generation is None:
+        generation = current_interaction_generation()
+    admitted, reason = _admit_speech(generation, speech_id=speech_id)
+    if not admitted:
+        return reason
+    if not is_current_generation(generation):
+        return "stale"
+
     STOP.clear()
     SPEAKING.set()
     route = "empty"
@@ -496,7 +643,8 @@ def speak_stream(pieces, should_stop=None, pace: Optional[int] = None) -> str:
 
     try:
         while True:
-            if STOP.is_set() or (should_stop is not None and should_stop()):
+            if (not is_current_generation(generation) or STOP.is_set()
+                    or (should_stop is not None and should_stop())):
                 return "interrupted"
             try:
                 item = ahead.get(timeout=30)
@@ -505,22 +653,28 @@ def speak_stream(pieces, should_stop=None, pace: Optional[int] = None) -> str:
             if item is None:
                 return route
             piece, path = item
-            if STOP.is_set():
+            if not is_current_generation(generation) or STOP.is_set():
                 return "interrupted"
-            if path and _play(path):
+            playback = _play(path, generation=generation) if path else "failed"
+            if playback == "played":
                 route = "voicebox"
+            elif playback in ("interrupted", "stale"):
+                return playback
             else:
                 # Whatever went wrong with this segment, say it some other way
                 # rather than dropping a sentence out of the middle of an answer.
-                route = speak(piece, pace=pace)
+                route = speak(piece, pace=pace, generation=generation)
     finally:
         STOP.set()          # unblock the renderer if it is mid-queue
-        SPEAKING.clear()
+        if is_current_generation(generation):
+            SPEAKING.clear()
         worker.join(timeout=2)
-        STOP.clear()
+        if is_current_generation(generation):
+            STOP.clear()
 
 
-def say_long(text: str, should_stop=None, pace: Optional[int] = None) -> str:
+def say_long(text: str, should_stop=None, pace: Optional[int] = None,
+             generation=None, speech_id=None, speech_kind="USER_RESPONSE") -> str:
     """
     Speak a whole answer, split at sentence boundaries first.
 
@@ -533,9 +687,11 @@ def say_long(text: str, should_stop=None, pace: Optional[int] = None) -> str:
     except Exception:
         pieces = [text]
     if not pieces:
-        return speak(text, pace=pace)
+        return speak(text, pace=pace, generation=generation, speech_id=speech_id,
+                     speech_kind=speech_kind)
     if len(pieces) == 1:
-        return speak(pieces[0], pace=pace)
+        return speak(pieces[0], pace=pace, generation=generation, speech_id=speech_id,
+                     speech_kind=speech_kind)
 
     # First sentence alone, then everything else as one block.
     #
@@ -548,7 +704,9 @@ def say_long(text: str, should_stop=None, pace: Optional[int] = None) -> str:
     # look-ahead only hides part of it. Splitting once buys nearly all of the
     # head start and almost none of the tax.
     return speak_stream([pieces[0], " ".join(pieces[1:])],
-                        should_stop=should_stop, pace=pace)
+                        should_stop=should_stop, pace=pace,
+                        generation=generation, speech_id=speech_id,
+                        speech_kind=speech_kind)
 
 # ─── Pre-warm ────────────────────────────────────────────────────────────────
 

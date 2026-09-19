@@ -124,7 +124,8 @@ def _pace_for(text: str) -> int:
     return voice.NORMAL_WPM
 
 
-def speak(text, lang="en", cached_key=None, pace=None):
+def speak(text, lang="en", cached_key=None, pace=None, generation=None,
+          speech_id=None, speech_kind="USER_RESPONSE"):
     """
     Say something out loud.
 
@@ -138,6 +139,10 @@ def speak(text, lang="en", cached_key=None, pace=None):
     remembered to pre-render. The multilingual model handles the Devanagari
     that VOICE_HI used to be needed for.
     """
+    if generation is None:
+        generation = voice.current_interaction_generation()
+    if generation is not None and not voice.is_current_generation(generation):
+        return "stale"
     barge_in.clear()
     if pace is None:
         pace = _pace_for(text)
@@ -153,12 +158,18 @@ def speak(text, lang="en", cached_key=None, pace=None):
         # 2.79s. say_long falls back to a single call for anything short, so
         # the cached one-liners are unaffected.
         if len(text) > 120:
-            voice.say_long(text, should_stop=lambda: barge_in.is_set(), pace=pace)
-        else:
-            voice.speak(text, pace=pace)
+            return voice.say_long(
+                text, should_stop=lambda: barge_in.is_set(), pace=pace,
+                generation=generation, speech_id=speech_id,
+                speech_kind=speech_kind)
+        return voice.speak(text, pace=pace, generation=generation,
+                           speech_id=speech_id, speech_kind=speech_kind)
     except Exception as e:
         print(f"  [TTS fallback: {e}]")
-        subprocess.run(["say", "-v", "Daniel", text])
+        # Keep every physical speech operation behind skills.voice's owner.
+        # A direct subprocess fallback here would bypass stale-result and
+        # overlap protection.
+        return "failed"
     finally:
         set_ui_state("idle")
 
@@ -423,7 +434,7 @@ AFFIRMATIVE = ["yes", "yeah", "yep", "sure", "go ahead", "do it", "affirmative",
                "please do", "haan", "correct", "confirm", "proceed", "okay", "ok"]
 
 
-def capture_speech(duration=5, prompt=None, precision=True):
+def capture_speech(duration=5, prompt=None, precision=True, generation=None):
     """
     Take exclusive hold of the microphone for one utterance and transcribe it.
 
@@ -431,13 +442,18 @@ def capture_speech(duration=5, prompt=None, precision=True):
     the agent's clarifying questions, the confirmation prompts — so two of them
     can never be pulling from the same audio queue at the same time.
     """
+    if generation is not None and not voice.is_current_generation(generation):
+        # A stale worker may finish its computation, but it must not reopen the
+        # microphone or ask an obsolete question into the current interaction.
+        return ""
+
     listener = globals().get("wake_listener")
     if listener is not None:
         listener.mute_for(duration + 2)
 
     with MIC_LOCK:
         if prompt:
-            speak(prompt)
+            speak(prompt, generation=generation)
         while not command_capture_queue.empty():
             command_capture_queue.get()
         is_capturing_command.set()
@@ -489,6 +505,11 @@ _ptt_lock = threading.Lock()
 PTT_MIN_SECONDS = config.env_float("DIABLO_PTT_MIN", 0.25)
 # Above this the key is stuck, or somebody has leant on the keyboard.
 PTT_MAX_SECONDS = config.env_float("DIABLO_PTT_MAX", 30.0)
+
+# Diablo is a push-to-talk product. Keep the legacy wake listener available for
+# rollback and diagnostics, but do not let ambient audio create a command
+# session. Set DIABLO_PTT_ONLY=0 only for an explicit, temporary rollback.
+PTT_ONLY = config.env_bool("DIABLO_PTT_ONLY", True)
 
 
 def _ptt_worker(on_text):
@@ -607,7 +628,7 @@ def listen_for_response(duration=3):
     return capture_speech(duration).lower()
 
 
-def ask_user_voice(question):
+def ask_user_voice(question, generation=None):
     """
     How the agent gets unstuck instead of guessing.
 
@@ -617,20 +638,21 @@ def ask_user_voice(question):
     which is exactly why the microphone is locked.
     """
     print(f"\n  [ASK] {question}")
-    answer = capture_speech(5, prompt=question)
+    answer = capture_speech(5, prompt=question, generation=generation)
     print(f"  [ANSWER] {answer!r}")
     return answer
 
 
-def confirm_voice(description):
+def confirm_voice(description, generation=None):
     """Spoken yes/no in front of anything that cannot simply be undone."""
     answer = capture_speech(
-        4, prompt=f"Sir, I'm about to {description}. Shall I proceed?").lower()
+        4, prompt=f"Sir, I'm about to {description}. Shall I proceed?",
+        generation=generation).lower()
     approved = any(word in answer for word in AFFIRMATIVE)
     if approved:
-        speak("Proceeding.", cached_key="ack_1")
+        speak("Proceeding.", cached_key="ack_1", generation=generation)
     else:
-        speak("Cancelled.")
+        speak("Cancelled.", generation=generation)
     return approved
 
 
@@ -639,7 +661,7 @@ def request_confirmation(description, action_fn, args):
         action_fn(*args)
 
 
-def process_command(text, is_sub_command=False):
+def process_command(text, is_sub_command=False, generation=None):
     """
     Reflexes first, then the agent.
 
@@ -652,6 +674,34 @@ def process_command(text, is_sub_command=False):
     whole difference from the old ladder: an unrecognised sentence used to end
     in "I'll look into it", which meant nothing happened at all.
     """
+    if generation is None:
+        generation = voice.begin_interaction()
+    else:
+        voice.bind_interaction(generation)
+
+    # Reflexes stay on this thread, while queued workers retain these closures
+    # after process_command returns.  The explicit generation is therefore not
+    # lost when a task finishes later on a daemon worker.
+    base_speak = globals()["speak"]
+    base_ask = globals()["ask_user_voice"]
+    base_confirm = globals()["confirm_voice"]
+
+    def interaction_speak(message, **kwargs):
+        kwargs.setdefault("generation", generation)
+        return base_speak(message, **kwargs)
+
+    def interaction_ask(question):
+        return base_ask(question, generation=generation)
+
+    def interaction_confirm(description):
+        return base_confirm(description, generation=generation)
+
+    # Existing reflex code below intentionally remains unchanged; these local
+    # bindings route all of its user-facing speech through the same identity.
+    speak = interaction_speak
+    ask_user_voice = interaction_ask
+    confirm_voice = interaction_confirm
+
     lower = text.lower().strip()
     stripped = lower.rstrip(" .!?,")
 
@@ -736,7 +786,9 @@ def process_command(text, is_sub_command=False):
         # Anything else ("open my Econ EE folder") needs judgement. Fall through.
 
     # ── Everything else: the agent. Real tools, and it can ask you a question. ──
-    delegation_tool.handle(text, speak, ask=ask_user_voice, confirm=confirm_voice)
+    delegation_tool.handle(
+        text, speak, ask=ask_user_voice, confirm=confirm_voice,
+        generation=generation)
 
 
 # ─── Diablo warm-on-wake ───
@@ -897,7 +949,10 @@ def start_listening_loop():
     deaf_reported = False
 
     try:
-        print(f"  Say 'Hey {wake_word.PHRASE.title()}' to activate...\n")
+        if PTT_ONLY:
+            print("  Push-to-talk only: hold the Diablo hotkey to activate.\n")
+        else:
+            print(f"  Say 'Hey {wake_word.PHRASE.title()}' to activate...\n")
         while True:
             audio_data = audio_queue.get()
 
@@ -912,14 +967,18 @@ def start_listening_loop():
             # clarifying question. Do not try to wake on the same words.
             if is_capturing_command.is_set():
                 continue
-            try:
-                command = wake_listener.feed(audio_data)
-            except Exception as e:
-                print(f"  [Wake] {type(e).__name__}: {e}")
-                continue
-            if command is None:
-                continue
-            threading.Thread(target=handle_utterance, args=(command,), daemon=True).start()
+            # The wake implementation remains loaded and reversible, but it is
+            # not a command-entry path in the default product mode. PTT is the
+            # only route that may set is_capturing_command and call process_command.
+            if not PTT_ONLY:
+                try:
+                    command = wake_listener.feed(audio_data)
+                except Exception as e:
+                    print(f"  [Wake] {type(e).__name__}: {e}")
+                    continue
+                if command is None:
+                    continue
+                threading.Thread(target=handle_utterance, args=(command,), daemon=True).start()
     except KeyboardInterrupt:
         print("\n  Stopping.")
     except BaseException:

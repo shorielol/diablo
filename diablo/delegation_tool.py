@@ -14,6 +14,7 @@ moved to a smaller model.
 """
 
 import json
+import inspect
 import os
 import re
 
@@ -251,7 +252,8 @@ def _fan_out(job: dict, ask, confirm) -> str:
         answer = agent_core.run(subtask, quiet, ask=sub_ask,
                                 confirm=sub_confirm, working=working)
         conversation.session.record_task(agent_id, subtask, working, answer,
-                                         task_id=f"{job['id']}:{agent_id}")
+                                         task_id=f"{job['id']}:{agent_id}",
+                                         generation=job.get("generation"))
         return answer
 
     def started(agent_id, subtask):
@@ -274,6 +276,25 @@ def _fan_out(job: dict, ask, confirm) -> str:
     return roster.merge(results)
 
 
+def _speak_with_metadata(speak, text: str, **metadata):
+    """Pass result identity when the speech callback supports it.
+
+    A few offline/unit-test callers still provide a one-argument callback.  The
+    production bridge accepts metadata, so final task results get a stable
+    admission key without making those small callers part of this phase.
+    """
+    try:
+        parameters = inspect.signature(speak).parameters.values()
+        accepts_metadata = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters
+        ) or all(name in inspect.signature(speak).parameters for name in metadata)
+    except (TypeError, ValueError):
+        accepts_metadata = False
+    if accepts_metadata:
+        return speak(text, **metadata)
+    return speak(text)
+
+
 def _worker() -> None:
     while True:
         job, speak, ask, confirm = _queue.get()
@@ -292,26 +313,32 @@ def _worker() -> None:
                                          confirm=confirm, working=working)
                 conversation.session.record_task(
                     job.get("agent") or "diablo", job["task"], working, summary,
-                    task_id=job["id"])
+                    task_id=job["id"], generation=job.get("generation"))
             store.update(job["id"], status="done", finished_at=time.time(),
                          summary=summary)
             # Fold the result into the conversation so a follow-up like "what
             # did you find?" has something to refer back to.
-            conversation.session.remember("assistant", summary)
+            conversation.session.remember(
+                "assistant", summary, generation=job.get("generation"))
             # Whoever did the work is now who he is talking to, so "and the
             # other one?" reaches them rather than starting again with the
             # orchestrator. A fan-out leaves focus alone: several of them
             # answered and picking one would be a guess.
             if not job.get("parts") and job.get("agent") not in (None, "diablo"):
-                conversation.session.focus = job["agent"]
+                conversation.session.set_focus(
+                    job["agent"], generation=job.get("generation"))
             _push("job_done", id=job["id"], agent=job.get("agent", "diablo"),
                   summary=summary[:400])
-            speak(summary)
+            _speak_with_metadata(
+                speak, summary, speech_id=f"job:{job['id']}:result",
+                speech_kind="TASK_RESULT")
         except Exception as e:
             store.update(job["id"], status="failed", finished_at=time.time(),
                          summary=str(e))
             print(f"  [Tasks] Job {job['id']} failed: {type(e).__name__}: {e}")
-            speak("That one came apart on me, Sir. The details are in the log.")
+            _speak_with_metadata(
+                speak, "That one came apart on me, Sir. The details are in the log.",
+                speech_id=f"job:{job['id']}:failure", speech_kind="TASK_RESULT")
         finally:
             _queue.task_done()
 
@@ -334,6 +361,7 @@ def submit(
     ask: Optional[Callable[[str], str]] = None,
     confirm: Optional[Callable[[str], bool]] = None,
     pieces: Optional[List[tuple]] = None,
+    generation: Optional[int] = None,
 ) -> dict:
     """
     Queue a task and return immediately.
@@ -350,6 +378,7 @@ def submit(
         "task": task,
         "status": "queued",
         "created_at": time.time(),
+        "generation": generation,
         "agent": "diablo" if len(pieces) > 1 else pieces[0][1],
         "parts": ([{"agent": a, "task": t, "status": "queued", "summary": ""}
                    for t, a in pieces] if len(pieces) > 1 else []),
@@ -364,6 +393,7 @@ def handle(
     speak: Callable[[str], None],
     ask: Optional[Callable[[str], str]] = None,
     confirm: Optional[Callable[[str], bool]] = None,
+    generation: Optional[int] = None,
 ) -> str:
     """
     The one call voice_bridge makes for anything the reflexes did not claim.
@@ -384,11 +414,11 @@ def handle(
 
     lower = text.lower()
     if conversation.wants_reset(lower):
-        conversation.session.reset()
+        conversation.session.reset(generation=generation)
         speak("Forgotten, Sir.")
         return "chat"
 
-    in_conversation = conversation.session.is_followup()
+    in_conversation = conversation.session.is_followup(generation=generation)
 
     # One classification, carrying confidence and risk rather than just a verb.
     # classify() calls understand() internally, so this is not an extra model
@@ -420,27 +450,33 @@ def handle(
         speak(persona.working())
         working: list = []
         summary = tutor.walk(text, speak, ask=ask, working=working)
-        conversation.session.remember("user", text)
-        conversation.session.remember("assistant", summary)
-        conversation.session.focus = "vassago"
+        conversation.session.commit_turn(generation, text, summary)
+        conversation.session.set_focus("vassago", generation=generation)
         # What was read off the screen and what sympy did with it, so "walk me
         # through your maths" is answered from the record instead of the model
         # reconstructing a plausible method backwards from the answer.
-        conversation.session.record_task("vassago", text, working, summary)
+        conversation.session.record_task(
+            "vassago", text, working, summary,
+            task_id=f"turn:{trace.current_turn()}:teach",
+            generation=generation)
         trace.event("done", route="teach", summary=summary[:120])
         return "taught"
 
     # A named agent takes the conversation, whatever kind of turn this is.
     named = conversation.addressed_to(text)
     if named:
-        conversation.session.focus = None if named == "diablo" else named
+        conversation.session.set_focus(
+            None if named == "diablo" else named, generation=generation)
         trace.event("focus", agent=named)
 
     if verdict["action"] == "chat":
         # Not the one-shot reply the classifier produced — a real conversational
         # turn, with the last dozen exchanges behind it and the screen attached
         # if he pointed at it.
-        speak(conversation.talk(text))
+        _speak_with_metadata(
+            speak, conversation.talk(text, generation=generation),
+            speech_id=f"turn:{trace.current_turn()}:chat",
+            speech_kind="USER_RESPONSE")
         return "chat"
 
     # ── Strict clarify loop ──────────────────────────────────────────────
@@ -460,24 +496,33 @@ def handle(
             speak("I did not catch that, Sir.")
             break
         gathered = f"{gathered}\n(I asked: {verdict['question']} — you said: {answer})"
-        verdict = agent_core.understand(gathered,
-                                        in_conversation=conversation.session.is_followup())
+        verdict = agent_core.understand(
+            gathered,
+            in_conversation=conversation.session.is_followup(
+                generation=generation))
 
     # A named agent takes the conversation, whatever kind of turn this is.
     named = conversation.addressed_to(text)
     if named:
-        conversation.session.focus = None if named == "diablo" else named
+        conversation.session.set_focus(
+            None if named == "diablo" else named, generation=generation)
         trace.event("focus", agent=named)
 
     if verdict["action"] == "chat":
-            speak(conversation.talk(gathered))
-            return "chat"
+        _speak_with_metadata(
+            speak, conversation.talk(gathered, generation=generation),
+            speech_id=f"turn:{trace.current_turn()}:chat",
+            speech_kind="USER_RESPONSE")
+        return "chat"
 
     if verdict["action"] == "clarify":
         if CLARIFY_STRICT:
             # Refusing here is the point. Two rounds failed to pin it down, so
             # anything done now would be a guess dressed up as an instruction.
-            speak("I still don't follow, Sir. Say it again when you have a moment.")
+            _speak_with_metadata(
+                speak, "I still don't follow, Sir. Say it again when you have a moment.",
+                speech_id=f"turn:{trace.current_turn()}:clarify",
+                speech_kind="USER_RESPONSE")
             return "unclear"
         verdict = {"action": "act", "task": gathered}
     elif rounds:
@@ -496,9 +541,10 @@ def handle(
             summary = local_brain.with_model(
                 os.getenv("DIABLO_ESCALATE_MODEL", ""),
                 lambda: agent_core.run(task, speak, ask=ask, confirm=confirm))
-            conversation.session.remember("user", text)
-            conversation.session.remember("assistant", summary)
-            speak(summary)
+            conversation.session.commit_turn(generation, text, summary)
+            _speak_with_metadata(
+                speak, summary, speech_id=f"turn:{trace.current_turn()}:escalated",
+                speech_kind="USER_RESPONSE")
             trace.event("done", route="escalate", summary=summary[:120])
             return "escalated"
         except Exception as e:
@@ -515,7 +561,7 @@ def handle(
 
     if not routing.delegates:
         return _run_inline(task, text, speak, ask, confirm, routing.reason,
-                           decision=decision)
+                           decision=decision, generation=generation)
 
     # It delegates — but a sentence can hold one errand for an agent and one
     # for Diablo. "Research this company and lower my volume" must not spawn an
@@ -525,9 +571,15 @@ def handle(
         trace.event("decide", route=DIRECT, reason="direct half of a mixed request",
                     task=part[:120])
         _run_inline(part, part, speak, ask, confirm,
-                    "direct half of a mixed request", decision=decision)
+                    "direct half of a mixed request", decision=decision,
+                    generation=generation)
     if not pieces:
         return "inline"
+
+    def background_speak(message, **kwargs):
+        """Mark worker progress separately from the immediate user reply."""
+        kwargs.setdefault("speech_kind", "BACKGROUND_STATUS")
+        return speak(message, **kwargs)
 
     # Several errands in one sentence, and none of them waiting on another.
     # roster.split() returns one piece unless it is certain, so the common case
@@ -537,18 +589,21 @@ def handle(
         trace.event("route", route="fan_out", task=task[:120],
                     agents=[a for _t, a in pieces])
         speak(roster.announce(pieces))
-        submit(task, speak, ask=ask, confirm=confirm, pieces=pieces)
+        submit(task, background_speak, ask=ask, confirm=confirm, pieces=pieces,
+               generation=generation)
         return "delegated"
 
     trace.event("route", route="queued", words=depth, task=task[:120],
                 agent=pieces[0][1])
     speak(roster.announce(pieces))
-    submit(task, speak, ask=ask, confirm=confirm, pieces=pieces)
+    submit(task, background_speak, ask=ask, confirm=confirm, pieces=pieces,
+           generation=generation)
     return "queued"
 
 
 def _run_inline(task: str, text: str, speak, ask, confirm,
-                reason: str = "", decision=None) -> str:
+                reason: str = "", decision=None,
+                generation: Optional[int] = None) -> str:
     """
     Diablo does it, here, on this thread.
 
@@ -578,13 +633,15 @@ def _run_inline(task: str, text: str, speak, ask, confirm,
     summary = agent_core.run(task, speak, ask=ask, confirm=confirm,
                              decision=decision, working=working)
     trace.event("done", route="inline", summary=summary[:120])
-    conversation.session.remember("user", text)
-    conversation.session.remember("assistant", summary)
+    conversation.session.commit_turn(generation, text, summary)
     if working:
         # Recorded against Diablo rather than an agent: an inline action is not
         # a task in the rail, and focus stays where it was. The record is what
         # a follow-up reads, not a row in the sidebar.
-        record = conversation.session.record_task("diablo", task, working, summary)
+        record = conversation.session.record_task(
+            "diablo", task, working, summary,
+            task_id=f"turn:{trace.current_turn()}:inline:{task}",
+            generation=generation)
         trace.event("recorded", into="conversation.session",
                     steps=len(working),
                     observations=sum(1 for w in working if w.get("observation")),
@@ -594,7 +651,9 @@ def _run_inline(task: str, text: str, speak, ask, confirm,
     # name assign() voted for, so turning the volume down handed the
     # conversation to Seere and the next ordinary question came back in Seere's
     # voice. Focus follows a task agent, and an inline action is not one.
-    speak(summary)
+    _speak_with_metadata(
+        speak, summary, speech_id=f"turn:{trace.current_turn()}:inline:{task}",
+        speech_kind="USER_RESPONSE")
     return "inline"
 
 

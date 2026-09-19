@@ -23,12 +23,14 @@ Three things it does that the command path does not:
               being read aloud at you while you are trying to work.
 """
 
+import copy
 import os
 
 from skills import config  # noqa: E402
 import random
 import re  # SIGNOFF_GUARD
 import sys
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -315,9 +317,11 @@ def _absorb(record: Dict[str, Any], step: Dict[str, str]) -> None:
 
 
 class Session:
-    """One rolling conversation. Not thread-safe by design — there is one voice."""
+    """One rolling conversation with interaction-scoped commit ownership."""
 
     def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._state_version = 0
         self.turns: List[Dict[str, str]] = []
         self.earlier: str = ""        # the summarised part, if any
         # The first thing he said, kept word for word and never summarised.
@@ -349,7 +353,49 @@ class Session:
         # established and where it came from. See record_task.
         self.tasks: Dict[str, Dict[str, Any]] = {}
 
-    def _summarise_oldest(self) -> None:
+    @staticmethod
+    def _is_current(generation: Optional[int]) -> bool:
+        """Return whether an interaction is still allowed to commit state."""
+        if generation is None:
+            return True
+        try:
+            from skills import voice
+            return voice.is_current_generation(generation)
+        except Exception:
+            return False
+
+    def _expire_if_stale_locked(self) -> bool:
+        if self.last_spoke_at and time.time() - self.last_spoke_at > SESSION_TIMEOUT:
+            self.turns = []
+            self.earlier = ""
+            self.opening = ""
+            self.last_screen_app = None
+            self.focus = None
+            self.tasks = {}
+            self.last_spoke_at = 0.0
+            self._state_version += 1
+            return True
+        return False
+
+    def _snapshot_locked(self) -> Dict[str, Any]:
+        return {
+            "turns": copy.deepcopy(self.turns),
+            "earlier": self.earlier,
+            "opening": self.opening,
+            "last_spoke_at": self.last_spoke_at,
+            "last_screen_app": self.last_screen_app,
+            "focus": self.focus,
+            "tasks": copy.deepcopy(self.tasks),
+            "state_version": self._state_version,
+        }
+
+    def snapshot(self) -> Dict[str, Any]:
+        """Return a consistent, detached view of the session state."""
+        with self._lock:
+            self._expire_if_stale_locked()
+            return self._snapshot_locked()
+
+    def _summarise_oldest(self, generation: Optional[int] = None) -> bool:
         """
         Fold the oldest half of the conversation into `earlier`.
 
@@ -360,14 +406,21 @@ class Session:
         because a conversation that keeps growing is worse than one that
         forgets.
         """
+        # Snapshot the work under the lock, then release it while the model
+        # runs. A slow summarisation must not block a new PTT interaction.
         keep = MAX_TURNS
-        old, self.turns = self.turns[:-keep], self.turns[-keep:]
+        with self._lock:
+            if not self._is_current(generation) or len(self.turns) <= MAX_TURNS * 2:
+                return False
+            old = copy.deepcopy(self.turns[:-keep])
+            earlier = self.earlier
+            base_version = self._state_version
         if not old:
-            return
+            return True
         transcript = "\n".join(
             f"{'He' if t['role'] == 'user' else 'You'}: {t['content']}" for t in old)
-        if self.earlier:
-            transcript = f"(Even earlier: {self.earlier})\n{transcript}"
+        if earlier:
+            transcript = f"(Even earlier: {earlier})\n{transcript}"
         try:
             from skills import local_brain
             result = local_brain.chat_json(
@@ -377,30 +430,85 @@ class Session:
             summary = str(result.get("summary") or "").strip()
         except Exception:
             summary = ""
-        # A summary longer than what it replaced is not a summary.
-        if summary and len(summary) < len(transcript):
-            self.earlier = summary
+        # A summary longer than what it replaced is not a summary. Commit it
+        # only if no newer interaction changed the snapshot we generated from.
+        with self._lock:
+            if (not self._is_current(generation)
+                    or self._state_version != base_version):
+                return False
+            self.turns = self.turns[-keep:]
+            if summary and len(summary) < len(transcript):
+                self.earlier = summary
+            self._state_version += 1
+        return True
 
     def _expire_if_stale(self) -> None:
-        if self.last_spoke_at and time.time() - self.last_spoke_at > SESSION_TIMEOUT:
-            self.turns = []
-            self.earlier = ""
-            self.opening = ""
-            self.last_screen_app = None
-            self.focus = None
-            self.tasks = {}
+        with self._lock:
+            self._expire_if_stale_locked()
 
-    def remember(self, role: str, content: str) -> None:
-        if role == "user" and not self.opening and content.strip():
-            self.opening = content.strip()[:OPENING_CHARS]
-        self.turns.append({"role": role, "content": content})
-        if len(self.turns) > MAX_TURNS * 2:
-            self._summarise_oldest()
-        self.last_spoke_at = time.time()
+    def remember(self, role: str, content: str,
+                 generation: Optional[int] = None) -> bool:
+        """Append one turn only if this interaction still owns the session."""
+        with self._lock:
+            if not self._is_current(generation):
+                return False
+            self._expire_if_stale_locked()
+            if not self._is_current(generation):
+                return False
+            if role == "user" and not self.opening and content.strip():
+                self.opening = content.strip()[:OPENING_CHARS]
+            self.turns.append({"role": role, "content": content})
+            self.last_spoke_at = time.time()
+            self._state_version += 1
+            needs_summary = len(self.turns) > MAX_TURNS * 2
+        if needs_summary:
+            self._summarise_oldest(generation)
+        return True
+
+    def commit_turn(self, generation: Optional[int], user: str,
+                    assistant: str) -> bool:
+        """Atomically append a user/assistant pair for the current owner."""
+        with self._lock:
+            if not self._is_current(generation):
+                return False
+            self._expire_if_stale_locked()
+            if not self._is_current(generation):
+                return False
+            if user.strip() and not self.opening:
+                self.opening = user.strip()[:OPENING_CHARS]
+            self.turns.extend([
+                {"role": "user", "content": user},
+                {"role": "assistant", "content": assistant},
+            ])
+            self.last_spoke_at = time.time()
+            self._state_version += 1
+            needs_summary = len(self.turns) > MAX_TURNS * 2
+        if needs_summary:
+            self._summarise_oldest(generation)
+        return True
+
+    def set_focus(self, agent: Optional[str],
+                  generation: Optional[int] = None) -> bool:
+        with self._lock:
+            if not self._is_current(generation):
+                return False
+            self.focus = agent or None
+            self._state_version += 1
+            return True
+
+    def set_last_screen_app(self, app: Optional[str],
+                            generation: Optional[int] = None) -> bool:
+        with self._lock:
+            if not self._is_current(generation):
+                return False
+            self.last_screen_app = app
+            self._state_version += 1
+            return True
 
     def record_task(self, agent_id: str, title: str,
                     steps: List[Dict[str, str]], result: str = "",
-                    task_id: str = "") -> Dict[str, Any]:
+                    task_id: str = "",
+                    generation: Optional[int] = None) -> Dict[str, Any]:
         """
         Keep what a task actually established, as structure rather than as a
         transcript of the model thinking.
@@ -417,44 +525,63 @@ class Session:
         here, once, at the point where the tool results are still structured,
         and the raw calls are dropped.
         """
-        record = self.tasks.get(task_id or agent_id) or {
-            "task_id": task_id or agent_id,
-            "agent": agent_id,
-            "title": (title or "")[:120],
-            "objective": (title or "")[:400],
-            "status": "running",
-            "created_at": time.time(),
-            "sources": [],
-            "findings": [],
-            "calculations": [],
-            # What perception established, kept beside the web sources rather
-            # than mixed into them: a control on screen is not a citation.
-            "observations": [],
-            "result": "",
-        }
-        for step in steps or []:
-            _absorb(record, step)
-        if result:
-            record["result"] = result[:TASK_RESULT]
-            record["status"] = "done"
-        record["updated_at"] = time.time()
-        record["sources"] = record["sources"][:TASK_SOURCES]
-        record["findings"] = record["findings"][-TASK_FINDINGS:]
-        record["calculations"] = record["calculations"][-TASK_FINDINGS:]
-        record.setdefault("observations", [])
-        record["observations"] = record["observations"][-TASK_FINDINGS:]
-        self.tasks[record["task_id"]] = record
-        self.last_spoke_at = time.time()
-        return record
+        key = task_id or agent_id
+        with self._lock:
+            existing = self.tasks.get(key)
+            # A completed identity is authoritative. Replayed late callbacks
+            # must not replace its result or duplicate its evidence.
+            if existing and existing.get("status") == "done":
+                return copy.deepcopy(existing)
+            record = copy.deepcopy(existing) if existing else {
+                "task_id": key,
+                "agent": agent_id,
+                "title": (title or "")[:120],
+                "objective": (title or "")[:400],
+                "status": "running",
+                "created_at": time.time(),
+                "sources": [],
+                "findings": [],
+                "calculations": [],
+                # What perception established, kept beside the web sources rather
+                # than mixed into them: a control on screen is not a citation.
+                "observations": [],
+                "result": "",
+            }
+            for step in steps or []:
+                _absorb(record, step)
+            if result:
+                record["result"] = result[:TASK_RESULT]
+                record["status"] = "done"
+            record["updated_at"] = time.time()
+            record["sources"] = record["sources"][:TASK_SOURCES]
+            record["findings"] = record["findings"][-TASK_FINDINGS:]
+            record["calculations"] = record["calculations"][-TASK_FINDINGS:]
+            record.setdefault("observations", [])
+            record["observations"] = record["observations"][-TASK_FINDINGS:]
+            self.tasks[key] = record
+            # Stale work may retain its task record for provenance, but cannot
+            # keep the conversation alive or refresh expiry.
+            if self._is_current(generation):
+                self.last_spoke_at = time.time()
+            self._state_version += 1
+            return copy.deepcopy(record)
 
     def task_for(self, agent_id: Optional[str]) -> Optional[Dict[str, Any]]:
         """The most recent task this agent ran, or None."""
-        mine = [t for t in self.tasks.values() if t["agent"] == agent_id]
-        return max(mine, key=lambda t: t.get("updated_at", 0)) if mine else None
+        with self._lock:
+            mine = [t for t in self.tasks.values() if t["agent"] == agent_id]
+            result = max(mine, key=lambda t: t.get("updated_at", 0)) if mine else None
+            return copy.deepcopy(result) if result else None
 
-    def evidence_for(self, agent_id: Optional[str]) -> str:
+    def evidence_for(self, agent_id: Optional[str],
+                     tasks: Optional[Dict[str, Dict[str, Any]]] = None) -> str:
         """That task's provenance, written out for a prompt, or empty."""
-        record = self.task_for(agent_id)
+        if tasks is None:
+            record = self.task_for(agent_id)
+        else:
+            mine = [t for t in tasks.values() if t["agent"] == agent_id]
+            record = (max(mine, key=lambda t: t.get("updated_at", 0))
+                      if mine else None)
         if not record:
             return ""
         lines = [f"Task: {record['title']} ({record['status']})"]
@@ -501,20 +628,28 @@ class Session:
             lines.append(f"Reported: {record['result']}")
         return "\n".join(lines)[:WORKING_BUDGET]
 
-    def reset(self) -> None:
-        self.turns = []
-        self.earlier = ""
-        self.opening = ""
-        self.last_screen_app = None
-        self.focus = None
-        self.tasks = {}
+    def reset(self, generation: Optional[int] = None) -> bool:
+        with self._lock:
+            if not self._is_current(generation):
+                return False
+            self.turns = []
+            self.earlier = ""
+            self.opening = ""
+            self.last_screen_app = None
+            self.focus = None
+            self.tasks = {}
+            self.last_spoke_at = 0.0
+            self._state_version += 1
+            return True
 
-    def is_followup(self) -> bool:
+    def is_followup(self, generation: Optional[int] = None) -> bool:
         """True if he is still mid-conversation rather than starting one."""
-        self._expire_if_stale()
-        return bool(self.turns)
+        with self._lock:
+            self._expire_if_stale_locked()
+            return bool(self.turns)
 
-    def reply(self, text: str, screen: Optional[str] = None) -> str:
+    def reply(self, text: str, screen: Optional[str] = None,
+              generation: Optional[int] = None) -> str:
         """
         Answer one conversational turn.
 
@@ -522,15 +657,18 @@ class Session:
         separate system message rather than glued onto his sentence, so the model
         does not start quoting the screen back at him as if he had said it.
         """
-        self._expire_if_stale()
+        state = self.snapshot()
+        turns = state["turns"]
+        earlier = state["earlier"]
+        opening = state["opening"]
+        focus = state["focus"]
 
         # No history and a question about earlier: answer honestly without
         # asking the model, which will otherwise invent the thing being
         # referred to.
-        if not self.turns and _asks_about_earlier(text):
+        if not turns and _asks_about_earlier(text):
             answer = random.choice(NO_HISTORY)
-            self.remember("user", text)
-            self.remember("assistant", answer)
+            self.commit_turn(generation, text, answer)
             return answer
 
         messages: List[Dict[str, Any]] = [
@@ -539,10 +677,10 @@ class Session:
         # Whoever is being spoken to. Their manner goes in after the shared
         # rules, never instead of them: an agent may sound different, but the
         # part about not inventing things applies to all of them equally.
-        if self.focus:
+        if focus:
             try:
                 from skills import roster
-                manner = roster.voice_of(self.focus)
+                manner = roster.voice_of(focus)
                 if manner:
                     messages.append({"role": "system", "content": manner})
             except Exception:
@@ -568,7 +706,7 @@ class Session:
         # the hole. Asked "what's that file called again" with no prior turns it
         # invented a plausible filename, which is the kind of answer he would
         # act on. Say plainly that there is nothing behind him.
-        if not self.turns:
+        if not turns:
             messages.append({"role": "system", "content":
                 "This is the first thing he has said. There is no earlier "
                 "conversation, nothing was discussed before now, and you have "
@@ -585,8 +723,8 @@ class Session:
         # turn would evict the conversation to answer a question he may never
         # ask. Here it costs nothing until he asks, and then it is the only
         # thing he wants.
-        if self.focus and asks_how_you_know(text):
-            notes = self.evidence_for(self.focus)
+        if focus and asks_how_you_know(text):
+            notes = self.evidence_for(focus, tasks=state["tasks"])
             if notes:
                 messages.append({"role": "system", "content":
                     "He is asking how you reached your answer. This is what you "
@@ -604,20 +742,20 @@ class Session:
         # model cannot quote it back as something one of them actually said.
         # Before the summary, because it outranks it: this is what he said,
         # not what a 4B made of what he said.
-        if self.opening and len(self.turns) > 4:
+        if opening and len(turns) > 4:
             messages.append({"role": "system", "content":
                 "The first thing he said in this conversation, word for word. "
                 "If he asks what he was working on, what the objective was, or "
                 "why he started, answer from this and not from the summary "
-                "below.\n\n" + self.opening})
+                "below.\n\n" + opening})
 
-        if self.earlier:
+        if earlier:
             messages.append({"role": "system", "content":
                 "Earlier in this same conversation, summarised. Treat it as "
                 "your own recollection, not as something he said just now, and "
                 "do not repeat it back to him unless he asks.\n\n"
-                + self.earlier})
-        messages.extend(self.turns)
+                + earlier})
+        messages.extend(turns)
         messages.append({"role": "user", "content": text})
 
         try:
@@ -632,11 +770,10 @@ class Session:
         answer = _speakable((message.get("content") or "").strip())
         if not answer:
             answer = "I have nothing useful to say to that, Sir."
-        elif _invents_a_status(answer, text, screen):
+        elif _invents_a_status(answer, text, screen, turns=turns):
             answer = random.choice(_UNKNOWN)
 
-        self.remember("user", text)
-        self.remember("assistant", answer)
+        self.commit_turn(generation, text, answer)
         return answer
 
 
@@ -698,7 +835,8 @@ _UNKNOWN = [
 ]
 
 
-def _invents_a_status(reply: str, asked: str, screen: Optional[str]) -> bool:
+def _invents_a_status(reply: str, asked: str, screen: Optional[str],
+                      turns: Optional[List[Dict[str, str]]] = None) -> bool:
     """
     True when the reply reports the state of something it has no access to.
 
@@ -713,7 +851,7 @@ def _invents_a_status(reply: str, asked: str, screen: Optional[str]) -> bool:
     # asking about — "how is Brew and Critics doing" — and naming it is not
     # telling Diablo how it is doing. Counting the question let every invented
     # status through, because the subject was always present in it.
-    known = " ".join(turn["content"] for turn in session.turns).lower()
+    known = " ".join(turn["content"] for turn in (turns or [])).lower()
     known += " " + (screen or "").lower()
 
     for noun in _PROPER_NOUN.findall(reply):
@@ -782,7 +920,7 @@ def _speakable(text: str) -> str:
 session = Session()
 
 
-def look_if_asked(text: str) -> Optional[str]:
+def look_if_asked(text: str, generation: Optional[int] = None) -> Optional[str]:
     """
     Read the screen, but only when the sentence actually points at it.
 
@@ -806,7 +944,8 @@ def look_if_asked(text: str) -> Optional[str]:
     context = screen_context.look(target)
     if context.startswith(("Error:", "Refused:")):
         return context
-    session.last_screen_app = context.splitlines()[0] if context else None
+    session.set_last_screen_app(
+        context.splitlines()[0] if context else None, generation=generation)
     return context
 
 
@@ -876,7 +1015,8 @@ def strip_address(text: str, agent_id: str) -> str:
     return stripped or text
 
 
-def talk(text: str, agent: Optional[str] = None) -> str:
+def talk(text: str, agent: Optional[str] = None,
+         generation: Optional[int] = None) -> str:
     """
     One conversational turn, with the screen attached if he pointed at it.
 
@@ -884,13 +1024,15 @@ def talk(text: str, agent: Optional[str] = None) -> str:
     name is selected in the rail; worked out from the sentence otherwise.
     """
     if agent is not None:
-        session.focus = agent or None
+        session.set_focus(agent, generation=generation)
     else:
         named = addressed_to(text)
         if named:
-            session.focus = None if named == "diablo" else named
+            session.set_focus(None if named == "diablo" else named,
+                              generation=generation)
             text = strip_address(text, named)
-    return session.reply(text, screen=look_if_asked(text))
+    return session.reply(text, screen=look_if_asked(text, generation=generation),
+                         generation=generation)
 
 
 RESET_PHRASES = ["forget that", "start over", "new conversation", "clear your head",
