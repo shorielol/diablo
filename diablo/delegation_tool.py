@@ -494,15 +494,23 @@ def handle(
         # `ask` speaks the question itself — it owns the microphone, so it has
         # to say the question and open the mic without a gap in between.
         trace.event("clarify", round=rounds, question=verdict["question"][:120])
-        answer = ask(verdict["question"])
+        asked = verdict["question"]
+        answer = ask(asked)
         if not answer:
             speak("I did not catch that, Sir.")
             break
-        gathered = f"{gathered}\n(I asked: {verdict['question']} — you said: {answer})"
+        gathered = f"{gathered}\n(I asked: {asked} — you said: {answer})"
         verdict = agent_core.understand(
             gathered,
             in_conversation=conversation.session.is_followup(
                 generation=generation))
+        # The 4B returns the very question he just answered (5 of 5 live, on
+        # "Any product update."), and asking it again spends the last round on
+        # nothing. Go on with what was gathered, as the non-strict path does.
+        if verdict["action"] == "clarify" and verdict.get("question") == asked:
+            trace.event("clarify", round=rounds, repeated=True)
+            verdict = {"action": "act", "task": gathered}
+            break
 
     # A named agent takes the conversation, whatever kind of turn this is.
     named = conversation.addressed_to(text)

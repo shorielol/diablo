@@ -348,6 +348,10 @@ def drive(verdicts, answers):
 
 
 CLARIFY = {"action": "clarify", "question": "Which one, Sir?"}
+# Later rounds ask something different. An answered question that comes back
+# unchanged is not asked again (Audio Phase 2G, test_repeated_clarification.py).
+CLARIFY_2 = {"action": "clarify", "question": "Which folder is it in, Sir?"}
+CLARIFY_3 = {"action": "clarify", "question": "And which version, Sir?"}
 ACT = {"action": "act", "task": "the resolved task"}
 
 check("one question then an answer resolves it",
@@ -355,11 +359,11 @@ check("one question then an answer resolves it",
 check("it asked exactly once", len(_asked), 1)
 
 check("two rounds are allowed",
-      drive([CLARIFY, CLARIFY, ACT], ["hmm", "the second one"]), "inline")
+      drive([CLARIFY, CLARIFY_2, ACT], ["hmm", "the second one"]), "inline")
 check("it asked twice", len(_asked), 2)
 
 check("still ambiguous after the limit -> declines rather than guessing",
-      drive([CLARIFY, CLARIFY, CLARIFY], ["hmm", "still hmm"]), "unclear")
+      drive([CLARIFY, CLARIFY_2, CLARIFY_3], ["hmm", "still hmm"]), "unclear")
 check_true("and says so out loud", any("don't follow" in s for s in _spoken))
 check("it did not ask a third time", len(_asked), 2)
 
