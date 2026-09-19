@@ -154,6 +154,10 @@ button:active:not(:disabled), [role="button"]:active {
 
 ::selection { background: var(--crimson-dim); color: var(--text); }
 
+/* Diablo's mark: two strokes in the text colour, centred in whatever holds it. */
+.mascot { color: var(--text); display: grid; place-items: center; }
+.mascot svg { display: block; }
+
 /* Read by screen readers, invisible on screen. */
 .sr {
   position: absolute; width: 1px; height: 1px; overflow: hidden;

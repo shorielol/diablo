@@ -102,6 +102,17 @@ class Placement:
     display_scale: float = 1.0
     confident: bool = True
     why: str = ""
+    # What is being referred to, as half-sizes: a control is a ring of RING,
+    # a region of content (a table, a graph, a paragraph) is its own box.
+    ring_w: float = RING
+    ring_h: float = RING
+    # How big whoever stands at the marker is: the overlay's small marker,
+    # or the orb itself when it has walked over.
+    marker_r: float = MARKER
+
+    @property
+    def is_region(self) -> bool:
+        return self.ring_w != RING or self.ring_h != RING
 
     def bounds(self) -> Tuple[float, float, float, float]:
         """
@@ -111,11 +122,11 @@ class Placement:
         one window, because they are one gesture and a second window would
         composite separately and slide against the first.
         """
-        left = min(self.target_x - RING, self.marker_x - MARKER, self.label_x)
-        top = min(self.target_y - RING, self.marker_y - MARKER, self.label_y)
-        right = max(self.target_x + RING, self.marker_x + MARKER,
+        left = min(self.target_x - self.ring_w, self.marker_x - self.marker_r, self.label_x)
+        top = min(self.target_y - self.ring_h, self.marker_y - self.marker_r, self.label_y)
+        right = max(self.target_x + self.ring_w, self.marker_x + self.marker_r,
                     self.label_x + self.label_width)
-        bottom = max(self.target_y + RING, self.marker_y + MARKER,
+        bottom = max(self.target_y + self.ring_h, self.marker_y + self.marker_r,
                      self.label_y + self.label_height)
         pad = 24.0          # room for the ring's outer pulse
         return (left - pad, top - pad,
@@ -159,14 +170,25 @@ def _inside(box: Tuple[float, float, float, float], screen) -> bool:
 def place(target_x: float, target_y: float, label: str = "",
           window: Optional[Dict[str, Any]] = None,
           cursor: Optional[Tuple[float, float]] = None,
-          step: str = "") -> Optional[Placement]:
+          step: str = "",
+          extent: Optional[Tuple[float, float]] = None,
+          marker: Optional[float] = None) -> Optional[Placement]:
     """
     Choose where Diablo stands to point at a target.
 
     Returns None only when the target is not on any display, which is a real
     answer: there is nothing to point at and the caller should say so rather
     than draw a marker into a gap between monitors.
+
+    `extent` is the half-width and half-height of what is being referred to,
+    when it is a region of content rather than a control; the stand point
+    then keeps the same gap from the region's edge that it keeps from a
+    control's ring. `marker` is the radius of whoever stands there. Both
+    default to the overlay's own sizes, which gives exactly the old answer.
     """
+    half_w, half_h = extent if extent else (RING, RING)
+    radius = MARKER if marker is None else float(marker)
+    gap = STANDOFF - RING               # ring edge to marker centre
     screen = _display.for_point(target_x, target_y)
     if screen is None:
         return None
@@ -180,26 +202,36 @@ def place(target_x: float, target_y: float, label: str = "",
         cursor = _display.cursor()
 
     # The target's ring, plus clearance. Nothing may be drawn inside this.
-    forbidden = (target_x - RING - 8, target_y - RING - 8,
-                 (RING + 8) * 2, (RING + 8) * 2)
+    forbidden = (target_x - half_w - 8, target_y - half_h - 8,
+                 (half_w + 8) * 2, (half_h + 8) * 2)
 
     best, best_score = None, float("-inf")
     for index, (side, dx, dy) in enumerate(_DIRECTIONS):
-        mx = target_x + dx * STANDOFF
-        my = target_y + dy * STANDOFF
+        off_x, off_y = abs(dx) * (half_w + gap), abs(dy) * (half_h + gap)
+        if dx and dy:
+            # A diagonal only has to clear the target on one axis. For the
+            # small marker it always does; for something bigger standing
+            # there (the orb) it can fall a point short, so it is stretched
+            # along the diagonal just far enough, and only then.
+            need = 8.0 + radius + 1.0
+            if off_x < half_w + need and off_y < half_h + need:
+                stretch = min((half_w + need) / off_x, (half_h + need) / off_y)
+                off_x, off_y = off_x * stretch, off_y * stretch
+        mx = target_x + (off_x if dx > 0 else -off_x)
+        my = target_y + (off_y if dy > 0 else -off_y)
 
         # The label hangs off the marker, on the far side from the target, so
         # the text leads away from the thing rather than back across it.
         if dy < -0.3:                       # Diablo is above: label above him
-            lx, ly = mx - width / 2, my - MARKER - 6 - height
+            lx, ly = mx - width / 2, my - radius - 6 - height
         elif dy > 0.3:                      # below: label below him
-            lx, ly = mx - width / 2, my + MARKER + 6
+            lx, ly = mx - width / 2, my + radius + 6
         elif dx > 0:                        # right: label to his right
-            lx, ly = mx + MARKER + 8, my - height / 2
+            lx, ly = mx + radius + 8, my - height / 2
         else:                               # left: label to his left
-            lx, ly = mx - MARKER - 8 - width, my - height / 2
+            lx, ly = mx - radius - 8 - width, my - height / 2
 
-        marker_box = (mx - MARKER, my - MARKER, MARKER * 2, MARKER * 2)
+        marker_box = (mx - radius, my - radius, radius * 2, radius * 2)
         label_box = (lx, ly, width, height)
 
         if not _inside(marker_box, screen):
@@ -241,7 +273,8 @@ def place(target_x: float, target_y: float, label: str = "",
                 side=side, label_x=lx, label_y=ly,
                 label_width=width, label_height=height,
                 display_index=screen.index, display_scale=screen.scale,
-                why=f"{side}, score {score:.0f}"), score
+                why=f"{side}, score {score:.0f}",
+                ring_w=half_w, ring_h=half_h, marker_r=radius), score
 
     if best is not None:
         return best
@@ -251,13 +284,14 @@ def place(target_x: float, target_y: float, label: str = "",
     # shorten the label or drop it entirely.
     return Placement(
         target_x=target_x, target_y=target_y,
-        marker_x=min(max(target_x, screen.x + MARGIN + MARKER), screen.right - MARGIN - MARKER),
-        marker_y=min(max(target_y - STANDOFF, screen.y + MARGIN + MARKER),
-                     screen.bottom - MARGIN - MARKER),
+        marker_x=min(max(target_x, screen.x + MARGIN + radius), screen.right - MARGIN - radius),
+        marker_y=min(max(target_y - (half_h + gap), screen.y + MARGIN + radius),
+                     screen.bottom - MARGIN - radius),
         side="above", label_x=0.0, label_y=0.0, label_width=0.0, label_height=0.0,
         display_index=screen.index, display_scale=screen.scale,
         confident=False,
-        why="no side had room for the caption; marker only")
+        why="no side had room for the caption; marker only",
+        ring_w=half_w, ring_h=half_h, marker_r=radius)
 
 
 def _inside_rect(box, frame) -> bool:

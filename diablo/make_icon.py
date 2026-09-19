@@ -1,21 +1,26 @@
 """
-The app icon, drawn rather than exported.
+Diablo's mark, drawn rather than exported — and the app icon built from it.
 
-There is no design file to keep in sync and no pipeline to install, because the
-icon is the same character the pill draws and the same character the window
-draws, described once here and rendered at every size macOS asks for.
+The mark is two strokes: a short vertical SOURCE, and one arc, the FRONT,
+facing out from it. Something that is there, and the signal leaving it. It is
+drawn here once, and everything that shows Diablo draws this function — the
+floating presence, the guidance marker, the menu bar glyph and the app icon —
+so there is one mark and not four that drift apart.
 
-Two things about Mac icons are worth being explicit about, because getting
-either wrong is what makes an icon look like it came from somewhere else:
+It is one form with many states, not a set of icons. State changes the
+geometry: how far the front stands from the source, how long it is, which way
+the whole mark faces, where the front has travelled round to, and how bright
+it is. At rest the front faces right and the mark is still.
+
+Two things about Mac icons are worth being explicit about:
 
   The corner is not a circle. Apple's icon shape is a squircle — a superellipse
-  — and a plain rounded rectangle sits next to it in the Dock looking slightly
-  swollen at the corners. It is built here from the actual curve.
+  — and a plain rounded rectangle sits next to it looking slightly swollen at
+  the corners. It is built here from the actual curve.
 
-  Small sizes are not the large one shrunk. At sixteen points a grin is three
-  grey pixels and two irises are one. Below 64 the face drops the mouth and the
-  highlight and keeps only what still reads: the head, the hair, the streak and
-  two lit eyes.
+  Small sizes are not the large one shrunk. Below 32 points the strokes get
+  heavier and the front stands a little further off, so the two parts stay two
+  parts instead of closing into a blot.
 
 Run it directly to write ~/.diablo/assets/Diablo.icns.
 """
@@ -36,16 +41,30 @@ from Foundation import NSAffineTransform, NSMakeRect, NSPoint
 HOME = os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo"))
 ASSETS = os.path.join(HOME, "assets")
 
-# The same values the window uses, so the three drawings of this character
-# cannot drift apart.
-INK = (0.055, 0.055, 0.067)      # #0E0E11  the squircle
-INK_TOP = (0.094, 0.094, 0.110)  # #18181C  its top edge
-HAIR = (0.082, 0.082, 0.102)
-HAIR_LO = (0.043, 0.043, 0.055)
-GUM = (0.557, 0.082, 0.149)
-SKIN = (0.937, 0.878, 0.824)
-CRIMSON = (0.878, 0.137, 0.235)  # #E0233C
-GOLD = (0.949, 0.761, 0.188)     # #F2C230
+# The icon tile: graphite, not black and not coloured. The mark carries the
+# identity; the tile only has to sit quietly among other Mac icons.
+INK = (0.090, 0.090, 0.102)      # the tile, bottom
+INK_TOP = (0.176, 0.176, 0.192)  # its top edge
+
+# ── The mark's geometry, in its own unit square centred on (0, 0) ──────────
+#
+# Every number that defines the mark is here. The source sits left of centre
+# and the front's centre of curvature is the source, so rotating the whole
+# mark about (0, 0) turns it about its visual middle rather than swinging it.
+SOURCE_X = -0.16      # where the source stands
+SOURCE_HALF = 0.22    # half its length
+FRONT_RADIUS = 0.30   # distance from source to front, at rest
+FRONT_SPAN = 52.0     # half the front's arc, in degrees, at rest
+WEIGHT = 0.09         # stroke, as a fraction of the mark's size
+
+
+def weight_for(size: float) -> float:
+    """Heavier strokes at small sizes, so the mark survives 16 points."""
+    if size <= 18:
+        return 0.125
+    if size <= 32:
+        return 0.105
+    return WEIGHT
 
 # Every icon size Finder, the Dock, Spotlight and the About box ask for.
 SIZES = [
@@ -82,188 +101,54 @@ def _squircle(x, y, side, n=5.0, steps=240):
     return path
 
 
-# ─── Drawing in the mascot's own coordinates ─────────────────────────────────
-#
-# The character is defined once, in app/mascot.js, on a 120x120 grid with y
-# running downwards like every other SVG. Re-deriving it in AppKit coordinates
-# by hand is how three drawings of one face end up being three different faces,
-# so instead the grid comes here intact: one transform flips and scales it, and
-# every number below is the number that is in the SVG.
+# ─── The mark ────────────────────────────────────────────────────────────────
 
-def _q(path, qx, qy, x, y):
+def draw_signal(cx: float, cy: float, size: float, ink,
+                radius: float = FRONT_RADIUS, span: float = FRONT_SPAN,
+                heading: float = 0.0, turn: float = 0.0, weight: float = None,
+                front_ink=None, shift: float = 0.0, side: float = 1.0) -> None:
     """
-    A quadratic segment, which NSBezierPath does not have.
+    The mark, into whatever context is current, centred on (cx, cy).
 
-    Exact, not approximated: a quadratic is the cubic whose controls sit two
-    thirds of the way from each end towards the single control point.
+    `size` is the side of the mark's square in points. `radius` and `span`
+    are the front's distance from the source and half its length. `side` is
+    +1 facing right, -1 mirrored to face left, and anything between while it
+    turns round (the mark narrows to its source and opens out the other way).
+    `heading` leans the mark (degrees, anticlockwise, in its own frame; kept
+    small by the caller so the mark never turns into something else); `turn`
+    carries the front round the source without moving the source — how
+    thinking travels. `shift` slides the mark sideways along its own axis,
+    for the one small shake an error gets. Everything is in the mark's own
+    units so it scales without changing shape.
     """
-    p0 = path.currentPoint()
-    c1 = NSPoint(p0.x + 2.0 / 3.0 * (qx - p0.x), p0.y + 2.0 / 3.0 * (qy - p0.y))
-    c2 = NSPoint(x + 2.0 / 3.0 * (qx - x), y + 2.0 / 3.0 * (qy - y))
-    path.curveToPoint_controlPoint1_controlPoint2_(NSPoint(x, y), c1, c2)
+    weight = weight_for(size) if weight is None else weight
+    context = NSGraphicsContext.currentContext()
+    context.saveGraphicsState()
+    frame = NSAffineTransform.transform()
+    frame.translateXBy_yBy_(cx, cy)
+    frame.scaleXBy_yBy_(side if abs(side) > 0.02 else 0.02, 1.0)
+    frame.rotateByDegrees_(heading)
+    frame.scaleBy_(size)
+    frame.translateXBy_yBy_(shift, 0.0)
+    frame.concat()
 
+    source = NSBezierPath.bezierPath()
+    source.moveToPoint_(NSPoint(SOURCE_X, -SOURCE_HALF))
+    source.lineToPoint_(NSPoint(SOURCE_X, SOURCE_HALF))
+    source.setLineWidth_(weight)
+    source.setLineCapStyle_(1)                       # round
+    ink.set()
+    source.stroke()
 
-def _ellipse(cx, cy, rx, ry):
-    return NSBezierPath.bezierPathWithOvalInRect_(
-        NSMakeRect(cx - rx, cy - ry, rx * 2, ry * 2))
-
-
-def draw_head(detail: bool = True, mouth: float = 0.0,
-              accent=None, eye=None) -> None:
-    """
-    The character, in the mascot's own 120-unit coordinates.
-
-    Public because the icon is not the only thing that draws him. The orb on
-    screen draws the same face from the same numbers, which is the only way
-    three renderings of one character stay one character.
-
-    `mouth` is how far open, 0 to 1. At 0 it is the fixed grin the icon uses;
-    above about 0.05 it opens, which is what the orb animates while he speaks.
-    """
-    accent = accent or CRIMSON
-    eye = eye or GOLD
-    # Face
-    _colour(SKIN).set()
-    _ellipse(60, 54, 32, 31).fill()
-
-    NSGraphicsContext.currentContext().saveGraphicsState()
-    _ellipse(60, 54, 32, 31).addClip()
-
-    # Hair as ONE filled mass with a scalloped fringe. Built from separate
-    # sweeps it leaves a pale band across the brow that reads as a bandage.
-    hair = NSBezierPath.bezierPath()
-    hair.moveToPoint_(NSPoint(22, 14))
-    hair.lineToPoint_(NSPoint(98, 14))
-    hair.lineToPoint_(NSPoint(98, 44))
-    _q(hair, 90, 60, 81, 47)
-    _q(hair, 71, 62, 61, 48)
-    _q(hair, 51, 62, 42, 47)
-    _q(hair, 32, 60, 22, 46)
-    hair.closePath()
-    _colour(HAIR).set()
-    hair.fill()
-    # Stroked as well as filled. The fringe and the side panels are separate
-    # paths that meet along the temple, and at icon scale the seam between
-    # them opened into a pale sliver of forehead that looks like dust on the
-    # lens. Half a unit of stroke closes it without changing the silhouette.
-    hair.setLineWidth_(1.0)
-    hair.stroke()
-
-    # Side panels, so the hair frames the face instead of capping it. They
-    # start at the crown rather than at y=30 like the SVG: at icon scale the
-    # gap between the panel and the fringe above it showed up as a speck of
-    # background on the temple, which at 1024 points looks like dust on the
-    # lens.
-    _colour(HAIR).set()
-    NSBezierPath.bezierPathWithRect_(NSMakeRect(22, 14, 12, 72)).fill()
-    NSBezierPath.bezierPathWithRect_(NSMakeRect(86, 14, 12, 72)).fill()
-    _colour(HAIR_LO).set()
-    NSBezierPath.bezierPathWithRect_(NSMakeRect(22, 14, 8, 72)).fill()
-
-    # The streaks, inside the hair and stopping at the fringe. Crimson is the
-    # one that identifies him; the gold one keeps the silhouette from being
-    # symmetrical, which is what makes a face look drawn rather than generated.
-    streak = NSBezierPath.bezierPath()
-    streak.moveToPoint_(NSPoint(45, 16))
-    _q(streak, 41, 30, 44.5, 47)
-    _q(streak, 50.5, 33, 50, 16)
-    streak.closePath()
-    _colour(accent).set()
-    streak.fill()
-
-    if detail:
-        second = NSBezierPath.bezierPath()
-        second.moveToPoint_(NSPoint(64, 15))
-        _q(second, 67, 29, 62.5, 45)
-        _q(second, 57, 31, 59, 15)
-        second.closePath()
-        _colour(eye, 0.92).set()
-        second.fill()
-
-    NSGraphicsContext.currentContext().restoreGraphicsState()
-
-    # Eyes: wider than tall. Taller than wide reads as goggles.
-    _colour(HAIR_LO).set()
-    _ellipse(47, 59, 10, 8.6).fill()
-    _ellipse(73, 59, 10, 8.6).fill()
-
-    # The upper lid, angled inward. This is the whole expression, and dropping
-    # it is what turned the first attempt into a smiley face.
-    _colour(HAIR).set()
-    for left in (True, False):
-        lid = NSBezierPath.bezierPath()
-        if left:
-            lid.moveToPoint_(NSPoint(36, 54))
-            _q(lid, 47, 47, 58, 55)
-            lid.lineToPoint_(NSPoint(58, 50))
-            _q(lid, 47, 42, 36, 49)
-        else:
-            lid.moveToPoint_(NSPoint(84, 54))
-            _q(lid, 73, 47, 62, 55)
-            lid.lineToPoint_(NSPoint(62, 50))
-            _q(lid, 73, 42, 84, 49)
-        lid.closePath()
-        lid.fill()
-
-    _colour(eye).set()
-    _ellipse(47, 60, 3.2, 5.6).fill()
-    _ellipse(73, 60, 3.2, 5.6).fill()
-    if detail:
-        _colour(HAIR_LO).set()
-        _ellipse(47, 60, 1.1, 4.2).fill()
-        _ellipse(73, 60, 1.1, 4.2).fill()
-        _colour((1, 1, 1), 0.95).set()
-        _ellipse(49.6, 56.4, 1.6, 1.6).fill()
-        _ellipse(75.6, 56.4, 1.6, 1.6).fill()
-
-    # The mouth.
-    #
-    # Open and closed are two different shapes rather than one shape stretched:
-    # a grin pulled downwards reads as a grimace, and a mouth that only ever
-    # hinges along the top edge looks like a hand puppet. Open is a rounded
-    # well with the upper teeth across the top of it.
-    if mouth > 0.05:
-        depth = 4.0 + 13.0 * min(1.0, mouth)
-        width = 17.0 + 3.0 * min(1.0, mouth)
-        well = NSBezierPath.bezierPath()
-        well.moveToPoint_(NSPoint(60 - width, 70))
-        _q(well, 60, 70 + depth * 1.5, 60 + width, 70)
-        _q(well, 60, 66, 60 - width, 70)
-        well.closePath()
-        _colour(GUM).set()
-        well.fill()
-        upper = NSBezierPath.bezierPath()
-        upper.moveToPoint_(NSPoint(60 - width, 70))
-        _q(upper, 60, 66, 60 + width, 70)
-        _q(upper, 60, 74.5, 60 - width, 70)
-        upper.closePath()
-        _colour((1, 1, 1), 1.0).set()
-        upper.fill()
-    elif detail:
-        # The grin: wide, toothy, pleased with itself.
-        gum = NSBezierPath.bezierPath()
-        gum.moveToPoint_(NSPoint(43, 70))
-        _q(gum, 60, 88, 77, 70)
-        _q(gum, 60, 77, 43, 70)
-        gum.closePath()
-        _colour(GUM).set()
-        gum.fill()
-
-        teeth = NSBezierPath.bezierPath()
-        teeth.moveToPoint_(NSPoint(43, 70))
-        _q(teeth, 60, 87, 77, 70)
-        teeth.closePath()
-        _colour((1, 1, 1), 1.0).set()
-        teeth.fill()
-    else:
-        # At 32 points and below the gum is two red pixels under the teeth and
-        # the whole mouth turns into a smudge. A filled wedge survives.
-        wedge = NSBezierPath.bezierPath()
-        wedge.moveToPoint_(NSPoint(44, 70))
-        _q(wedge, 60, 86, 76, 70)
-        wedge.closePath()
-        _colour((1, 1, 1), 0.95).set()
-        wedge.fill()
+    if span > 0.5 and radius > 0.01:
+        front = NSBezierPath.bezierPath()
+        front.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_(
+            NSPoint(SOURCE_X, 0.0), radius, turn - span, turn + span)
+        front.setLineWidth_(weight)
+        front.setLineCapStyle_(1)
+        (front_ink or ink).set()
+        front.stroke()
+    context.restoreGraphicsState()
 
 
 # macOS 26 composites app icons itself: it takes whatever the .icns contains,
@@ -304,41 +189,22 @@ def _draw(size: int, tiled: bool = None) -> None:
 
     context = NSGraphicsContext.currentContext()
 
-    # Body. A short vertical lift rather than a flat fill, which is what stops
-    # a dark icon reading as a hole punched in the Dock.
+    # The tile: a short vertical lift rather than a flat fill, which is what
+    # stops a dark icon reading as a hole in the Dock. No colour wash: the
+    # mark is the only thing in the icon that is anything.
     context.saveGraphicsState()
     shape.addClip()
     from AppKit import NSGradient
     NSGradient.alloc().initWithStartingColor_endingColor_(
         _colour(INK), _colour(INK_TOP)).drawInRect_angle_(
             NSMakeRect(0, 0, size, size), 90.0)
-
-    # A crimson wash behind the head. Tight, and low enough in the frame to
-    # sit under the chin rather than around the whole tile — the first version
-    # ran the gradient across the full rect at 20% and turned the background
-    # maroon, which is a different icon entirely.
-    glow = side * 1.30
-    NSGradient.alloc().initWithStartingColor_endingColor_(
-        _colour(CRIMSON, 0.15), _colour(CRIMSON, 0.0)).drawInRect_relativeCenterPosition_(
-            NSMakeRect(size / 2 - glow / 2, size * 0.52 - glow / 2, glow, glow),
-            (0.0, 0.0))
-
-    # The character. Everything from here is written on the mascot's 120-unit
-    # grid; this transform is the only place the two coordinate systems meet.
-    #
-    # Framed as a portrait rather than a figure on a background: the face is
-    # placed at the optical centre and scaled until the hair runs off the top,
-    # which is what stops an icon reading as a sticker floating in a box.
-    scale = side * (1.62 if tiled else 1.86) / 120.0
-    flip = NSAffineTransform.transform()
-    flip.translateXBy_yBy_(size / 2.0 - 60 * scale, size * 0.50 + 56 * scale)
-    flip.scaleXBy_yBy_(scale, -scale)
-    context.saveGraphicsState()
-    flip.concat()
-    draw_head(detail=size >= 64)
     context.restoreGraphicsState()
 
-    context.restoreGraphicsState()
+    # The mark, at the optical centre and a little over half the tile: big
+    # enough to own the icon, small enough to leave it air.
+    draw_signal(size / 2.0, size / 2.0, side * (0.60 if tiled else 0.64),
+                _colour((0.96, 0.96, 0.97), 1.0),
+                weight=weight_for(size))
 
     # A hairline on the edge, when we own the edge. White and barely there:
     # the crimson stroke the first version used came out bright pink at 1024

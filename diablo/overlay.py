@@ -22,8 +22,8 @@ over display geometry, the window being explained and the user's pointer, and
 it lives in guidance.py where it can be tested. This file draws what that
 decides.
 
-The face is make_icon.draw_head — the same drawing as the app icon and the orb
-in the corner, at a different size. Three renderings of one character stay one
+The marker is make_icon.draw_signal — the same mark as the app icon and the
+floating presence, at a different size. Three renderings of one character stay one
 character only if there is one drawing.
 
 Coordinates arrive in Quartz space, origin top-left of the primary display,
@@ -77,10 +77,18 @@ def main() -> int:
     parser.add_argument("--no-marker", action="store_true",
                         help="Diablo's orb is already standing there; draw the "
                              "ring, line and caption but not a second copy of him")
+    parser.add_argument("--marker-radius", type=float, default=0.0,
+                        help="radius of whoever stands at the marker (the orb, "
+                             "with its state ring, when --no-marker)")
+    parser.add_argument("--w", type=float, default=0.0,
+                        help="width of a content region being referred to; 0 = a control")
+    parser.add_argument("--h", type=float, default=0.0, help="height of that region")
+    parser.add_argument("--hidden", action="store_true",
+                        help="session only: start invisible and wait to be shown")
     args = parser.parse_args()
-    # How far from the marker's centre the line starts: clear of the small
-    # marker, or clear of the orb and its state ring when the orb is there.
-    marker_clearance = 27.0 if args.no_marker else guidance.MARKER
+    # Who stands at the marker: the small marker drawn here, or the orb and
+    # its state ring. The placement, the caption and the line all clear it.
+    marker_radius = args.marker_radius or (27.0 if args.no_marker else guidance.MARKER)
 
     try:
         import objc
@@ -134,6 +142,17 @@ def main() -> int:
         badge; one reads as attention.
         """
         cx, cy = centre
+        spot = view.place
+        if spot is not None and spot.is_region:
+            # A region of content is outlined, not ringed: a table or a graph
+            # is not something to press, and a pulse would say it was.
+            box = NSMakeRect(cx - spot.ring_w, cy - spot.ring_h,
+                             spot.ring_w * 2, spot.ring_h * 2)
+            outline = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(box, 8, 8)
+            _rgb(ACCENT, 0.85 * view.opacity).set()
+            outline.setLineWidth_(1.8)
+            outline.stroke()
+            return
         radius = guidance.RING
 
         spread = view.phase % 1.0
@@ -179,8 +198,15 @@ def main() -> int:
             return
         ux, uy = dx / length, dy / length
 
-        begin = marker_clearance + 5.0
-        finish = length - (guidance.RING + 10.0)
+        spot = view.place
+        begin = (spot.marker_r if spot is not None else marker_radius) + 5.0
+        if spot is not None and spot.is_region:
+            # Stop short of the region's edge along the line, not a circle.
+            reach = min(spot.ring_w / abs(ux) if abs(ux) > 1e-6 else float("inf"),
+                        spot.ring_h / abs(uy) if abs(uy) > 1e-6 else float("inf"))
+            finish = length - (reach + 10.0)
+        else:
+            finish = length - (guidance.RING + 10.0)
         if finish <= begin:
             return
 
@@ -203,7 +229,8 @@ def main() -> int:
 
     def draw_marker(view, centre):
         """
-        Him, small, in a dark disc. The same face as the orb and the app icon.
+        Diablo's mark, small, on a disc, turned to face the target. The same
+        mark as the floating presence and the app icon.
 
         Deliberately not a dot: a dot beside a ring is two shapes with no
         relationship, and the point of the guide is that it is *Diablo* showing
@@ -219,30 +246,25 @@ def main() -> int:
 
         disc = NSBezierPath.bezierPathWithOvalInRect_(
             NSMakeRect(cx - radius, cy - radius, radius * 2, radius * 2))
-        NSColor.colorWithCalibratedRed_green_blue_alpha_(
-            0.075, 0.075, 0.09, 0.98 * view.opacity).set()
+        NSColor.windowBackgroundColor().colorWithAlphaComponent_(0.96 * view.opacity).set()
         disc.fill()
 
-        if make_icon is not None:
-            context.saveGraphicsState()
-            disc.addClip()
-            # Framed with room around him, and centred on the face rather than
-            # on the 120-unit canvas. At 1.34 his jaw was clipped by the disc,
-            # which at this size reads as a smudge rather than as a character.
-            # make_icon draws the face ellipse centred at (60, 54), so putting
-            # mascot y=52 on the disc's centre is what actually centres him.
-            scale = radius * 2 * 1.12 / 120.0
-            transform = NSAffineTransform.transform()
-            transform.translateXBy_yBy_(cx - 60 * scale, cy + 52 * scale)
-            transform.scaleXBy_yBy_(scale, -scale)
-            transform.concat()
+        # Diablo's mark, the same drawing as the floating presence, turned to
+        # face the target it is marking.
+        if make_icon is not None and view.place is not None:
+            spot = view.place
+            tx, ty = view_point(view, spot.target_x, spot.target_y)
             try:
-                make_icon.draw_head(detail=False)
+                from skills import motion
+                side, lean = motion.face(tx - cx, ty - cy)
+                make_icon.draw_signal(
+                    cx, cy, radius * 2 * 0.70,
+                    NSColor.labelColor().colorWithAlphaComponent_(view.opacity),
+                    heading=lean, side=side)
             except Exception:
                 pass
-            context.restoreGraphicsState()
 
-        NSColor.colorWithCalibratedWhite_alpha_(1.0, 0.16 * view.opacity).set()
+        NSColor.separatorColor().colorWithAlphaComponent_(view.opacity).set()
         disc.setLineWidth_(1.0)
         disc.stroke()
 
@@ -275,14 +297,15 @@ def main() -> int:
         # Anchored to the side guidance.py chose, so the caption sits where the
         # placement search already proved there was room for it.
         cx, cy = marker
+        clear = spot.marker_r
         if spot.side.startswith("above"):
-            box = NSMakeRect(cx - box_w / 2, cy + guidance.MARKER + 8, box_w, box_h)
+            box = NSMakeRect(cx - box_w / 2, cy + clear + 8, box_w, box_h)
         elif spot.side.startswith("below"):
-            box = NSMakeRect(cx - box_w / 2, cy - guidance.MARKER - 8 - box_h, box_w, box_h)
+            box = NSMakeRect(cx - box_w / 2, cy - clear - 8 - box_h, box_w, box_h)
         elif spot.side == "right":
-            box = NSMakeRect(cx + guidance.MARKER + 9, cy - box_h / 2, box_w, box_h)
+            box = NSMakeRect(cx + clear + 9, cy - box_h / 2, box_w, box_h)
         else:
-            box = NSMakeRect(cx - guidance.MARKER - 9 - box_w, cy - box_h / 2, box_w, box_h)
+            box = NSMakeRect(cx - clear - 9 - box_w, cy - box_h / 2, box_w, box_h)
 
         NSColor.colorWithCalibratedWhite_alpha_(paper, 0.94 * fade).set()
         rounded = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(box, 8, 8)
@@ -324,6 +347,10 @@ def main() -> int:
             # one process holds the session.
             self.travel = 1.0
             self.was = None              # the previous marker point, Quartz
+            # Where opacity is heading. Showing, hiding and quitting all fade
+            # rather than blink, in session mode.
+            self.target_opacity = 1.0
+            self.quitting = False
             return self
 
         def isOpaque(self):
@@ -370,9 +397,17 @@ def main() -> int:
     view = GuideView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
     window.setContentView_(view)
 
-    def aim(x, y, label, step, on_light, animate=False):
-        """Point at a new target: re-place, resize, and slide him over."""
-        spot = guidance.place(x, y, label, window=None, step=step)
+    def aim(x, y, label, step, on_light, animate=False, w=0.0, h=0.0, fresh=False):
+        """
+        Point at a new target: re-place, resize, and slide him over.
+
+        `fresh` is for when the orb has walked to the new target itself: the
+        indication fades in where it now belongs instead of sliding across
+        from the old one, because the orb has already done the travelling.
+        """
+        extent = (w / 2.0 + 6.0, h / 2.0 + 6.0) if w > 0 and h > 0 else None
+        spot = guidance.place(x, y, label, window=None, step=step,
+                              extent=extent, marker=marker_radius)
         if spot is None:
             return False
         bx, by, bw, bh = spot.bounds()
@@ -385,15 +420,22 @@ def main() -> int:
         view.label = label
         view.step = step
         view.on_light = on_light
-        view.opacity = 1.0
-        view.was = previous if (animate and previous) else None
+        if fresh:
+            view.opacity = 0.0
+        elif not args.session:
+            view.opacity = 1.0
+        view.target_opacity = 1.0
+        view.was = previous if (animate and previous and not fresh) else None
         view.travel = 0.0 if view.was else 1.0
         window.orderFrontRegardless()
         view.setNeedsDisplay_(True)
         return True
 
-    if not aim(args.x, args.y, args.label, args.step, args.on_light):
+    if not aim(args.x, args.y, args.label, args.step, args.on_light,
+               w=args.w, h=args.h):
         return 1
+    if args.session and args.hidden:
+        view.opacity = view.target_opacity = 0.0
 
     if args.session:
         return _run_session(args, app, window, view, primary_height, aim,
@@ -429,7 +471,7 @@ def _run_session(args, app, window, view, primary_height, aim,
     """
     from Foundation import NSOperationQueue
 
-    def move(x, y, label, step, on_light):
+    def move(x, y, label, step, on_light, w=0.0, h=0.0, fresh=False):
         # AppKit off the main thread is undefined behaviour that usually looks
         # like it works, right up until it draws nothing.
         #
@@ -438,7 +480,13 @@ def _run_session(args, app, window, view, primary_height, aim,
         # the operation queue, which kills the process — the guide simply
         # disappeared on the second step with nothing in the log.
         def apply():
-            aim(x, y, label, step, on_light, animate=True)
+            aim(x, y, label, step, on_light, animate=True, w=w, h=h, fresh=fresh)
+        NSOperationQueue.mainQueue().addOperationWithBlock_(apply)
+
+    def fade(to, then_quit=False):
+        def apply():
+            view.target_opacity = to
+            view.quitting = view.quitting or then_quit
         NSOperationQueue.mainQueue().addOperationWithBlock_(apply)
 
     # Watching for clicks.
@@ -495,15 +543,20 @@ def _run_session(args, app, window, view, primary_height, aim,
                 continue
             if message.get("quit"):
                 break
+            if message.get("hide"):
+                fade(0.0)
+                continue
             try:
                 move(float(message["x"]), float(message["y"]),
                      str(message.get("label", ""))[:80],
                      str(message.get("step", ""))[:12],
-                     bool(message.get("on_light", False)))
+                     bool(message.get("on_light", False)),
+                     float(message.get("w", 0.0)), float(message.get("h", 0.0)),
+                     bool(message.get("fresh", False)))
             except Exception:
                 continue
-        NSOperationQueue.mainQueue().addOperationWithBlock_(
-            lambda: NSApp().terminate_(None))
+        # Asked to go, or the other end went away: fade out, then exit.
+        fade(0.0, then_quit=True)
 
     threading.Thread(target=reader, daemon=True).start()
 
@@ -513,6 +566,15 @@ def _run_session(args, app, window, view, primary_height, aim,
         view.phase = (view.phase + step * 0.75) % 1.0
         if view.travel < 1.0:
             view.travel = min(1.0, view.travel + step * 2.6)
+        # Fade toward the target opacity: in over ~0.2 s, out over ~0.2 s.
+        change = step / 0.2
+        if view.opacity < view.target_opacity:
+            view.opacity = min(view.target_opacity, view.opacity + change)
+        elif view.opacity > view.target_opacity:
+            view.opacity = max(view.target_opacity, view.opacity - change)
+        if view.quitting and view.opacity <= 0.0:
+            NSApp().terminate_(None)
+            return
         view.setNeedsDisplay_(True)
 
     NSTimer.scheduledTimerWithTimeInterval_repeats_block_(step, True, tick)

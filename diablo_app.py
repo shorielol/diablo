@@ -153,6 +153,50 @@ def _bridge_presence(voice_bridge) -> None:
         if callable(original):
             setattr(screen_context, name, span(original))
 
+    # The region being read. When one request reads one window (look,
+    # describe_visually, structured), the first window it captures is the
+    # content he is looking at, and he may go and stand beside it. A scan of
+    # many windows reports nothing, so he never darts from window to window.
+    local = threading.local()
+
+    def reading_one(fn):
+        def one(*args, **kwargs):
+            outer = not getattr(local, "open", False)
+            if outer:
+                local.open, local.reported = True, False
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                if outer:
+                    local.open = False
+        return one
+
+    for name in ("look", "describe_visually", "structured"):
+        original = getattr(screen_context, name, None)
+        if callable(original):
+            setattr(screen_context, name, reading_one(original))
+
+    captured = screen_context.capture_window
+
+    def capture_window(window_id, *args, **kwargs):
+        if getattr(local, "open", False) and not getattr(local, "reported", True):
+            local.reported = True
+            try:
+                window = screen_context.window_by_id(window_id)
+                if window and window.get("width") and window.get("height"):
+                    try:
+                        generation = voice.current_interaction_generation()
+                    except Exception:
+                        generation = None
+                    app_shell.notify("region", x=float(window["x"]), y=float(window["y"]),
+                                     w=float(window["width"]), h=float(window["height"]),
+                                     generation=generation)
+            except Exception:
+                pass
+        return captured(window_id, *args, **kwargs)
+
+    screen_context.capture_window = capture_window
+
     # A question asked and waiting for the next press to answer it.
     asked = voice_bridge._answer_by_press
 
@@ -213,6 +257,18 @@ def _bridge_presence(voice_bridge) -> None:
         return show(x, y, label, seconds, marker=marker)
 
     pointing.show = point
+
+    # Looked for something to point at and found nothing: say so visibly,
+    # rather than leaving him to wander or invent a place.
+    locate = pointing.locate
+
+    def located(*args, **kwargs):
+        hits = locate(*args, **kwargs)
+        if not hits:
+            app_shell.notify("no_target")
+        return hits
+
+    pointing.locate = located
 
 
 if __name__ == "__main__":

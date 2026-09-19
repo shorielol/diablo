@@ -27,7 +27,9 @@ from harness import Results, guard, Timer  # noqa: E402
 
 def _orb_canvas():
     """
-    The orb window's edge in points, read from app_shell's own constants.
+    The orb window's edge in points, read from the design constants: the
+    disc (ORB, in motion.py, because placement uses it) and the room around
+    it (HALO, in app_shell.py).
 
     Returns (edge, where_it_came_from). The running app is launched from the
     install, so that copy is the one that produced the window on screen; the
@@ -35,20 +37,24 @@ def _orb_canvas():
     """
     import re
     here = os.path.dirname(os.path.abspath(__file__))
+    install, repo = os.path.expanduser("~/.diablo"), os.path.dirname(here)
     candidates = [
-        (os.path.join(os.path.expanduser("~/.diablo"), "app_shell.py"), "the install"),
-        (os.path.join(os.path.dirname(here), "app_shell.py"), "the repository"),
+        (os.path.join(install, "app_shell.py"), os.path.join(install, "skills", "motion.py"),
+         "the install"),
+        (os.path.join(repo, "app_shell.py"), os.path.join(repo, "diablo", "motion.py"),
+         "the repository"),
     ]
-    for path, whence in candidates:
+    for shell_path, motion_path, whence in candidates:
         try:
-            source = open(path, encoding="utf-8").read()
+            shell = open(shell_path, encoding="utf-8").read()
+            moves = open(motion_path, encoding="utf-8").read()
         except OSError:
             continue
-        orb = re.search(r"^ORB\s*=\s*([\d.]+)", source, re.M)
-        halo = re.search(r"^HALO\s*=\s*([\d.]+)", source, re.M)
+        orb = re.search(r"^ORB\s*=\s*([\d.]+)", moves, re.M)
+        halo = re.search(r"^HALO\s*=\s*([\d.]+)", shell, re.M)
         if orb and halo:
             return float(orb.group(1)) + float(halo.group(1)) * 2, whence
-    return None, "nowhere — app_shell.py was not readable"
+    return None, "nowhere — app_shell.py and motion.py were not readable"
 
 
 BASE = os.getenv("DIABLO_UI_URL", "http://127.0.0.1:17494")

@@ -71,9 +71,6 @@ from Foundation import (  # noqa: E402
     NSURL, NSURLRequest,
 )
 import Quartz  # noqa: E402
-from Quartz import (  # noqa: E402
-    CABasicAnimation, CAMediaTimingFunction, kCAMediaTimingFunctionEaseInEaseOut,
-)
 from WebKit import WKWebView, WKWebViewConfiguration  # noqa: E402
 
 # The character is defined once, in the icon builder, on the mascot's own
@@ -114,22 +111,12 @@ BLUE = (0.239, 0.663, 0.988)
 GREY = (0.290, 0.290, 0.333)
 RED = (1.0, 0.420, 0.420)
 
-# Two colours, both his own, and red only for a fault.
+# What each manager state is called, and the colour it used to be drawn in.
 #
-# This was five: grey, crimson, gold, a sky blue for speaking and a pale red
-# for errors. Photographed side by side, the blue is the one that looks wrong
-# — it belongs to no part of the character and reads as a generic status
-# indicator bolted to him.
-#
-# Colour was not carrying the distinction anyway. The shapes already do, and
-# they do it unambiguously: listening pushes rings outward on the microphone
-# level, speaking holds a steady halo that breathes with his mouth, thinking
-# sweeps one arc. Two of those are crimson now and nobody will confuse them,
-# because one travels and one does not — and his mouth moves for exactly one
-# of them.
-#
-# Gold stays for thinking. It is his eye colour, so it is still him, and it
-# separates "working on it" from anything to do with the voice.
+# The words are the tooltip, the menu bar status line and the accessibility
+# label — the mark is never the only way to know the state. The colours no
+# longer reach the screen except as the red of a fault: state is carried by
+# the mark's own geometry now (see motion.SIGNAL).
 STATE_LOOK = {
     "idle":       (GREY,    "ready"),
     "listening":  (CRIMSON, "listening"),
@@ -153,65 +140,20 @@ STATE_LOOK = {
 # a strip that wide sits across whatever is underneath it all day, and none of
 # the three things it said were things you needed to read.
 #
-# So: the character, in a circle, and nothing else. State is carried by the
-# ring around him and by his own face — the mouth moves while he talks, which
-# is the one animation that says "this is speaking to you" without a caption.
+# So: one mark, source and front, on a small disc, and nothing else. State is
+# carried by the mark's own shape (see motion.SIGNAL) and, for anyone who
+# cannot see it, by the accessibility label; the front stepping outward is
+# what says "this is speaking to you" without a caption.
 
 # ── Orb geometry: one source of truth ───────────────────────────────────────
-#
-# Everything about the presence's size and alignment is derived from these
-# eight numbers. Nothing here is a guess: the mascot figures were measured by
-# rendering draw_head into a 480px buffer and finding its actual ink.
-#
-# What the measurement found, and why the old orb looked off-centre:
-#
-#   draw_head works in a 120-unit square and does NOT fill it. The ink runs
-#   x 28.0..91.5 and y 23.0..84.8, which leaves 23.0 units of empty space
-#   above the drawing and 35.2 below it. The canvas is symmetric; the artwork
-#   inside it is not. Centring the canvas therefore centres the padding.
-#
-#   Worse, the old code centred mascot y=49 — neither the canvas centre (60)
-#   nor the ink centre (53.9) nor the eye line (59.5). The eyes landed 10.5
-#   mascot units below the orb's centre, which at the old scale was 7.5 points
-#   in a 62 point circle. Twelve per cent of the diameter, which is exactly
-#   how far off it looked.
 
-ORB = 44.0          # the visible disc, in points
-HALO = 11.0         # room outside it for the state ring to breathe into
+ORB = motion.ORB    # the visible disc, in points; motion owns it (placement uses it)
+HALO = 11.0         # room outside it: the growth when active, and the shadow
 CANVAS = ORB + HALO * 2
 
-# The mascot's real ink, in its own 120-unit space. Measured, not assumed.
-MASCOT_INK_X = (28.0, 91.5)
-MASCOT_INK_Y = (23.0, 84.8)
-MASCOT_EYE_X = 59.9       # midpoint between the irises; the canvas centre is 60
-MASCOT_EYE_LINE = 59.5    # the irises sit here, well below the ink centre of 53.9
-
-# How much of the disc the artwork spans. He is contained by the circle rather
-# than pressed against it, so there is a ring of quiet between his hair and the
-# rim on every side.
-FACE_FILL = 0.70
-
-# The one optical correction, and the only one.
-#
-# The ink is centred in the disc, which gives equal breathing room above and
-# below. That alone leaves the eyes 2.7 points low, because the drawing is
-# top-heavy — there is more hair above the eyes than jaw below them. Lifting
-# the whole figure by three per cent of the diameter puts the eye line within
-# 1.4 points of the true centre while keeping the breathing room close to even
-# (5.7 points above, 8.3 below), which reads correctly because a top-heavy
-# shape wants slightly less air above it.
-#
-# Tuned by photographing the result, not by arithmetic. At 0.03 the eyes
-# measured 3.6% of the diameter below the disc's centre; at 0.045, 2.3%; at
-# 0.060, 0.4% — which is under a fifth of a point at this size. The ink is
-# then 4.4 points from the rim above and 9.6 below, and that asymmetry is
-# invisible because the hair occupying the top is within a few per cent of
-# the disc's own colour. What the eye reads as "the character" is the pale
-# face and the two streaks, and those sit centred.
-#
-# It is a fraction of ORB rather than a pixel count so it survives any size
-# change, and it is the single place any such nudge belongs.
-OPTICAL_LIFT = 0.060
+# How much of the disc the mark spans. Enough to be read across a room, with
+# a ring of quiet between the front and the rim at its widest.
+MARK_FILL = 0.70
 
 
 def _colour(rgb, alpha=1.0):
@@ -220,14 +162,18 @@ def _colour(rgb, alpha=1.0):
 
 class OrbView(NSView):
     """
-    Diablo, as a face in a circle.
+    Diablo, as a mark on a small disc.
 
     It draws exactly what the motion system says, and nothing on its own
     clock: every frame is one Look from skills.motion, and the shell's
     display link decides when there is a frame at all. At rest there are no
-    frames, because idle is by far the most common state and a view redrawing
-    a picture that does not change is how a menu bar app ends up in the
-    battery report.
+    frames — idle is still, because a presence that never stops moving is one
+    you stop being able to look past.
+
+    Colour is the system's, not ours: the mark is the label colour and the
+    disc is the window background, so light and dark appearance, increased
+    contrast and every wallpaper are handled by the platform. The only colour
+    that means anything is red, and only for a fault.
     """
 
     def initWithFrame_(self, frame):
@@ -240,6 +186,8 @@ class OrbView(NSView):
         self.level = 0.0          # smoothed microphone amplitude, listening only
         self.on_click = None
         self.tooltip = "ready"
+        self.setAccessibilityRole_("AXButton")
+        self.setAccessibilityLabel_("Diablo, ready")
         return self
 
     def isOpaque(self):
@@ -249,6 +197,16 @@ class OrbView(NSView):
         if self.on_click is not None:
             self.on_click()
 
+    def accessibilityPerformPress(self):
+        if self.on_click is not None:
+            self.on_click()
+        return True
+
+    def viewDidChangeEffectiveAppearance(self):
+        # Light to dark (or back) changes the system colours this draws with;
+        # there may be no frame coming, so ask for one.
+        self.setNeedsDisplay_(True)
+
     def update_(self, payload):
         """The manager's state changed. The motion system decides the look."""
         state = payload.get("state", self.state)
@@ -257,6 +215,8 @@ class OrbView(NSView):
         self.presence.set_runtime(state)
         self.tooltip = payload.get("headline") or words
         self.setToolTip_(self.tooltip)
+        # The mark is never the only way to know the state.
+        self.setAccessibilityLabel_(f"Diablo, {words}")
         self.setNeedsDisplay_(True)
 
     def animating(self) -> bool:
@@ -264,29 +224,10 @@ class OrbView(NSView):
         return self.presence.looping()
 
     def pushLevel_(self, level):
-        # Heavily smoothed. The rings are there to say "I can hear you", not
-        # to plot the room: an unsmoothed level makes them shake.
+        # Heavily smoothed. The front drawing in is there to say "I can hear
+        # you", not to plot the room: an unsmoothed level makes it shake.
         target = max(0.0, min(1.0, float(level)))
         self.level += (target - self.level) * 0.12
-
-    # ── the face ─────────────────────────────────────────────────────────
-
-    @objc.python_method
-    def _mouth_openness(self, look) -> float:
-        """
-        How far open his mouth is, this frame. Only while speaking.
-
-        Two sine waves at unrelated frequencies rather than one: a single sine
-        is a metronome, and a mouth opening on a metronome reads as a machine
-        rather than as speech. The slower wave supplies the pauses.
-        """
-        weight = look.rings.get("speak", 0.0)
-        if weight <= 0.0:
-            return 0.0
-        fast = math.sin(look.time * 11.0)
-        slow = math.sin(look.time * 2.7 + 1.1)
-        shaped = (0.55 + 0.45 * fast) * (0.45 + 0.55 * (0.5 + 0.5 * slow))
-        return max(0.0, min(1.0, shaped * 0.9 * weight))
 
     _draws = 0
 
@@ -294,142 +235,49 @@ class OrbView(NSView):
         OrbView._draws += 1
         look = self.presence.look()
         cx = cy = CANVAS / 2.0
-        r = ORB / 2.0
-        context = NSGraphicsContext.currentContext()
-        context.saveGraphicsState()
+        r = ORB / 2.0 * look.scale
+        contrast = _increase_contrast()
 
-        # Scale about the centre, so growing and tucking never shift him.
-        grow = NSAffineTransform.transform()
-        grow.translateXBy_yBy_(cx, cy)
-        grow.scaleBy_(look.scale)
-        grow.translateXBy_yBy_(-cx, -cy)
-        grow.concat()
-
-        for name, weight in look.rings.items():
-            self._draw_ring(name, weight, look, cx, cy, r)
-        if look.cue:
-            self._draw_cue(look, cx, cy, r)
-
-        if look.dim:
-            Quartz.CGContextSetAlpha(context.CGContext(), 0.6)
-
-        # The disc he sits in.
+        # The disc: the window background, nearly opaque, with the system's
+        # own separator as its edge. It is what keeps the mark legible on any
+        # wallpaper, and it is the only surface he has.
         disc = NSBezierPath.bezierPathWithOvalInRect_(
             NSMakeRect(cx - r, cy - r, r * 2, r * 2))
-        context.saveGraphicsState()
-        disc.addClip()
-        # Pitched at his hair rather than darker than it. A disc noticeably
-        # darker than the character leaves the edge of his head visible as a
-        # seam inside the circle. Matched, he reads as filling the circle.
-        NSGradient.alloc().initWithStartingColor_endingColor_(
-            _colour((0.067, 0.067, 0.082), 0.97),
-            _colour((0.098, 0.098, 0.118), 0.97)).drawInRect_angle_(
-                NSMakeRect(cx - r, cy - r, r * 2, r * 2), 90.0)
-
-        # The character, drawn from make_icon so that the orb, the app icon and
-        # the window are one drawing rather than three that drift apart.
-        # Scaled and placed from the measured ink, never from the 120-unit
-        # canvas; the face may shift sideways (thinking, reading, a shake),
-        # always inside the disc.
-        ink_w = MASCOT_INK_X[1] - MASCOT_INK_X[0]
-        ink_mid_x = (MASCOT_INK_X[0] + MASCOT_INK_X[1]) / 2.0
-        ink_mid_y = (MASCOT_INK_Y[0] + MASCOT_INK_Y[1]) / 2.0
-        scale = ORB * FACE_FILL / ink_w
-        transform = NSAffineTransform.transform()
-        transform.translateXBy_yBy_(
-            cx + look.face_dx - ink_mid_x * scale,
-            cy + ORB * OPTICAL_LIFT + ink_mid_y * scale)
-        transform.scaleXBy_yBy_(scale, -scale)
-        context.saveGraphicsState()
-        transform.concat()
-        # His streak stays crimson in every state. The streak is how you
-        # recognise him; state belongs on the ring, which is not part of him.
-        make_icon.draw_head(detail=True, mouth=self._mouth_openness(look))
-        context.restoreGraphicsState()
-        context.restoreGraphicsState()
-
-        # A hairline, so he keeps an edge against a light background.
-        _colour((1, 1, 1), 0.14).set()
-        disc.setLineWidth_(1.0)
+        NSColor.windowBackgroundColor().colorWithAlphaComponent_(0.96).set()
+        disc.fill()
+        edge = (NSColor.labelColor().colorWithAlphaComponent_(0.45) if contrast
+                else NSColor.separatorColor())
+        edge.set()
+        disc.setLineWidth_(1.0 if not contrast else 1.5)
         disc.stroke()
-        context.restoreGraphicsState()
 
-    @objc.python_method
-    def _circle(self, cx, cy, radius, width, rgb, alpha):
-        if alpha <= 0.01:
-            return
-        _colour(rgb, alpha).set()
-        ring = NSBezierPath.bezierPathWithOvalInRect_(
-            NSMakeRect(cx - radius, cy - radius, radius * 2, radius * 2))
-        ring.setLineWidth_(width)
-        ring.stroke()
-
-    @objc.python_method
-    def _draw_ring(self, name, weight, look, cx, cy, r):
-        """
-        One state ring, at `weight` opacity. Rings cross-fade: while one state
-        hands over to the next, both are drawn, one fading out and one in.
-
-        Colour is never the only difference. Listening pushes rings outward,
-        speaking holds a halo that breathes with his mouth, thinking sweeps an
-        arc, reading holds still while his face scans, working circles a dot,
-        waiting pulses slowly, guiding holds a steady ring.
-        """
-        t = look.time
-        if name == "listen":
-            level = self.level
-            for index in range(2):
-                offset = (t * 0.9 + index * 0.5) % 1.0
-                spread = 3.0 + offset * (HALO - 3.0)
-                fade = (1.0 - offset) * 0.5 * (0.6 + 0.4 * level)
-                self._circle(cx, cy, r + spread, 2.0, CRIMSON, fade * weight)
-        elif name == "speak":
-            glow = 4.0 + 5.0 * self._mouth_openness(look)
-            self._circle(cx, cy, r + glow / 2, glow, CRIMSON, 0.30 * weight)
-        elif name == "think":
-            if look.still:
-                # Preparing: the answer exists, the sound has not started.
-                self._circle(cx, cy, r + 5, 2.4, GOLD, 0.65 * weight)
-                return
-            self._circle(cx, cy, r + 5, 2.4, GOLD, 0.16 * weight)
-            sweep = NSBezierPath.bezierPath()
-            head = (-t * 200.0) % 360.0
-            sweep.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_clockwise_(
-                NSPoint(cx, cy), r + 5, head, head - 78, True)
-            sweep.setLineWidth_(2.4)
-            sweep.setLineCapStyle_(1)          # round
-            _colour(GOLD, 0.95 * weight).set()
-            sweep.stroke()
-        elif name == "read":
-            self._circle(cx, cy, r + 5, 2.0, GOLD, 0.55 * weight)
-        elif name == "travel":
-            self._circle(cx, cy, r + 4, 1.5, GOLD, 0.30 * weight)
-        elif name == "guide":
-            self._circle(cx, cy, r + 5, 2.0, GOLD, 0.80 * weight)
-        elif name == "work":
-            self._circle(cx, cy, r + 5, 2.0, GOLD, 0.12 * weight)
-            angle = math.radians(90.0 - (t / 2.4) * 360.0)
-            dot_x = cx + (r + 5) * math.cos(angle)
-            dot_y = cy + (r + 5) * math.sin(angle)
-            _colour(GOLD, 0.85 * weight).set()
-            NSBezierPath.bezierPathWithOvalInRect_(
-                NSMakeRect(dot_x - 2.4, dot_y - 2.4, 4.8, 4.8)).fill()
-        elif name == "wait":
-            pulse = 0.35 + 0.30 * (0.5 + 0.5 * math.sin(2 * math.pi * t / 1.6))
-            self._circle(cx, cy, r + 4, 2.0, CRIMSON, pulse * weight)
-        elif name == "error":
-            self._circle(cx, cy, r + 4, 2.0, RED, 0.75 * weight)
-
-    @objc.python_method
-    def _draw_cue(self, look, cx, cy, r):
-        """The one-shots: done, interrupted, failed. Each plays once and ends."""
-        p = look.cue_progress
+        # The mark. Its geometry is the state: the front's distance and
+        # length, which way it faces, where it has travelled round to.
+        radius = look.radius + 0.05 * look.rhythm
+        radius -= 0.03 * self.level * look.rings.get("listen", 0.0)
+        span = look.span
         if look.cue == "success":
-            self._circle(cx, cy, r + 3 + 8 * p, 2.0, GOLD, 0.8 * (1 - p))
-        elif look.cue == "interrupted":
-            self._circle(cx, cy, r + 11 - 8 * p, 2.0, CRIMSON, 0.7 * (1 - p))
-        elif look.cue == "failure":
-            self._circle(cx, cy, r + 4, 2.0, RED, 0.9 * (1 - 0.4 * p))
+            # Done: the front steps out and lengthens a little, once, and
+            # settles. Never round the source: that would be another symbol.
+            lift = math.sin(math.pi * look.cue_progress)
+            radius += 0.05 * lift
+            span += 20.0 * lift
+        luminosity = 1.0 if contrast else look.luminosity
+        ink = NSColor.labelColor().colorWithAlphaComponent_(luminosity)
+        front = None
+        if look.visual is motion.Visual.ERROR:
+            front = NSColor.systemRedColor()
+        size = ORB * MARK_FILL * look.scale
+        make_icon.draw_signal(cx, cy, size, ink, radius=radius, span=span,
+                              heading=look.lean, side=look.side, turn=look.turn,
+                              front_ink=front, shift=look.face_dx / max(size, 1.0))
+
+
+def _increase_contrast() -> bool:
+    try:
+        return bool(NSWorkspace.sharedWorkspace().accessibilityDisplayShouldIncreaseContrast())
+    except Exception:
+        return False
 
 
 class Pill:
@@ -679,34 +527,109 @@ class Panel:
             self.closing = False
             self.window.orderOut_(None)
 
-    def apply(self, progress):
-        """One frame of opening or closing: 0 is inside the orb, 1 is open."""
+    def apply(self, progress, surface=1.0):
+        """
+        One frame of opening or closing: 0 is inside the orb, 1 is open.
+        `surface` steps the panel back while Diablo is away at a target, so
+        the eye goes to him, not to a window in the corner.
+        """
         if self.window is None or self.rest is None:
             return
         progress = max(0.0, min(1.0, progress))
-        self.window.setAlphaValue_(progress)
+        self.window.setAlphaValue_(progress * max(0.0, min(1.0, surface)))
         self.window.setFrameOrigin_(
             NSPoint(self.rest[0], self.rest[1] - (1.0 - progress) * Panel.RISE))
 
 
 def _status_icon():
     """
-    The menu bar glyph: a small ring with a notch, drawn once.
+    The menu bar glyph: the mark itself, drawn once, as a template image.
 
-    Template mode is what makes it follow the menu bar's tint instead of
-    staying a fixed colour when the wallpaper is light.
+    Template mode is what makes it follow the menu bar's own tint in light
+    and dark and when the bar is highlighted, instead of being a fixed colour.
     """
     size = 18.0
     image = NSImage.alloc().initWithSize_(NSMakeSize(size, size))
     image.lockFocus()
-    NSColor.blackColor().set()
-    ring = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(2.5, 2.5, 13, 13))
-    ring.setLineWidth_(2.0)
-    ring.stroke()
-    NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(7, 7, 4, 4)).fill()
+    # The mark's ink is about 57% of its box, so a 25-point box gives ~14
+    # points of glyph: the height of the other icons in the bar.
+    make_icon.draw_signal(size / 2.0, size / 2.0, 25.0, NSColor.blackColor(), weight=0.1)
     image.unlockFocus()
     image.setTemplate_(True)
     return image
+
+
+# ─── The indication ──────────────────────────────────────────────────────────
+
+class Guide:
+    """
+    What Diablo points with: the ring (or, for a region of content, an
+    outline) on the target, the line from him to it, and the caption.
+
+    One overlay process in session mode, owned here. It is started hidden
+    while he is still travelling, shown only once he has arrived and
+    settled, hidden the moment a newer target takes over, and asked to
+    fade and exit when he goes home. Drawn without its own copy of him,
+    because he is standing there.
+
+    The overlay is a separate process for the reason it always was: the
+    drawing cannot take the assistant down with it.
+    """
+
+    def __init__(self):
+        self.process = None
+
+    def _alive(self) -> bool:
+        return self.process is not None and self.process.poll() is None
+
+    def _send(self, message: Dict[str, Any]) -> bool:
+        if not self._alive():
+            return False
+        try:
+            self.process.stdin.write((json.dumps(message) + "\n").encode())
+            self.process.stdin.flush()
+            return True
+        except (BrokenPipeError, OSError, ValueError):
+            self.process = None
+            return False
+
+    def prepare(self, x: float, y: float, label: str = "",
+                w: float = 0.0, h: float = 0.0) -> None:
+        """Have an overlay ready and invisible, so showing it costs nothing."""
+        if self._alive():
+            return
+        try:
+            import subprocess
+            from skills import pointing
+            self.process = subprocess.Popen(
+                [sys.executable, pointing.OVERLAY, "--session", "--hidden", "--no-marker",
+                 "--marker-radius", f"{motion.STAND_RADIUS:.1f}",
+                 "--x", f"{x:.1f}", "--y", f"{y:.1f}", "--label", (label or "")[:48],
+                 "--w", f"{w:.1f}", "--h", f"{h:.1f}"],
+                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, start_new_session=True)
+        except Exception:
+            traceback.print_exc()
+            self.process = None
+
+    def show(self, x: float, y: float, label: str = "",
+             w: float = 0.0, h: float = 0.0) -> None:
+        """Indicate the target: fades in where it belongs, no slide."""
+        self.prepare(x, y, label, w, h)
+        self._send({"x": x, "y": y, "label": (label or "")[:80],
+                    "w": w, "h": h, "fresh": True})
+
+    def hide(self) -> None:
+        self._send({"hide": True})
+
+    def close(self) -> None:
+        """Fade out and exit. The process ends itself once it has faded."""
+        if self._send({"quit": True}):
+            try:
+                self.process.stdin.close()
+            except Exception:
+                pass
+        self.process = None
 
 
 # ─── The frame clock ─────────────────────────────────────────────────────────
@@ -817,7 +740,7 @@ class Shell:
         self._link = None
         self._last = None
         self._fast = None
-        self._breathing = False
+        self.guide = Guide()
         self.stats = FrameStats()
         self._watch_reduce_motion()
 
@@ -926,43 +849,111 @@ class Shell:
             presence.flash(event)
         elif event == "target":
             self.approach(**data)
+        elif event == "region":
+            self.approach_region(**data)
+        elif event == "no_target":
+            self.no_target()
+        elif event == "await_user":
+            presence.await_user()
+        elif event == "verified":
+            presence.verified()
+        elif event == "clear":
+            self.clear_target()
         self.wake()
 
     # ── going somewhere ──────────────────────────────────────────────────
     def approach(self, x: float, y: float, label: str = "", seconds: float = 3.0,
                  spawn: Optional[Callable[[bool], None]] = None,
-                 generation: Optional[int] = None) -> None:
+                 generation: Optional[int] = None, w: float = 0.0, h: float = 0.0) -> None:
         """
-        Go and stand beside a target that has actually been found.
+        Go and point at a target that has actually been found, in Quartz space.
 
-        The target is in Quartz space. Where to stand is the guidance
-        geometry's choice, so he never covers what he is referring to. The
-        overlay (the ring on the target and the line to him) is only started
-        once he has arrived and settled, and then drawn without its own copy
-        of him, because he is already there. He holds for as long as the
-        overlay shows, then goes home.
+        Three beats, never blended: MOVE (he travels, looking where he is
+        going, and any older indication fades as he leaves), SETTLE (a small
+        arrival), INDICATE (only now the ring, the line to him and the
+        caption appear). Then he holds: at least `seconds`, so it can be
+        read, and for as long as he is still talking about it. Then the
+        indication fades and he goes home.
 
-        If there is nowhere to stand, or the turn this belonged to has been
-        superseded by the time he arrives, the old behaviour stands in.
+        Where he stands is the guidance geometry's choice, with his real size,
+        so he never covers the target. If the target is on no display there
+        is nowhere to stand, and that is reported rather than invented.
+        `spawn` is the old overlay path, kept for callers without a shell.
         """
-        stand = motion.stand_for(x, y, label)
+        extent = (w / 2.0 + 6.0, h / 2.0 + 6.0) if w > 0 and h > 0 else None
+        stand = motion.stand_for(x, y, label, extent=extent)
         if stand is None:
-            if spawn is not None:
-                spawn(True)
+            self.no_target()
             return
         presence = self.presence
+        self.guide.hide()
+        self.guide.prepare(x, y, label, w, h)
+
+        def ready():
+            if generation is not None and not _current_generation(generation):
+                self.clear_target()
+                return
+            self.guide.show(x, y, label, w, h)
+            presence.hold_target(max(seconds, motion.Timing.GUIDE_HOLD),
+                                 then=self.clear_target, until_quiet=True)
+            self.wake()
+
+        presence.approach_target(stand, on_ready=ready, facing=_appkit(x, y))
+        self.wake()
+
+    def approach_region(self, x: float, y: float, w: float, h: float,
+                        generation: Optional[int] = None) -> None:
+        """
+        Stand beside a region of content he is reading — a window, a table, a
+        graph — without pretending it is something to press: no ring, no
+        line, just him beside it wearing the reading ring. Quartz, top-left.
+
+        Only when it means something. A region that fills most of its display
+        is the whole screen, and walking to its edge says nothing; and a
+        target he is already pointing at is not abandoned for a read.
+        """
+        presence = self.presence
+        if presence.guiding or (presence.phase == motion.MOVING
+                                and presence.motion_owner in presence._on_ready):
+            return
+        try:
+            from skills import display
+            screen = display.for_point(x + w / 2.0, y + h / 2.0)
+        except Exception:
+            screen = None
+        if screen is None or w * h > 0.5 * screen.width * screen.height:
+            return
+        stand = motion.stand_for(x + w / 2.0, y + h / 2.0, "",
+                                 extent=(w / 2.0 + 6.0, h / 2.0 + 6.0))
+        if stand is None:
+            return
 
         def ready():
             if generation is not None and not _current_generation(generation):
                 presence.return_home()
                 self.wake()
                 return
-            if spawn is not None:
-                spawn(False)
-            presence.hold_position(seconds, then=presence.return_home)
+            presence.hold_target(1.0, then=presence.return_home, until_quiet=True)
             self.wake()
 
-        presence.approach_target(stand, on_ready=ready)
+        presence.approach_target(stand, on_ready=ready, indicating=False,
+                                 facing=_appkit(x + w / 2.0, y + h / 2.0))
+        self.wake()
+
+    def clear_target(self) -> None:
+        """The indication has done its job: fade it, and go home."""
+        self.guide.close()
+        self.presence.return_home()
+        self.wake()
+
+    def no_target(self) -> None:
+        """
+        Looked and found nothing to point at. A short warning cue where he
+        is — never a wander to a made-up place — and home if he was away.
+        """
+        self.presence.flash("missed")
+        if self.presence.phase != motion.HOME:
+            self.clear_target()
         self.wake()
 
     # ── the clock ────────────────────────────────────────────────────────
@@ -1000,14 +991,13 @@ class Shell:
             except Exception:
                 pass
 
-        panel_moving = not presence.panel.at_rest()
+        panel_moving = not (presence.panel.at_rest() and presence.surface.at_rest())
         presence.step(interval)
         look = presence.look()
         self.pill.place(look)
-        if panel_moving:
-            self.panel.apply(look.panel)
+        if panel_moving and self.panel.window is not None and self.panel.window.isVisible():
+            self.panel.apply(look.panel, look.surface)
         self.pill.view.setNeedsDisplay_(True)
-        self._breathe(look)
 
         # Travel and the panel at the display's full rate; loops alone at 60,
         # which is plenty for a ring and half the work on a ProMotion panel.
@@ -1028,44 +1018,6 @@ class Shell:
             self._last = None
             if DEBUG:
                 _log("clock paused", self.stats.summary())
-
-    def _breathe(self, look) -> None:
-        """
-        At home and idle, a breath too slow to notice unless you look for it,
-        run by the compositor: no frames drawn here, no Python per frame.
-        Removed the moment he is anything but idle at home, easing back from
-        wherever the breath was rather than snapping.
-        """
-        want = (look.visual is motion.Visual.IDLE and self.presence.phase == motion.HOME
-                and not self.presence.reduced and not look.dim)
-        if want == self._breathing:
-            return
-        layer = self.pill.view.layer()
-        if layer is None:
-            return
-        self._breathing = want
-        try:
-            if want:
-                breath = CABasicAnimation.animationWithKeyPath_("opacity")
-                breath.setFromValue_(1.0)
-                breath.setToValue_(0.93)
-                breath.setDuration_(2.8)
-                breath.setAutoreverses_(True)
-                breath.setRepeatCount_(1e9)
-                breath.setTimingFunction_(CAMediaTimingFunction.functionWithName_(
-                    kCAMediaTimingFunctionEaseInEaseOut))
-                layer.addAnimation_forKey_(breath, "breathe")
-            else:
-                shown = layer.presentationLayer()
-                start = shown.opacity() if shown is not None else 1.0
-                layer.removeAnimationForKey_("breathe")
-                back = CABasicAnimation.animationWithKeyPath_("opacity")
-                back.setFromValue_(start)
-                back.setToValue_(1.0)
-                back.setDuration_(motion.Timing.LOOK)
-                layer.addAnimation_forKey_(back, "unbreathe")
-        except Exception:
-            traceback.print_exc()
 
     def _watch_reduce_motion(self) -> None:
         """Follow the system setting while running, not just at launch."""
@@ -1149,6 +1101,15 @@ class Shell:
             self._start_clock()
         _on_main(first)
         self.app.run()
+
+
+def _appkit(x: float, y: float):
+    """A Quartz point in AppKit space, through display.py's one flip."""
+    try:
+        from skills import display
+        return display.quartz_to_appkit(x, y)
+    except Exception:
+        return None
 
 
 def _note_key(shell, down: bool) -> None:

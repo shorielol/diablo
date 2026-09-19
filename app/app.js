@@ -66,9 +66,11 @@ const Icon = memo(({ name, size = 16 }) => html`
 
 const Mascot = memo(({ agent, size = 96, wave = true, crop = '' }) => {
   const svg = useMemo(
-    () => mascot({ accent: agent.accent, eye: agent.eye, mouth: agent.mouth,
+    // Diablo's own mark is the text colour; a sub-agent's front is its accent.
+    () => mascot({ accent: agent.id === 'diablo' ? null : agent.accent,
+                   eye: agent.eye, mouth: agent.mouth,
                    size, wave, crop }),
-    [agent.accent, agent.eye, agent.mouth, size, wave, crop]);
+    [agent.id, agent.accent, agent.eye, agent.mouth, size, wave, crop]);
   return html`<div class="mascot" style=${{ width: size, height: size }}
       dangerouslySetInnerHTML=${{ __html: svg }} />`;
 });
