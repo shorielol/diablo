@@ -80,6 +80,23 @@ CONTACT_MAPPING = {
 
 # ─── UI State Management ────────────────────────────────────────────────────
 
+# The last state set, so a state can be left only by whoever still owns it.
+_ui_state = "idle"
+
+
+def _end_thinking():
+    """
+    Leave "thinking" if nothing has taken the state since.
+
+    Speech sets "speaking" and then "idle" on its own; this only covers the
+    paths that end without saying anything (a failed transcription, an answer
+    handed to a waiting question, a request that queued work and returned).
+    A compare, not a blind reset, so it cannot knock "speaking" back to idle.
+    """
+    if _ui_state == "thinking":
+        set_ui_state("idle")
+
+
 def set_ui_state(state):
     """
     Sets the visualizer state: 'idle', 'speaking', or 'listening'.
@@ -89,6 +106,8 @@ def set_ui_state(state):
     up. Every state change funnels through here, so this is the one place it has
     to be done.
     """
+    global _ui_state
+    _ui_state = state
     if state == "speaking":
         wake_word.SPEAKING.set()
     else:
@@ -641,7 +660,10 @@ def _ptt_worker(on_text):
         blocks = []
         while not command_capture_queue.empty():
             blocks.append(command_capture_queue.get())
-        set_ui_state("idle")
+        # With words in hand the next thing that happens is work — the
+        # transcription and then whatever was asked — so that is what the
+        # state says, from this moment, rather than idle.
+        set_ui_state("thinking" if blocks and held >= PTT_MIN_SECONDS else "idle")
     finally:
         MIC_LOCK.release()
         _ptt_active.clear()
@@ -658,6 +680,14 @@ def _ptt_worker(on_text):
         print(f"  [PTT] too short ({held:.2f}s), ignored")
         return
 
+    try:
+        _handle_capture(blocks, held, on_text)
+    finally:
+        _end_thinking()
+
+
+def _handle_capture(blocks, held, on_text):
+    """Transcribe one press and act on it. The state is "thinking" throughout."""
     audio = np.concatenate(blocks).flatten().astype(np.float32)
     started = time.time()
     try:

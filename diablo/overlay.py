@@ -74,7 +74,13 @@ def main() -> int:
                         help="the screen behind this point is light")
     parser.add_argument("--watch-clicks", action="store_true",
                         help="report every click on stdout as JSON")
+    parser.add_argument("--no-marker", action="store_true",
+                        help="Diablo's orb is already standing there; draw the "
+                             "ring, line and caption but not a second copy of him")
     args = parser.parse_args()
+    # How far from the marker's centre the line starts: clear of the small
+    # marker, or clear of the orb and its state ring when the orb is there.
+    marker_clearance = 27.0 if args.no_marker else guidance.MARKER
 
     try:
         import objc
@@ -173,7 +179,7 @@ def main() -> int:
             return
         ux, uy = dx / length, dy / length
 
-        begin = guidance.MARKER + 5.0
+        begin = marker_clearance + 5.0
         finish = length - (guidance.RING + 10.0)
         if finish <= begin:
             return
@@ -342,7 +348,8 @@ def main() -> int:
 
             draw_ring(self, target)
             draw_connector(self, marker, target)
-            draw_marker(self, marker)
+            if not args.no_marker:
+                draw_marker(self, marker)
             if self.label:
                 draw_caption(self, marker, spot)
 

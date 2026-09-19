@@ -338,6 +338,10 @@ def _worker() -> None:
         except Exception as e:
             store.update(job["id"], status="failed", finished_at=time.time(),
                          summary=str(e))
+            # A failure is an event like a success: without it the window and
+            # the orb go on showing the job as running until something else
+            # happens to refresh them.
+            _push("job_failed", id=job["id"], agent=job.get("agent", "diablo"))
             print(f"  [Tasks] Job {job['id']} failed: {type(e).__name__}: {e}")
             _speak_with_metadata(
                 speak, "That one came apart on me, Sir. The details are in the log.",

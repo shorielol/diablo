@@ -811,7 +811,7 @@ function App() {
         } else if (payload.event === 'job_started') {
           setLiveAgents(a => ({ ...a, [payload.agent || 'diablo']: payload.task }));
           refresh();
-        } else if (payload.event === 'job_done') {
+        } else if (payload.event === 'job_done' || payload.event === 'job_failed') {
           setLiveAgents({});
           refresh();
         } else if (payload.event === 'permissions') {

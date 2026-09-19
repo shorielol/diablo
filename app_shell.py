@@ -63,8 +63,16 @@ from AppKit import (  # noqa: E402
     NSGradient, NSEventMaskFlagsChanged, NSEventModifierFlagControl,
     NSEventModifierFlagOption, NSEventModifierFlagCommand, NSEventModifierFlagShift,
 )
+from AppKit import (  # noqa: E402
+    NSWorkspace, NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification,
+)
 from Foundation import (  # noqa: E402
-    NSAffineTransform, NSOperationQueue, NSURL, NSURLRequest,
+    NSAffineTransform, NSObject, NSOperationQueue, NSRunLoop, NSRunLoopCommonModes,
+    NSURL, NSURLRequest,
+)
+import Quartz  # noqa: E402
+from Quartz import (  # noqa: E402
+    CABasicAnimation, CAMediaTimingFunction, kCAMediaTimingFunctionEaseInEaseOut,
 )
 from WebKit import WKWebView, WKWebViewConfiguration  # noqa: E402
 
@@ -72,6 +80,8 @@ from WebKit import WKWebView, WKWebViewConfiguration  # noqa: E402
 # 120-unit grid. The orb draws the same paths rather than a second copy of
 # them, so his face cannot differ between the Dock and the screen.
 from skills import make_icon  # noqa: E402
+# Every moving thing is driven by one motion system; the shell only draws it.
+from skills import motion  # noqa: E402
 
 
 # ─── Push to talk ────────────────────────────────────────────────────────────
@@ -212,19 +222,22 @@ class OrbView(NSView):
     """
     Diablo, as a face in a circle.
 
-    Redraws on a clock only while something is actually moving. A view that
-    runs at 60fps for a dot that is not moving is how a menu bar app ends up
-    in the battery report, and idle is by far the most common state.
+    It draws exactly what the motion system says, and nothing on its own
+    clock: every frame is one Look from skills.motion, and the shell's
+    display link decides when there is a frame at all. At rest there are no
+    frames, because idle is by far the most common state and a view redrawing
+    a picture that does not change is how a menu bar app ends up in the
+    battery report.
     """
 
     def initWithFrame_(self, frame):
         self = objc.super(OrbView, self).initWithFrame_(frame)
         if self is None:
             return None
+        self.presence = motion.Presence()
         self.state = "idle"
         self.accent = GREY
-        self.level = 0.0          # smoothed microphone or speech amplitude
-        self.phase = 0.0          # seconds since this state began
+        self.level = 0.0          # smoothed microphone amplitude, listening only
         self.on_click = None
         self.tooltip = "ready"
         return self
@@ -237,62 +250,68 @@ class OrbView(NSView):
             self.on_click()
 
     def update_(self, payload):
+        """The manager's state changed. The motion system decides the look."""
         state = payload.get("state", self.state)
-        if state != self.state:
-            self.phase = 0.0
-            self.level = 0.0
         self.state = state
         self.accent, words = STATE_LOOK.get(state, (GREY, state))
+        self.presence.set_runtime(state)
         self.tooltip = payload.get("headline") or words
         self.setToolTip_(self.tooltip)
         self.setNeedsDisplay_(True)
 
     def animating(self) -> bool:
-        return self.state in ("listening", "processing", "responding")
-
-    def advance_(self, dt):
-        """One frame. Returns nothing; the shell decides how often to call it."""
-        if not self.animating():
-            return
-        self.phase += float(dt)
-        self.setNeedsDisplay_(True)
+        """Does the current state have a loop of its own (not just a transition)?"""
+        return self.presence.looping()
 
     def pushLevel_(self, level):
-        # Smoothed, because raw microphone power jitters hard enough to make
-        # the ring look like it is being shaken rather than spoken to.
+        # Heavily smoothed. The rings are there to say "I can hear you", not
+        # to plot the room: an unsmoothed level makes them shake.
         target = max(0.0, min(1.0, float(level)))
-        self.level += (target - self.level) * 0.35
-        if self.animating():
-            self.setNeedsDisplay_(True)
+        self.level += (target - self.level) * 0.12
 
     # ── the face ─────────────────────────────────────────────────────────
 
-    def _mouth_openness(self) -> float:
+    @objc.python_method
+    def _mouth_openness(self, look) -> float:
         """
-        How far open his mouth is, this frame.
+        How far open his mouth is, this frame. Only while speaking.
 
-        Only while speaking. Two sine waves at unrelated frequencies rather
-        than one: a single sine is a metronome, and a mouth opening on a
-        metronome reads as a machine rather than as speech. The slower wave
-        supplies the pauses between phrases.
+        Two sine waves at unrelated frequencies rather than one: a single sine
+        is a metronome, and a mouth opening on a metronome reads as a machine
+        rather than as speech. The slower wave supplies the pauses.
         """
-        if self.state != "responding":
+        weight = look.rings.get("speak", 0.0)
+        if weight <= 0.0:
             return 0.0
-        fast = math.sin(self.phase * 11.0)
-        slow = math.sin(self.phase * 2.7 + 1.1)
+        fast = math.sin(look.time * 11.0)
+        slow = math.sin(look.time * 2.7 + 1.1)
         shaped = (0.55 + 0.45 * fast) * (0.45 + 0.55 * (0.5 + 0.5 * slow))
-        # Real amplitude when the voice can report it; the wave alone otherwise.
-        return max(0.0, min(1.0, shaped * (0.55 + 0.9 * self.level)))
+        return max(0.0, min(1.0, shaped * 0.9 * weight))
 
     _draws = 0
 
     def drawRect_(self, rect):
         OrbView._draws += 1
+        look = self.presence.look()
         cx = cy = CANVAS / 2.0
         r = ORB / 2.0
         context = NSGraphicsContext.currentContext()
+        context.saveGraphicsState()
 
-        self._draw_ring(cx, cy, r)
+        # Scale about the centre, so growing and tucking never shift him.
+        grow = NSAffineTransform.transform()
+        grow.translateXBy_yBy_(cx, cy)
+        grow.scaleBy_(look.scale)
+        grow.translateXBy_yBy_(-cx, -cy)
+        grow.concat()
+
+        for name, weight in look.rings.items():
+            self._draw_ring(name, weight, look, cx, cy, r)
+        if look.cue:
+            self._draw_cue(look, cx, cy, r)
+
+        if look.dim:
+            Quartz.CGContextSetAlpha(context.CGContext(), 0.6)
 
         # The disc he sits in.
         disc = NSBezierPath.bezierPathWithOvalInRect_(
@@ -301,8 +320,7 @@ class OrbView(NSView):
         disc.addClip()
         # Pitched at his hair rather than darker than it. A disc noticeably
         # darker than the character leaves the edge of his head visible as a
-        # seam inside the circle, and once you have seen it you cannot stop
-        # seeing it. Matched, he reads as filling the circle.
+        # seam inside the circle. Matched, he reads as filling the circle.
         NSGradient.alloc().initWithStartingColor_endingColor_(
             _colour((0.067, 0.067, 0.082), 0.97),
             _colour((0.098, 0.098, 0.118), 0.97)).drawInRect_angle_(
@@ -310,27 +328,23 @@ class OrbView(NSView):
 
         # The character, drawn from make_icon so that the orb, the app icon and
         # the window are one drawing rather than three that drift apart.
-        #
         # Scaled and placed from the measured ink, never from the 120-unit
-        # canvas. The scale fits the ink's WIDTH because that is the wider of
-        # the two dimensions (63.5 against 61.8), so fitting width guarantees
-        # the height fits too and the aspect ratio is never touched.
+        # canvas; the face may shift sideways (thinking, reading, a shake),
+        # always inside the disc.
         ink_w = MASCOT_INK_X[1] - MASCOT_INK_X[0]
         ink_mid_x = (MASCOT_INK_X[0] + MASCOT_INK_X[1]) / 2.0
         ink_mid_y = (MASCOT_INK_Y[0] + MASCOT_INK_Y[1]) / 2.0
         scale = ORB * FACE_FILL / ink_w
         transform = NSAffineTransform.transform()
         transform.translateXBy_yBy_(
-            cx - ink_mid_x * scale,
+            cx + look.face_dx - ink_mid_x * scale,
             cy + ORB * OPTICAL_LIFT + ink_mid_y * scale)
         transform.scaleXBy_yBy_(scale, -scale)
         context.saveGraphicsState()
         transform.concat()
-        # His streak stays crimson in every state. Recolouring it to match the
-        # ring was the obvious thing to try and it is wrong: the streak is how
-        # you recognise him, and a blue one is somebody else. State belongs on
-        # the ring, which is not part of him.
-        make_icon.draw_head(detail=True, mouth=self._mouth_openness())
+        # His streak stays crimson in every state. The streak is how you
+        # recognise him; state belongs on the ring, which is not part of him.
+        make_icon.draw_head(detail=True, mouth=self._mouth_openness(look))
         context.restoreGraphicsState()
         context.restoreGraphicsState()
 
@@ -338,70 +352,90 @@ class OrbView(NSView):
         _colour((1, 1, 1), 0.14).set()
         disc.setLineWidth_(1.0)
         disc.stroke()
+        context.restoreGraphicsState()
 
-    def _draw_ring(self, cx, cy, r):
-        """State, as everything outside the circle."""
-        if self.state in ("idle", "cold"):
+    @objc.python_method
+    def _circle(self, cx, cy, radius, width, rgb, alpha):
+        if alpha <= 0.01:
             return
+        _colour(rgb, alpha).set()
+        ring = NSBezierPath.bezierPathWithOvalInRect_(
+            NSMakeRect(cx - radius, cy - radius, radius * 2, radius * 2))
+        ring.setLineWidth_(width)
+        ring.stroke()
 
-        if self.state == "listening":
-            # Two rings pushing outward, on the voice. Crimson.
+    @objc.python_method
+    def _draw_ring(self, name, weight, look, cx, cy, r):
+        """
+        One state ring, at `weight` opacity. Rings cross-fade: while one state
+        hands over to the next, both are drawn, one fading out and one in.
+
+        Colour is never the only difference. Listening pushes rings outward,
+        speaking holds a halo that breathes with his mouth, thinking sweeps an
+        arc, reading holds still while his face scans, working circles a dot,
+        waiting pulses slowly, guiding holds a steady ring.
+        """
+        t = look.time
+        if name == "listen":
+            level = self.level
             for index in range(2):
-                offset = (self.phase * 0.9 + index * 0.5) % 1.0
-                spread = 3.0 + offset * (HALO - 2.0) * (0.5 + self.level)
-                fade = (1.0 - offset) * 0.55 * (0.35 + 0.65 * self.level)
-                if fade <= 0.02:
-                    continue
-                _colour(self.accent, fade).set()
-                ring = NSBezierPath.bezierPathWithOvalInRect_(
-                    NSMakeRect(cx - r - spread, cy - r - spread,
-                               (r + spread) * 2, (r + spread) * 2))
-                ring.setLineWidth_(2.0)
-                ring.stroke()
-            return
-
-        if self.state == "responding":
-            # A steady halo that breathes with the mouth, rather than ripples.
-            # Ripples while he is talking read as "still listening", which is
-            # the one thing it must not say.
-            glow = 4.0 + 5.0 * self._mouth_openness()
-            _colour(self.accent, 0.30).set()
-            ring = NSBezierPath.bezierPathWithOvalInRect_(
-                NSMakeRect(cx - r - glow / 2, cy - r - glow / 2,
-                           (r + glow / 2) * 2, (r + glow / 2) * 2))
-            ring.setLineWidth_(glow)
-            ring.stroke()
-            return
-
-        if self.state == "processing":
-            # One arc going round. The oldest idiom there is for "working",
-            # and it cannot be mistaken for sound.
-            _colour(self.accent, 0.16).set()
-            track = NSBezierPath.bezierPathWithOvalInRect_(
-                NSMakeRect(cx - r - 5, cy - r - 5, (r + 5) * 2, (r + 5) * 2))
-            track.setLineWidth_(2.4)
-            track.stroke()
+                offset = (t * 0.9 + index * 0.5) % 1.0
+                spread = 3.0 + offset * (HALO - 3.0)
+                fade = (1.0 - offset) * 0.5 * (0.6 + 0.4 * level)
+                self._circle(cx, cy, r + spread, 2.0, CRIMSON, fade * weight)
+        elif name == "speak":
+            glow = 4.0 + 5.0 * self._mouth_openness(look)
+            self._circle(cx, cy, r + glow / 2, glow, CRIMSON, 0.30 * weight)
+        elif name == "think":
+            if look.still:
+                # Preparing: the answer exists, the sound has not started.
+                self._circle(cx, cy, r + 5, 2.4, GOLD, 0.65 * weight)
+                return
+            self._circle(cx, cy, r + 5, 2.4, GOLD, 0.16 * weight)
             sweep = NSBezierPath.bezierPath()
-            head = (-self.phase * 200.0) % 360.0
+            head = (-t * 200.0) % 360.0
             sweep.appendBezierPathWithArcWithCenter_radius_startAngle_endAngle_clockwise_(
                 NSPoint(cx, cy), r + 5, head, head - 78, True)
             sweep.setLineWidth_(2.4)
             sweep.setLineCapStyle_(1)          # round
-            _colour(self.accent, 0.95).set()
+            _colour(GOLD, 0.95 * weight).set()
             sweep.stroke()
-            return
+        elif name == "read":
+            self._circle(cx, cy, r + 5, 2.0, GOLD, 0.55 * weight)
+        elif name == "travel":
+            self._circle(cx, cy, r + 4, 1.5, GOLD, 0.30 * weight)
+        elif name == "guide":
+            self._circle(cx, cy, r + 5, 2.0, GOLD, 0.80 * weight)
+        elif name == "work":
+            self._circle(cx, cy, r + 5, 2.0, GOLD, 0.12 * weight)
+            angle = math.radians(90.0 - (t / 2.4) * 360.0)
+            dot_x = cx + (r + 5) * math.cos(angle)
+            dot_y = cy + (r + 5) * math.sin(angle)
+            _colour(GOLD, 0.85 * weight).set()
+            NSBezierPath.bezierPathWithOvalInRect_(
+                NSMakeRect(dot_x - 2.4, dot_y - 2.4, 4.8, 4.8)).fill()
+        elif name == "wait":
+            pulse = 0.35 + 0.30 * (0.5 + 0.5 * math.sin(2 * math.pi * t / 1.6))
+            self._circle(cx, cy, r + 4, 2.0, CRIMSON, pulse * weight)
+        elif name == "error":
+            self._circle(cx, cy, r + 4, 2.0, RED, 0.75 * weight)
 
-        # error, waking, shutting down: a plain ring, no movement.
-        _colour(self.accent, 0.65).set()
-        ring = NSBezierPath.bezierPathWithOvalInRect_(
-            NSMakeRect(cx - r - 4, cy - r - 4, (r + 4) * 2, (r + 4) * 2))
-        ring.setLineWidth_(2.0)
-        ring.stroke()
+    @objc.python_method
+    def _draw_cue(self, look, cx, cy, r):
+        """The one-shots: done, interrupted, failed. Each plays once and ends."""
+        p = look.cue_progress
+        if look.cue == "success":
+            self._circle(cx, cy, r + 3 + 8 * p, 2.0, GOLD, 0.8 * (1 - p))
+        elif look.cue == "interrupted":
+            self._circle(cx, cy, r + 11 - 8 * p, 2.0, CRIMSON, 0.7 * (1 - p))
+        elif look.cue == "failure":
+            self._circle(cx, cy, r + 4, 2.0, RED, 0.9 * (1 - 0.4 * p))
 
 
 class Pill:
     """
-    The panel the orb lives in. Never takes focus, never eats a click.
+    The panel the orb lives in. Never takes focus, never eats a click that
+    was meant for something else.
 
     Still called Pill because everything that talks to it calls it that, and
     renaming the class would be the whole diff.
@@ -429,35 +463,55 @@ class Pill:
         self.panel.setBackgroundColor_(NSColor.clearColor())
         self.panel.setHasShadow_(True)
         self.panel.setLevel_(25)                       # above windows, below alerts
-        # Clickable, unlike Clicky's, which is purely informational. On a full
-        # menu bar macOS hides new status items with no error and no way to
-        # override it, so the orb has to be reachable — otherwise the app has
-        # no entry point at all on a machine like this one.
+        # Clickable at home, unlike Clicky's, which is purely informational. On
+        # a full menu bar macOS hides new status items with no error and no
+        # way to override it, so the orb has to be reachable — otherwise the
+        # app has no entry point at all on a machine like this one.
         self.panel.setIgnoresMouseEvents_(False)
         self.panel.setCollectionBehavior_(
             NSWindowCollectionBehaviorCanJoinAllSpaces
             | NSWindowCollectionBehaviorStationary
             | NSWindowCollectionBehaviorFullScreenAuxiliary)
         self.view = OrbView.alloc().initWithFrame_(frame)
+        # Layer-backed so the idle breath can run in the compositor with no
+        # frames drawn here at all.
+        self.view.setWantsLayer_(True)
         self.panel.setContentView_(self.view)
         self.visible = False
+        self.away = False
         self.on_click = None
 
-    def position(self):
+    def home_point(self):
         """
-        Bottom-right of whichever screen the cursor is on.
+        Where he rests: bottom-right of whichever screen the cursor is on,
+        as the orb's centre in AppKit points.
 
-        Clicky puts its character at the cursor. Diablo's is up for whole tasks
-        rather than the moment you hold a key, so it sits in a corner instead —
-        something following the mouse around for ninety seconds is maddening.
+        Clicky puts its character at the cursor. Diablo's is up for whole
+        tasks rather than the moment you hold a key, so it rests in a corner
+        and only leaves it when there is something on screen to go to.
         """
         mouse = NSEvent.mouseLocation()
         screen = next((s for s in NSScreen.screens()
                        if _contains(s.frame(), mouse)), NSScreen.mainScreen())
         visible = screen.visibleFrame()
-        x = visible.origin.x + visible.size.width - CANVAS - 18
-        y = visible.origin.y + 18
-        self.panel.setFrameOrigin_(NSPoint(x, y))
+        return (visible.origin.x + visible.size.width - 18 - CANVAS / 2.0,
+                visible.origin.y + 18 + CANVAS / 2.0)
+
+    def position(self):
+        self.view.presence.set_home(self.home_point())
+        self.place(self.view.presence.look())
+
+    def place(self, look):
+        """Put the window where the motion system says, this frame."""
+        x, y = look.position
+        self.panel.setFrameOrigin_(NSPoint(x - CANVAS / 2.0, y - CANVAS / 2.0))
+        self.panel.setAlphaValue_(look.alpha)
+        # Away from home he is referring to something, and a click near what
+        # he is pointing at belongs to the application underneath, not to him.
+        away = self.view.presence.phase != motion.HOME
+        if away != self.away:
+            self.panel.setIgnoresMouseEvents_(away)
+            self.away = away
 
     def show(self, **payload):
         self.view.on_click = self.on_click
@@ -487,12 +541,26 @@ class Panel:
 
     That laziness is the point of the whole split: until you press the menu bar
     icon there is no web view and no 33 MB.
+
+    It opens out of the orb and closes back into it: it sits directly above
+    him, and on opening it rises the last few points out of him while it
+    fades in; on closing it sinks back and fades, faster. Both are driven by
+    the same motion system as everything else, and a close that is overtaken
+    by a reopen never hides the window.
     """
 
-    def __init__(self, url: str):
+    # How far the window travels as it opens: enough to read as coming out
+    # of the orb below it, not so far that it reads as sliding in.
+    RISE = 14.0
+
+    def __init__(self, url: str, presence=None, wake=None):
         self.url = url
         self.window = None
         self.webview = None
+        self.presence = presence
+        self.wake = wake or (lambda: None)
+        self.rest = None          # the window's origin when fully open
+        self.closing = False
 
     # The size it opens at.
     #
@@ -521,6 +589,9 @@ class Panel:
         self.window.setTitleVisibility_(NSWindowTitleHidden)
         self.window.setBackgroundColor_(_colour((0.043, 0.043, 0.051), 1.0))
         self.window.setMinSize_(NSMakeSize(340, 360))
+        # Released only by us: closing it with the red button hides it, and
+        # the next open reuses the same web view.
+        self.window.setReleasedWhenClosed_(False)
         self._anchor()
 
         config = WKWebViewConfiguration.alloc().init()
@@ -557,20 +628,65 @@ class Panel:
             self.window.setFrameOrigin_(NSPoint(x, y))
         except Exception:
             self.window.center()
+        origin = self.window.frame().origin
+        self.rest = (origin.x, origin.y)
 
     def toggle(self):
         if self.window is None:
             self._build()
-        if self.window.isVisible():
-            self.window.orderOut_(None)
+        if self.window.isVisible() and not self.closing:
+            self.close()
         else:
-            self.window.makeKeyAndOrderFront_(None)
-            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+            self.open()
+
+    def open(self):
+        if self.window is None:
+            self._build()
+        self.closing = False
+        hidden = not self.window.isVisible()
+        if hidden:
+            self.apply(0.0)
+            if self.presence is not None:
+                # Closed some other way (the red button): start from closed,
+                # or the spring would think it is already open and never run.
+                self.presence.panel.jump(0.0)
+        self.window.makeKeyAndOrderFront_(None)
+        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        if self.presence is None:
+            self.apply(1.0)
+            return
+        self.presence.open_panel()
+        self.wake()
 
     def close(self):
-        if self.window is not None:
+        if self.window is None or not self.window.isVisible():
+            return
+        if self.presence is None:
+            self.window.orderOut_(None)
+            return
+        if self.presence.panel.at_rest():
+            # Fully open: wherever it has been dragged to is where it rests.
+            origin = self.window.frame().origin
+            self.rest = (origin.x, origin.y)
+        self.closing = True
+        self.presence.close_panel(on_done=self._closed)
+        self.wake()
+
+    def _closed(self, is_open):
+        # Only ever reached for the newest close: a reopen during the close
+        # took ownership, and this completion was dropped.
+        if not is_open and self.window is not None:
+            self.closing = False
             self.window.orderOut_(None)
 
+    def apply(self, progress):
+        """One frame of opening or closing: 0 is inside the orb, 1 is open."""
+        if self.window is None or self.rest is None:
+            return
+        progress = max(0.0, min(1.0, progress))
+        self.window.setAlphaValue_(progress)
+        self.window.setFrameOrigin_(
+            NSPoint(self.rest[0], self.rest[1] - (1.0 - progress) * Panel.RISE))
 
 
 def _status_icon():
@@ -593,10 +709,94 @@ def _status_icon():
     return image
 
 
+# ─── The frame clock ─────────────────────────────────────────────────────────
+
+class _FrameClock(NSObject):
+    """
+    The display link's target.
+
+    Defined once, here: an NSObject subclass defined inside a function
+    registers a new Objective-C class on every call, which works exactly once.
+    The link calls it on the main thread, in step with the display — 120 Hz
+    on a ProMotion panel, 60 elsewhere — and only while it is unpaused.
+    """
+
+    def initWithHandler_(self, handler):
+        self = objc.super(_FrameClock, self).init()
+        if self is None:
+            return None
+        self.handler = handler
+        return self
+
+    def tick_(self, link):
+        try:
+            self.handler(link)
+        except Exception:
+            traceback.print_exc()
+
+
+class FrameStats:
+    """What the clock actually did, measured, so claims about smoothness are data."""
+
+    def __init__(self):
+        self.intervals: List[float] = []
+        self.costs: List[float] = []
+
+    def note(self, interval: float, cost: float) -> None:
+        self.intervals.append(interval)
+        self.costs.append(cost)
+        if len(self.intervals) > 4000:
+            del self.intervals[:2000]
+            del self.costs[:2000]
+
+    def summary(self) -> Dict[str, float]:
+        if not self.intervals:
+            return {"frames": 0}
+        ordered = sorted(self.intervals)
+        costs = sorted(self.costs)
+        return {
+            "frames": len(ordered),
+            "median_interval_ms": 1000 * ordered[len(ordered) // 2],
+            "p95_interval_ms": 1000 * ordered[int(len(ordered) * 0.95)],
+            "long_frames": sum(1 for i in ordered if i > 1.5 / 60.0),
+            "median_cost_ms": 1000 * costs[len(costs) // 2],
+            "p95_cost_ms": 1000 * costs[int(len(costs) * 0.95)],
+        }
+
+
+def _reduce_motion() -> bool:
+    try:
+        return bool(NSWorkspace.sharedWorkspace().accessibilityDisplayShouldReduceMotion())
+    except Exception:
+        return False
+
+
+# The running shell, so the rest of the process can tell it things without
+# holding a reference. None until the shell is built.
+_SHELL = None
+
+
+def notify(event: str, **data: Any) -> bool:
+    """
+    Tell the presence a real thing happened. Safe from any thread.
+
+    `reading` (depth), `waiting` (bool), `jobs` (running), `success`,
+    `failure`, `interrupted`, and `target` (x, y, label, seconds, spawn,
+    generation). Returns False when there is no shell to tell, so a caller
+    can fall back to what it did before.
+    """
+    shell = _SHELL
+    if shell is None:
+        return False
+    _on_main(lambda: shell.signal(event, data))
+    return True
+
+
 # ─── The app ─────────────────────────────────────────────────────────────────
 
 class Shell:
     def __init__(self, url: str, manager=None):
+        global _SHELL
         self.url = url
         self.manager = manager
         self.app = NSApplication.sharedApplication()
@@ -606,12 +806,20 @@ class Shell:
 
         _log("Shell.__init__ start")
         self.pill = Pill()
+        self.presence = self.pill.view.presence
+        self.presence.set_reduced(_reduce_motion())
         self.pill.on_click = lambda: _on_main(self.panel.toggle)
         _log("  pill built")
-        self.panel = Panel(url)
+        self.panel = Panel(url, presence=self.presence, wake=self.wake)
         self._build_menu()
         _log("  menu built, status item:", self.item, "button:", self.item.button())
-        self._hide_at: Optional[float] = None
+
+        self._link = None
+        self._last = None
+        self._fast = None
+        self._breathing = False
+        self.stats = FrameStats()
+        self._watch_reduce_motion()
 
         try:
             from skills import server as _server
@@ -620,6 +828,7 @@ class Shell:
             pass
         if manager is not None:
             manager.on("*", self._on_event)
+        _SHELL = self
         _log("Shell.__init__ done")
 
     def _build_menu(self):
@@ -682,22 +891,17 @@ class Shell:
                 self._apply_state(payload.get("new_state", "idle"))
             elif event == "wake_detected":
                 self._apply_state("listening")
-            elif event == "tool":
-                self._set_pill(headline=f"Running {payload.get('tool', '')}",
-                               subtitle="Working", state="processing")
         except Exception:
             traceback.print_exc()
 
     def _apply_state(self, state: str) -> None:
         _, words = STATE_LOOK.get(state, (GREY, state))
         if state in ("idle", "cold"):
-            # It stays up, dimmed. Going away entirely would leave nothing to
-            # click, and something that is always in the same corner is easier
-            # to find than something that appears only while it is busy.
-            self._hide_at = None
-            self._set_pill(headline="Hey Diablo", subtitle="ready", state="idle")
+            # It stays up. Going away entirely would leave nothing to click,
+            # and something that is always in the same corner is easier to
+            # find than something that appears only while it is busy.
+            self._set_pill(headline="Hey Diablo", subtitle="ready", state=state)
         else:
-            self._hide_at = None
             self._set_pill(headline=words, state=state)
         self.status_item.setTitle_(words.capitalize())
 
@@ -705,49 +909,176 @@ class Shell:
         _log("_set_pill", payload)
 
         def apply():
-            _log("  on main thread, showing")
             self.pill.show(**payload)
-            _log("  visible =", self.pill.visible,
-                 "isVisible =", self.pill.panel.isVisible(),
-                 "frame =", self.pill.panel.frame(),
-                 "screen =", self.pill.panel.screen(),
-                 "alpha =", self.pill.panel.alphaValue())
+            self.wake()
         _on_main(apply)
 
-    _ticks = 0
+    def signal(self, event: str, data: Dict[str, Any]) -> None:
+        """A real thing happened (see notify). Main thread only."""
+        presence = self.presence
+        if event == "reading":
+            presence.set_reading(data.get("depth", 0))
+        elif event == "waiting":
+            presence.set_waiting(data.get("waiting", False))
+        elif event == "jobs":
+            presence.set_jobs(data.get("running", 0))
+        elif event in ("success", "failure", "interrupted"):
+            presence.flash(event)
+        elif event == "target":
+            self.approach(**data)
+        self.wake()
 
-    def _tick(self, dt):
+    # ── going somewhere ──────────────────────────────────────────────────
+    def approach(self, x: float, y: float, label: str = "", seconds: float = 3.0,
+                 spawn: Optional[Callable[[bool], None]] = None,
+                 generation: Optional[int] = None) -> None:
         """
-        One animation frame: advance the orb, and feed it something to move to.
+        Go and stand beside a target that has actually been found.
 
-        The microphone level is only meaningful while he is listening. While he
-        is speaking there is no amplitude to read — the voice engine plays a
-        file — so the mouth runs on its own waves and this just keeps them at a
-        steady strength. Pretending the microphone is his voice would make him
-        mouth along to the room instead of to himself.
+        The target is in Quartz space. Where to stand is the guidance
+        geometry's choice, so he never covers what he is referring to. The
+        overlay (the ring on the target and the line to him) is only started
+        once he has arrived and settled, and then drawn without its own copy
+        of him, because he is already there. He holds for as long as the
+        overlay shows, then goes home.
+
+        If there is nowhere to stand, or the turn this belonged to has been
+        superseded by the time he arrives, the old behaviour stands in.
         """
-        Shell._ticks += 1
-        if self._hide_at and time.time() > self._hide_at:
-            self._hide_at = None
-            _on_main(self.pill.hide)
-        if not self.pill.visible:
+        stand = motion.stand_for(x, y, label)
+        if stand is None:
+            if spawn is not None:
+                spawn(True)
             return
+        presence = self.presence
 
-        state = self.pill.view.state
-        level = None
-        if state == "listening" and self.manager is not None:
+        def ready():
+            if generation is not None and not _current_generation(generation):
+                presence.return_home()
+                self.wake()
+                return
+            if spawn is not None:
+                spawn(False)
+            presence.hold_position(seconds, then=presence.return_home)
+            self.wake()
+
+        presence.approach_target(stand, on_ready=ready)
+        self.wake()
+
+    # ── the clock ────────────────────────────────────────────────────────
+    def _start_clock(self) -> None:
+        """One display link on the orb's view; paused whenever nothing moves."""
+        try:
+            clock = _FrameClock.alloc().initWithHandler_(self._frame)
+            self._clock_target = clock
+            link = self.pill.view.displayLinkWithTarget_selector_(clock, "tick:")
+            link.addToRunLoop_forMode_(NSRunLoop.mainRunLoop(), NSRunLoopCommonModes)
+            link.setPaused_(True)
+            self._link = link
+        except Exception:
+            traceback.print_exc()
+            self._link = None
+        self.wake()
+
+    def wake(self) -> None:
+        """Something changed: make sure the next display frame runs. Main thread."""
+        if self._link is not None and self._link.isPaused():
+            self._last = None
+            self._link.setPaused_(False)
+
+    def _frame(self, link) -> None:
+        began = time.perf_counter()
+        now = link.targetTimestamp()
+        interval = (now - self._last) if self._last is not None else (1.0 / 120.0)
+        self._last = now
+
+        presence = self.presence
+        if presence.visual in (motion.Visual.LISTENING, motion.Visual.ACTIVATING) \
+                and self.manager is not None:
             try:
-                level = min(1.0, self.manager.mic.audio_power_level * 3.2)
+                self.pill.view.pushLevel_(min(1.0, self.manager.mic.audio_power_level * 3.2))
             except Exception:
-                level = None
-        elif state == "responding":
-            level = 0.62
+                pass
 
-        def frame():
-            if level is not None:
-                self.pill.view.pushLevel_(level)
-            self.pill.view.advance_(dt)
-        _on_main(frame)
+        panel_moving = not presence.panel.at_rest()
+        presence.step(interval)
+        look = presence.look()
+        self.pill.place(look)
+        if panel_moving:
+            self.panel.apply(look.panel)
+        self.pill.view.setNeedsDisplay_(True)
+        self._breathe(look)
+
+        # Travel and the panel at the display's full rate; loops alone at 60,
+        # which is plenty for a ring and half the work on a ProMotion panel.
+        fast = not (presence.position.at_rest() and presence.panel.at_rest()
+                    and presence.scale.at_rest())
+        if fast != self._fast:
+            self._fast = fast
+            try:
+                rate = (Quartz.CAFrameRateRangeMake(80, 120, 120) if fast
+                        else Quartz.CAFrameRateRangeMake(30, 60, 60))
+                link.setPreferredFrameRateRange_(rate)
+            except Exception:
+                pass
+
+        self.stats.note(interval, time.perf_counter() - began)
+        if not presence.busy():
+            link.setPaused_(True)
+            self._last = None
+            if DEBUG:
+                _log("clock paused", self.stats.summary())
+
+    def _breathe(self, look) -> None:
+        """
+        At home and idle, a breath too slow to notice unless you look for it,
+        run by the compositor: no frames drawn here, no Python per frame.
+        Removed the moment he is anything but idle at home, easing back from
+        wherever the breath was rather than snapping.
+        """
+        want = (look.visual is motion.Visual.IDLE and self.presence.phase == motion.HOME
+                and not self.presence.reduced and not look.dim)
+        if want == self._breathing:
+            return
+        layer = self.pill.view.layer()
+        if layer is None:
+            return
+        self._breathing = want
+        try:
+            if want:
+                breath = CABasicAnimation.animationWithKeyPath_("opacity")
+                breath.setFromValue_(1.0)
+                breath.setToValue_(0.93)
+                breath.setDuration_(2.8)
+                breath.setAutoreverses_(True)
+                breath.setRepeatCount_(1e9)
+                breath.setTimingFunction_(CAMediaTimingFunction.functionWithName_(
+                    kCAMediaTimingFunctionEaseInEaseOut))
+                layer.addAnimation_forKey_(breath, "breathe")
+            else:
+                shown = layer.presentationLayer()
+                start = shown.opacity() if shown is not None else 1.0
+                layer.removeAnimationForKey_("breathe")
+                back = CABasicAnimation.animationWithKeyPath_("opacity")
+                back.setFromValue_(start)
+                back.setToValue_(1.0)
+                back.setDuration_(motion.Timing.LOOK)
+                layer.addAnimation_forKey_(back, "unbreathe")
+        except Exception:
+            traceback.print_exc()
+
+    def _watch_reduce_motion(self) -> None:
+        """Follow the system setting while running, not just at launch."""
+        def changed(_note):
+            self.presence.set_reduced(_reduce_motion())
+            self.wake()
+        try:
+            self._reduce_observer = (NSWorkspace.sharedWorkspace().notificationCenter()
+                                     .addObserverForName_object_queue_usingBlock_(
+                                         NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification,
+                                         None, NSOperationQueue.mainQueue(), changed))
+        except Exception:
+            self._reduce_observer = None
 
     # ── Push to talk ─────────────────────────────────────────────────────
 
@@ -760,6 +1091,10 @@ class Shell:
         holding the key with the Diablo window in front would do nothing
         without the local one. The local monitor must return the event or the
         modifier is swallowed from the rest of the app.
+
+        The key going down is itself an event the presence shows at once, on
+        this thread, before the microphone has even been asked for: the
+        acknowledgement must not wait for the audio side.
         """
         self._ptt_down = False
         self._ptt_start = on_start
@@ -770,9 +1105,11 @@ class Shell:
                 engaged = _ptt_engaged(event.modifierFlags())
                 if engaged and not self._ptt_down:
                     self._ptt_down = True
+                    _note_key(self, True)
                     self._ptt_start()
                 elif not engaged and self._ptt_down:
                     self._ptt_down = False
+                    _note_key(self, False)
                     self._ptt_stop()
             except Exception:
                 traceback.print_exc()
@@ -804,39 +1141,41 @@ class Shell:
         return trusted
 
     def run(self):
-        _log("run(): starting the tick thread and entering the AppKit loop")
+        _log("run(): showing the orb, starting the clock, entering the AppKit loop")
         # Show it immediately rather than waiting for the first state change,
         # so there is something to click from the moment the app opens.
-        _on_main(lambda: self.pill.show(
-            headline="Hey Diablo", subtitle="ready", state="idle"))
-        # A plain background thread rather than NSTimer. NSTimer wants an
-        # Objective-C target and Shell is an ordinary Python object, so the
-        # timer was accepted and never fired once.
-        threading.Thread(target=self._tick_forever, daemon=True).start()
+        def first():
+            self.pill.show(headline="Hey Diablo", subtitle="ready", state="idle")
+            self._start_clock()
+        _on_main(first)
         self.app.run()
 
-    def _tick_forever(self):
-        """
-        The clock behind the orb.
 
-        Twenty-four frames a second while something is moving, four when it is
-        not. Idle is by far the most common state and it has nothing to draw,
-        so running the same loop at animation speed all day would spend real
-        battery on a picture that does not change.
-        """
-        last = time.time()
-        while True:
-            try:
-                animating = self.pill.visible and self.pill.view.animating()
-            except Exception:
-                animating = False
-            time.sleep(1.0 / 24.0 if animating else 0.25)
-            now = time.time()
-            dt, last = now - last, now
-            try:
-                self._tick(dt)
-            except Exception:
-                pass
+def _note_key(shell, down: bool) -> None:
+    """
+    Show the key at once. Never allowed to stand between the key and the
+    microphone: whatever goes wrong here, push to talk still starts.
+    """
+    presence = getattr(shell, "presence", None)
+    if presence is None:
+        return
+    try:
+        if down:
+            presence.key_pressed()
+        else:
+            presence.key_released()
+        shell.wake()
+    except Exception:
+        traceback.print_exc()
+
+
+def _current_generation(generation: int) -> bool:
+    """Is this still the interaction it was started for? The voice layer decides."""
+    try:
+        from skills import voice
+        return voice.is_current_generation(generation)
+    except Exception:
+        return True
 
 
 def _on_main(fn: Callable[[], None]) -> None:

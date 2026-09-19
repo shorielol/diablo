@@ -51,6 +51,8 @@ def main() -> int:
 
     # Let the voice loop drive the pill and the window.
     _bridge_to_manager(voice_bridge, manager)
+    # And tell the presence the things the manager has no state for.
+    _bridge_presence(voice_bridge)
 
     def listen():
         try:
@@ -59,9 +61,7 @@ def main() -> int:
             traceback.print_exc()
             manager.emit("error", subsystem="voice", message="the listener stopped")
 
-    # Hold Control+Option to talk. The wake word still works; this is the
-    # path for when you want to know it is listening before you start, which
-    # is most of the time.
+    # Hold Control+Option to talk.
     def talk_start():
         voice_bridge.push_to_talk_start(on_text=voice_bridge.process_command)
 
@@ -112,6 +112,107 @@ def _bridge_to_manager(voice_bridge, manager) -> None:
         return original_callback(block)
 
     voice_bridge.audio_callback = with_level
+
+
+def _bridge_presence(voice_bridge) -> None:
+    """
+    Tell the orb what is really happening, from where it actually happens.
+
+    Each of these wraps a module attribute, exactly as set_ui_state and the
+    audio callback are wrapped above: nothing in perception, the agent, the
+    voice or the job system changes, and every caller that reaches these
+    functions through their module is reported. Until the shell exists,
+    app_shell.notify() returns False and everything behaves as it did.
+    """
+    import app_shell
+    from skills import pointing, screen_context, server, voice
+
+    # Reading the screen: a span from the first call in to the last call out.
+    # The notification is sent under the lock so the depths reach the shell
+    # in the order they happened; two threads reading at once cannot leave
+    # it stuck on "reading".
+    depth = [0]
+    lock = threading.Lock()
+
+    def span(fn):
+        def reading(*args, **kwargs):
+            with lock:
+                depth[0] += 1
+                app_shell.notify("reading", depth=depth[0])
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                with lock:
+                    depth[0] -= 1
+                    app_shell.notify("reading", depth=depth[0])
+        return reading
+
+    for name in ("capture_screen", "capture_window", "look", "look_everything",
+                 "describe_visually", "structured"):
+        original = getattr(screen_context, name, None)
+        if callable(original):
+            setattr(screen_context, name, span(original))
+
+    # A question asked and waiting for the next press to answer it.
+    asked = voice_bridge._answer_by_press
+
+    def waiting(prompt, generation):
+        app_shell.notify("waiting", waiting=True)
+        try:
+            return asked(prompt, generation)
+        finally:
+            app_shell.notify("waiting", waiting=False)
+
+    voice_bridge._answer_by_press = waiting
+
+    # Cut off mid-sentence. The key press interrupts on every press, speaking
+    # or not, so only an interruption of actual speech is shown as one.
+    stop = voice.interrupt
+
+    def interrupt():
+        if getattr(voice_bridge, "_ui_state", "") == "speaking":
+            app_shell.notify("interrupted")
+        return stop()
+
+    voice.interrupt = interrupt
+
+    # Background jobs: running, finished, failed.
+    running = set()
+    push = server.push
+
+    def pushed(event, **data):
+        job = data.get("id")
+        if event == "job_started" and job:
+            running.add(job)
+            app_shell.notify("jobs", running=len(running))
+        elif event in ("job_done", "job_failed") and job in running:
+            running.discard(job)
+            app_shell.notify("jobs", running=len(running))
+            app_shell.notify("success" if event == "job_done" else "failure")
+        return push(event, **data)
+
+    server.push = pushed
+
+    # Something found on screen and about to be pointed at. The orb goes to
+    # stand beside it and the overlay follows once he has arrived; without a
+    # shell, the old overlay with its own marker is drawn as before.
+    show = pointing.show
+
+    def point(x, y, label="", seconds=3.0, marker=True):
+        try:
+            generation = voice.current_interaction_generation()
+        except Exception:
+            generation = None
+
+        def spawn(with_marker):
+            show(x, y, label, seconds, marker=with_marker)
+
+        if app_shell.notify("target", x=x, y=y, label=label, seconds=seconds,
+                            spawn=spawn, generation=generation):
+            return True
+        return show(x, y, label, seconds, marker=marker)
+
+    pointing.show = point
 
 
 if __name__ == "__main__":

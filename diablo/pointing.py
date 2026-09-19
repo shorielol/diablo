@@ -315,18 +315,24 @@ def describe_location(hit: Hit, window: Optional[Dict[str, Any]] = None) -> str:
 OVERLAY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "overlay.py")
 
 
-def show(x: float, y: float, label: str = "", seconds: float = 3.0) -> bool:
+def show(x: float, y: float, label: str = "", seconds: float = 3.0,
+         marker: bool = True) -> bool:
     """
     Put a marker on the screen at an absolute point, and return immediately.
 
     Spawned rather than drawn in-process: AppKit wants an event loop on the main
     thread and Diablo's main thread belongs to the audio queue. A separate
     process also means the drawing code cannot crash the assistant.
+
+    `marker=False` when the orb itself has gone to stand beside the target:
+    the overlay then draws the ring, the line and the caption, and not a
+    second Diablo next to the first.
     """
     try:
         subprocess.Popen(
             [sys.executable, OVERLAY, "--x", f"{x:.1f}", "--y", f"{y:.1f}",
-             "--label", (label or "")[:48], "--seconds", f"{seconds:.1f}"],
+             "--label", (label or "")[:48], "--seconds", f"{seconds:.1f}"]
+            + ([] if marker else ["--no-marker"]),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
         return True
