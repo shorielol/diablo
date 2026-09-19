@@ -36,19 +36,28 @@ const api = {
 
 /* ─── Icons ──────────────────────────────────────────────────────────────────
    Inline SVG, never emoji. Emoji render differently on every OS, cannot be
-   recoloured, and read out loud by a screen reader as their unicode name. */
+   recoloured, and read out loud by a screen reader as their unicode name.
 
-const Icon = memo(({ name, size = 18 }) => {
-  const paths = {
-    send: 'M3.4 20.4 20.85 12 3.4 3.6 3.4 10.2 15.4 12 3.4 13.8Z',
-    mic: 'M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11Z',
-    stop: 'M6 6h12v12H6z',
-    trash: 'M6 7h12l-1 13H7L6 7Zm3-3h6l1 2H8l1-2Z',
-  };
-  return html`<svg width=${size} height=${size} viewBox="0 0 24 24"
-      fill="currentColor" aria-hidden="true" focusable="false">
-      <path d=${paths[name]} /></svg>`;
-});
+   One family: a 24-unit grid, 1.8 strokes, round ends, drawn at 16 in the
+   chrome. Filled and stroked icons side by side was the old set, and it read
+   as two sets. Stop is the one filled shape, because a stop square is
+   recognised by its mass. */
+
+const ICONS = {
+  send:   'M12 19V5M5.5 11.5 12 5l6.5 6.5',
+  stop:   'M7.5 7.5h9v9h-9z',
+  trash:  'M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.9 12.1a1.6 1.6 0 0 0 1.6 1.4h6a1.6 1.6 0 0 0 1.6-1.4L17.5 7',
+  search: 'M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13ZM20 20l-4.8-4.8',
+  plus:   'M12 5v14M5 12h14',
+  back:   'M14.5 18 8.5 12l6-6',
+  more:   'M5.5 12h.01M12 12h.01M18.5 12h.01',
+};
+
+const Icon = memo(({ name, size = 16 }) => html`
+  <svg width=${size} height=${size} viewBox="0 0 24 24" aria-hidden="true" focusable="false"
+       fill=${name === 'stop' ? 'currentColor' : 'none'} stroke="currentColor"
+       stroke-width=${name === 'more' ? 3.2 : 1.8} stroke-linecap="round" stroke-linejoin="round">
+    <path d=${ICONS[name]} /></svg>`);
 
 /* ─── The character ──────────────────────────────────────────────────────────
    dangerouslySetInnerHTML is safe here and nowhere else in this file: the
@@ -63,6 +72,26 @@ const Mascot = memo(({ agent, size = 96, wave = true, crop = '' }) => {
   return html`<div class="mascot" style=${{ width: size, height: size }}
       dangerouslySetInnerHTML=${{ __html: svg }} />`;
 });
+
+/* Every size he is drawn at, in one table. He is never drawn at any other
+   size, and never large: the orb on the desktop is the full-strength
+   presence, and in here he is the face at the head of the line you type
+   into. The stylesheet sizes the rings around these, not the drawings. */
+const MASCOT = {
+  presence: 30,   // the command bar: who you are talking to, and their state
+  row: 28,        // a row in the rail
+  inline: 16,     // one line of work in flight
+  portrait: 44,   // the top of another agent's page
+};
+
+/* The face in its state ring. The ring is the state, by shape as well as
+   colour, the same language the orb uses; the word is spoken to screen
+   readers and shown as the field's placeholder, next to the face. */
+const Presence = memo(({ agent, state }) => html`
+  <span class="presence" data-state=${state || 'idle'}
+        title=${STATE_WORDS[state] || agent.name}>
+    <${Mascot} agent=${agent} size=${MASCOT.presence} wave=${false} crop="head" />
+  </span>`);
 
 /* ─── Chrome ─────────────────────────────────────────────────────────────── */
 
@@ -83,6 +112,7 @@ const STATE_WORDS = {
    here to say one sentence. They are now three small links at the foot of the
    rail, where a settings link belongs. */
 const SECTIONS = [['trace', 'Trace'], ['health', 'Health'], ['settings', 'Settings']];
+const SECTION_TITLES = Object.fromEntries(SECTIONS);
 
 /* "3m", "2h", "Yesterday". Absolute timestamps in a list of conversations are
    noise: what you want to know is whether this was just now or a while ago. */
@@ -116,8 +146,10 @@ function ago(seconds) {
 export const RailRow = memo(({ agent, title, line, when, busy, active, onPick }) => html`
   <button class="convo" data-active=${active} data-busy=${busy}
           style=${{ '--accent': agent.accent }} onClick=${onPick}>
-    <span class="unread" aria-hidden="true" />
-    <span class="face"><${Mascot} agent=${agent} size=${38} wave=${false} /></span>
+    <span class="face">
+      <${Mascot} agent=${agent} size=${MASCOT.row} wave=${false} crop="head" />
+      <span class="unread" aria-hidden="true" />
+    </span>
     <span class="meta">
       <span class="top">
         <span class="nm">${title}</span>
@@ -198,25 +230,17 @@ function Rail({ roster, jobs, liveAgents, picked, onPick, view, setView, state }
 
   return html`
     <aside class="rail">
-      <div class="railhead">
-        <span class="wordmark">DIABLO</span>
-        <span class="dot" data-state=${state} title=${STATE_WORDS[state] || state} />
-      </div>
+      <div class="railhead" />
 
       <div class="searchrow">
         <label class="search">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2.2" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
-          </svg>
+          <${Icon} name="search" size=${14} />
           <input value=${query} onInput=${e => setQuery(e.target.value)}
                  placeholder="Search" aria-label="Search tasks and agents" spellcheck="false" />
         </label>
-        <button class="plus" onClick=${() => { setQuery(''); onPick(null); }}
+        <button class="tool plus" onClick=${() => { setQuery(''); onPick(null); }}
                 title="Start fresh" aria-label="Start a new conversation">
-          <svg width="15" height="15" viewBox="0 0 24 24" stroke="currentColor"
-               stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-        </button>
+          <${Icon} name="plus" /></button>
       </div>
 
       <div class="convos" role="list">
@@ -243,74 +267,79 @@ function Rail({ roster, jobs, liveAgents, picked, onPick, view, setView, state }
 
 /* ─── Talk ───────────────────────────────────────────────────────────────── */
 
+/* His lines are plain text in his column; yours sit to the right on a quiet
+   surface. The speaker is said to screen readers only, because alignment
+   and surface already say it on screen. */
 const Turn = memo(({ role, content }) => html`
-  <div class=${`turn ${role === 'user' ? 'you' : ''}`}>
-    <div>
-      <div class="who">${role === 'user' ? 'You' : 'Diablo'}</div>
-      <div class="bubble">${content}</div>
-    </div>
+  <div class=${`turn ${role === 'user' ? 'you' : 'him'}`}>
+    <span class="sr">${role === 'user' ? 'You:' : 'Diablo:'}</span>
+    <p class="text">${content}</p>
   </div>`);
 
 /* ─── The stage ──────────────────────────────────────────────────────────────
-   A head, whatever is running, the conversation, and a field. In that order,
-   and nothing else.
+   A title row, whatever is running, the conversation, and the command bar.
+   In that order, and nothing else.
 
-   It used to open on the character at 188 points with a speech bubble, a
-   greeting and a line of instructions. All of that is information you have
-   after the first second of the first run and never need again, on a surface
-   opened twenty times a day to say one sentence. */
+   His face is at the foot, not the top. The window opens directly above the
+   orb, so the bottom edge is where Diablo already was; putting him at the
+   head of the line you type into keeps him in the same place he was before
+   the window opened, only larger. The title row is left to the window: the
+   traffic lights, the name, and a tool or two. */
 
-/* ─── The head of the conversation ───────────────────────────────────────────
-   Him, small, and what he is doing. That is the entire chrome.
-
-   What used to be here: a 188px mascot mid-wave, a speech bubble reading
-   "Hey Diablo. I'm listening.", a greeting sized like a magazine headline and
-   a line of instructions — roughly four hundred vertical points saying that
-   the application had launched. On a surface you open twenty times a day to
-   say one sentence, all four are things to read past.
-
-   State lives in the dot and in one word, and the word is only there when
-   something is actually happening. Idle says nothing, because idle is the
-   answer you can already see. */
-
-const Head = memo(({ state, working }) => html`
-  <header class="head">
-    <${Mascot} agent=${byId.diablo} size=${22} wave=${false} crop="head" />
-    <span class="mark">Diablo</span>
-    ${working || STATE_WORDS[state]
-      ? html`<span class="state" role="status" aria-live="polite">
-               <i class="dot" data-state=${state} aria-hidden="true"></i>
-               ${working || STATE_WORDS[state]}
-             </span>`
-      : null}
+/* The window's own title row. Shares the row with the traffic lights. */
+const TopBar = memo(({ children, tools }) => html`
+  <header class="topbar">
+    <div class="title">${children}</div>
+    <div class="tools">${tools}</div>
   </header>`);
 
-/* Nothing said yet. One line, because the field below it is self-explanatory
-   and a second sentence explaining the first is the tell of an interface that
-   does not trust its own layout. */
-const Empty = memo(() => html`
-  <div class="blank"><p>What are we doing?</p></div>`);
+/* Trace, Health and Settings, from the titlebar, when the window is too
+   narrow for the rail that normally lists them. A native disclosure rather
+   than a hand-rolled popover: it opens from the keyboard without any code
+   here. */
+function SectionMenu({ view, setView }) {
+  const ref = useRef(null);
+  const pick = useCallback((id) => {
+    if (ref.current) ref.current.open = false;
+    setView(view === id ? 'home' : id);
+  }, [view, setView]);
+  return html`
+    <details class="menu" ref=${ref}>
+      <summary class="tool" title="Trace, health and settings"
+               aria-label="Trace, health and settings"><${Icon} name="more" /></summary>
+      <div class="menulist">
+        ${SECTIONS.map(([id, label]) => html`
+          <button key=${id} data-active=${view === id} aria-pressed=${view === id}
+                  onClick=${() => pick(id)}>${label}</button>`)}
+      </div>
+    </details>`;
+}
 
-function Stage({ turns, state, agent, roster, jobs, liveAgents, address,
-                 permissions, onPermissions, onSend, onInterrupt, onReset }) {
+/* Nothing said yet. His first line, where his next one would appear, and
+   how to talk to him — once, in the one place it is useful. */
+const Empty = memo(() => html`
+  <div class="blank">
+    <p class="lead">What are we doing?</p>
+    <p class="hint">Hold <kbd>⌃</kbd> <kbd>⌥</kbd> anywhere to talk, or type below.</p>
+  </div>`);
+
+/* The command bar. Whoever you are addressing, the line, and one action:
+   send, or stop while he is speaking. Enter sends and Shift+Enter is a new
+   line; the opposite is always wrong and people have muscle memory for it. */
+function Command({ agent, state, target, speaking, onSend, onInterrupt }) {
   const [draft, setDraft] = useState('');
   const areaRef = useRef(null);
-  const endRef = useRef(null);
-  const speaking = state === 'responding';
-
-  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [turns.length]);
+  const word = STATE_WORDS[state];
 
   const send = useCallback(() => {
     const text = draft.trim();
     if (!text) return;
-    onSend(text, agent?.id || null);
+    onSend(text, target);
     setDraft('');
     if (areaRef.current) areaRef.current.style.height = 'auto';
-  }, [draft, onSend, agent]);
+  }, [draft, onSend, target]);
 
   const onKeyDown = useCallback((event) => {
-    // Enter sends, Shift+Enter is a newline. The opposite is always wrong and
-    // people have muscle memory for this one.
     if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); }
   }, [send]);
 
@@ -321,57 +350,90 @@ function Stage({ turns, state, agent, roster, jobs, liveAgents, address,
     el.style.height = Math.min(el.scrollHeight, 132) + 'px';
   }, []);
 
+  const placeholder = word ? `${word}…`
+    : agent.id === 'diablo' ? 'Ask, or tell Diablo what to do'
+    : `Ask ${agent.name} something`;
+
+  return html`
+    <div class="command">
+      <${Presence} agent=${agent} state=${state} />
+      <span class="sr" role="status" aria-atomic="true">${word ? `${agent.name}: ${word}` : ''}</span>
+      <textarea ref=${areaRef} value=${draft} onInput=${grow} onKeyDown=${onKeyDown}
+                rows="1" placeholder=${placeholder}
+                aria-label=${`Message to ${agent.name}`} />
+      ${speaking
+        ? html`<button class="send" data-active="true" onClick=${onInterrupt}
+                   title="Stop speaking" aria-label="Stop speaking">
+                 <${Icon} name="stop" /></button>`
+        : html`<button class="send" onClick=${send} disabled=${!draft.trim()}
+                   title="Send" aria-label=${`Send to ${agent.name}`}>
+                 <${Icon} name="send" /></button>`}
+    </div>`;
+}
+
+function Stage({ turns, state, agent, roster, jobs, liveAgents, view, setView,
+                 permissions, onPermissions, onSend, onInterrupt, onReset, onHome }) {
+  const endRef = useRef(null);
+  const speaking = state === 'responding';
+  const menu = html`<${SectionMenu} view=${view} setView=${setView} />`;
+
+  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [turns.length]);
+
   /* An agent picked in the rail is who you are now talking to: their work
-     above, and the composer below aimed at them. Saying their name out loud
-     does the same thing, so the two ways in agree. */
+     above, and the command bar below aimed at them, with their face on it.
+     Saying their name out loud does the same thing, so the two ways in agree.
+     Their ring stays idle: the manager's state is Diablo's, not theirs. */
   if (agent && agent.id !== 'diablo') {
     const mine = jobs.filter(j => j.agent === agent.id
       || (j.parts || []).some(p => p.agent === agent.id));
-    const theirs = turns.filter(t => t.agent === agent.id || t.role === 'user');
     return html`
       <div class="stage" style=${{ '--accent': agent.accent }}>
-        <div class="agenthead" style=${{ '--accent': agent.accent }}>
-          <${Mascot} agent=${agent} size=${64} wave=${false} />
-          <div>
-            <h1>${agent.name}</h1>
-            <p class="role">${agent.role}</p>
-            <p class="blurb">${liveAgents[agent.id] || agent.blurb}</p>
+        <${TopBar} tools=${menu}>
+          <button class="back" onClick=${onHome} aria-label="Back to Diablo">
+            <${Icon} name="back" /> Diablo</button>
+        <//>
+        <div class="pane">
+          <div class="intro">
+            <${Mascot} agent=${agent} size=${MASCOT.portrait} wave=${false} crop="head" />
+            <div>
+              <h1>${agent.name}</h1>
+              <p class="role">${agent.role}</p>
+              <p class="blurb">${liveAgents[agent.id] || agent.blurb}</p>
+            </div>
+          </div>
+          <div class="works">
+            ${mine.length === 0
+              ? html`<p class="quiet">${agent.name} has not been asked for anything yet.
+                       Say something that needs ${agent.role.toLowerCase()} and it will
+                       land here.</p>`
+              : mine.slice(0, 20).map(job => html`
+                <article class="jobcard" key=${job.id}>
+                  <p class="task">${job.task}</p>
+                  ${(job.parts || []).filter(p => p.agent === agent.id).map((p, i) => html`
+                    <p class="answer" key=${i}>${p.summary || '…'}</p>`)}
+                  ${(job.parts || []).length === 0 && job.summary
+                    ? html`<p class="answer">${job.summary}</p>` : null}
+                  <p class="stamp">${ago(job.finished_at || job.created_at)}
+                    <span class="pill" data-tone=${job.status === 'done' ? 'ok' : 'warn'}>
+                      ${job.status}</span></p>
+                </article>`)}
           </div>
         </div>
-        <div class="pane">
-          ${mine.length === 0
-            ? html`<p class="quiet">${agent.name} has not been asked for anything yet.
-                     Say something that needs ${agent.role.toLowerCase()} and it will
-                     land here.</p>`
-            : mine.slice(0, 20).map(job => html`
-              <article class="jobcard" key=${job.id}>
-                <p class="task">${job.task}</p>
-                ${(job.parts || []).filter(p => p.agent === agent.id).map((p, i) => html`
-                  <p class="answer" key=${i}>${p.summary || '…'}</p>`)}
-                ${(job.parts || []).length === 0 && job.summary
-                  ? html`<p class="answer">${job.summary}</p>` : null}
-                <p class="stamp">${ago(job.finished_at || job.created_at)}
-                  <span class="pill" data-tone=${job.status === 'done' ? 'ok' : 'warn'}>
-                    ${job.status}</span></p>
-              </article>`)}
-        </div>
-
-        <div class="composer">
-          <textarea ref=${areaRef} value=${draft} onInput=${grow} onKeyDown=${onKeyDown}
-                    rows="1" placeholder=${`Ask ${agent.name} something…`}
-                    aria-label=${`Message to ${agent.name}`} />
-          <button class="iconbtn" onClick=${send} disabled=${!draft.trim()}
-                  title="Send" aria-label=${`Send to ${agent.name}`}>
-            <${Icon} name="send" /></button>
-        </div>
+        <${Command} agent=${agent} state="idle" target=${agent.id}
+           speaking=${false} onSend=${onSend} onInterrupt=${onInterrupt} />
       </div>`;
   }
 
-  const busy = jobs.filter(j => j.status === 'running' || j.status === 'queued');
-
   return html`
     <div class="stage">
-      <${Head} state=${state} working=${null} />
+      <${TopBar} tools=${html`
+        ${turns.length > 0
+          ? html`<button class="tool" onClick=${onReset}
+                     title="Forget this conversation"
+                     aria-label="Forget this conversation">
+                   <${Icon} name="trash" /></button>`
+          : null}
+        ${menu}`}>Diablo<//>
       <${Needs} perms=${permissions || {}} onPermissions=${onPermissions} />
       <${Running} jobs=${jobs} roster=${roster.length ? indexRoster(roster) : byId} />
       ${turns.length === 0
@@ -384,25 +446,22 @@ function Stage({ turns, state, agent, roster, jobs, liveAgents, address,
               <div ref=${endRef} />
             </div>
           </div>`}
+      <${Command} agent=${byId.diablo} state=${state} target=${null}
+         speaking=${speaking} onSend=${onSend} onInterrupt=${onInterrupt} />
+    </div>`;
+}
 
-      <div class="composer">
-        <textarea ref=${areaRef} value=${draft} onInput=${grow} onKeyDown=${onKeyDown}
-                  rows="1" placeholder="Ask Diablo something…"
-                  aria-label="Message to Diablo" />
-        ${speaking
-          ? html`<button class="iconbtn" data-active="true" onClick=${onInterrupt}
-                     title="Stop speaking" aria-label="Stop speaking">
-                   <${Icon} name="stop" /></button>`
-          : html`<button class="iconbtn" onClick=${send} disabled=${!draft.trim()}
-                     title="Send" aria-label="Send message">
-                   <${Icon} name="send" /></button>`}
-        ${turns.length > 0
-          ? html`<button class="iconbtn" onClick=${onReset}
-                     title="Forget this conversation"
-                     aria-label="Forget this conversation">
-                   <${Icon} name="trash" /></button>`
-          : null}
-      </div>
+/* A page that is not the conversation: its name in the title row, and the
+   way back. */
+function Section({ title, view, setView, children }) {
+  return html`
+    <div class="stage">
+      <${TopBar} tools=${html`<${SectionMenu} view=${view} setView=${setView} />`}>
+        <button class="back" onClick=${() => setView('home')} aria-label="Back to Diablo">
+          <${Icon} name="back" /> Diablo</button>
+        <span class="sub">${title}</span>
+      <//>
+      ${children}
     </div>`;
 }
 
@@ -428,7 +487,7 @@ const Running = memo(({ jobs, roster }) => {
               return html`
                 <div class="runpart" key=${i} style=${{ '--accent': who.accent }}
                      data-status=${part.status || 'queued'}>
-                  <span class="runface"><${Mascot} agent=${who} size=${18} wave=${false} crop="head" /></span>
+                  <span class="runface"><${Mascot} agent=${who} size=${MASCOT.inline} wave=${false} crop="head" /></span>
                   <span class="runtask">${part.task}</span>
                 </div>`;
             })}
@@ -463,7 +522,7 @@ function Trace({ turns }) {
     <div class="pane">
       ${turns.slice().reverse().map((chain, i) => html`
         <div class="turnblock" key=${i}>
-          <div class="head">
+          <div class="tbhead">
             ${new Date((chain[0]?.ts || 0) * 1000).toLocaleTimeString()} · turn ${chain[0]?.turn}
           </div>
           ${chain.map((ev, j) => html`<${TraceEvent} key=${j} ev=${ev} />`)}
@@ -809,19 +868,21 @@ function App() {
          view=${view} setView=${setView} state=${state.state} />
 
       <main class="main">
-        <div class="draghandle" />
         ${view === 'home'
           ? html`<${Stage} turns=${turns} state=${state.state} agent=${agent}
                roster=${roster} jobs=${jobs} liveAgents=${liveAgents}
-               address=${address} permissions=${state.permissions}
+               view=${view} setView=${setView} onHome=${() => onPick(null)}
+               permissions=${state.permissions}
                onPermissions=${refresh} onSend=${send} onInterrupt=${interrupt}
                onReset=${reset} />`
-          : null}
-        ${view === 'trace' ? html`<${Trace} turns=${trace} />` : null}
-        ${view === 'health'
-          ? html`<${Health} state=${state} onPermissions=${refresh} />` : null}
-        ${view === 'settings' && settings
-          ? html`<${Settings} settings=${settings} onSave=${saveSettings} />` : null}
+          : html`
+            <${Section} title=${SECTION_TITLES[view]} view=${view} setView=${setView}>
+              ${view === 'trace' ? html`<${Trace} turns=${trace} />` : null}
+              ${view === 'health'
+                ? html`<${Health} state=${state} onPermissions=${refresh} />` : null}
+              ${view === 'settings' && settings
+                ? html`<${Settings} settings=${settings} onSave=${saveSettings} />` : null}
+            <//>`}
       </main>
     </div>`;
 }

@@ -5,75 +5,116 @@
   around it stays quiet, because this window sits open all day next to an IDE
   and a browser and anything loud would be exhausting by the afternoon.
 
-  One accent colour, used only for the thing that is currently happening. Two
-  greys for surfaces. Everything else is type and space.
+  The hierarchy the whole sheet serves, in order: Diablo, what is happening
+  now, what he said, where else you can go, and the controls. Anything that
+  competes with the first two is a bug.
+
+  Every value below comes from the tokens in :root. A raw colour, radius or
+  size further down is either a token that has not been named yet or a
+  mistake, and the next edit should fix whichever it is.
 */
 
 :root {
-  /* Surfaces — four steps, enough for depth without a gradient anywhere */
-  --bg:          #0B0B0D;
-  --surface:     #121215;
-  --surface-2:   #1A1A1F;
-  --surface-3:   #232329;
-  --line:        #2A2A31;
-  --line-soft:   #1F1F25;
+  color-scheme: dark;
 
-  /* Text. 4.5:1 against --bg at minimum; --dim is 4.6:1, --faint is for
-     non-essential metadata only and never carries meaning alone. */
+  /* ── Surfaces ────────────────────────────────────────────────────────────
+     Three steps and a hairline. Depth comes from a surface being slightly
+     lighter than what is behind it, never from a gradient or a heavy border. */
+  --bg:          #0B0B0D;   /* the window */
+  --bg-rail:     #0E0E11;   /* the sidebar, a shade off the window */
+  --raise:       #17171B;   /* fields, your turns, the command bar */
+  --raise-2:     #202026;   /* hover, selected */
+  --line:        rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.13);
+
+  /* ── Text ────────────────────────────────────────────────────────────────
+     Measured against --raise-2, the lightest surface text sits on:
+     --text 14.5:1, --text-2 9.8:1, --dim 5.9:1, --faint 4.75:1. --faint is the
+     floor; nothing lighter is allowed to carry words. */
   --text:        #F2F2F4;
-  --dim:         #9B9BA5;
-  /* Lifted from #6A6A74, which measured 3.24:1 against the search field and
-     3.68:1 behind the one line that tells a first-time user how to start the
-     app. "Non-essential metadata" was the intent, but the hint line is the
-     most essential sentence on the screen, and a token that quietly fails
-     4.5:1 will keep being reached for. */
-  --faint:       #848490;
+  --text-2:      #C9C9D1;   /* your turns, secondary labels */
+  --dim:         #9B9BA5;   /* metadata that still matters */
+  --faint:       #8A8A96;   /* hints and timestamps */
 
-  /* The character's palette, used sparingly in the chrome */
-  --crimson:     #E0233C;
-  --crimson-dim: #8E1526;
-  --gold:        #F2C230;
-  --gold-dim:    #9A7A15;
+  /* ── His palette ─────────────────────────────────────────────────────────
+     Crimson is Diablo: his streak, the thing he is doing, the one primary
+     action. Gold is attention: focus, thinking, and later the guidance
+     overlay. Crimson measures 4.2:1 as text, under the line, so words in his
+     colour use --crimson-text instead. */
+  --crimson:      #E0233C;
+  --crimson-dim:  #8E1526;
+  --crimson-text: #FF5A6E;
+  --gold:         #F2C230;
+  --gold-dim:     #9A7A15;
 
-  /* State colours. Each is also backed by a shape or label, never colour alone */
+  /* ── State ───────────────────────────────────────────────────────────────
+     Each is also carried by a ring style and a word, never colour alone:
+     idle plain, listening solid, thinking dashed, speaking double, fault dotted. */
   --idle:        #4A4A55;
   --listening:   #E0233C;
   --thinking:    #F2C230;
-  /* Was #3DA9FC. A sky blue belongs to no part of the character; see the
-     note on STATE_LOOK in app_shell.py. Speaking and listening share his
-     crimson and are told apart by shape, not hue. */
   --speaking:    #E0233C;
   --error:       #FF6B6B;
   --ok:          #46C46B;
+  --warn:        var(--gold);
+  --guide:       var(--gold);
 
-  --radius:      10px;
-  --radius-sm:   6px;
+  /* ── Type ────────────────────────────────────────────────────────────────
+     The system face, because this is a Mac application and SF is what every
+     other window on the screen is set in. Five sizes. */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+  --fs-meta:    11px;     /* timestamps, counts */
+  --fs-label:   12.5px;   /* secondary lines, buttons, labels */
+  --fs-body:    14px;     /* what was said */
+  --fs-title:   15px;     /* a name at the top of a surface */
+  --fs-display: 20px;     /* the one large line, when there is one */
+  --lh-body:    1.55;
+  --lh-tight:   1.3;
 
-  /* Density 6/10 — standard */
+  /* ── Space ───────────────────────────────────────────────────────────────
+     A 4-point grid. */
   --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
   --s5: 24px; --s6: 32px; --s7: 48px;
 
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-  --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+  /* ── Shape ───────────────────────────────────────────────────────────── */
+  --r-sm:    6px;     /* chips, small buttons */
+  --r-md:    10px;    /* fields, rows, cards */
+  --r-lg:    14px;    /* the command bar, your turns */
+  --r-round: 999px;
 
-  /* Three curves, not one.
-     The built-in CSS easings are too weak to read as deliberate, and one
-     curve cannot serve both an element arriving and an element moving.
-     ease-in is absent on purpose: it delays the first few frames, which are
-     exactly the ones the user is watching, so it feels slower than ease-out
-     at the same duration. */
-  --ease-out:    cubic-bezier(0.23, 1, 0.32, 1);     /* entering, leaving */
-  --ease-move:   cubic-bezier(0.77, 0, 0.175, 1);    /* moving on screen */
-  --ease-hover:  ease;                               /* colour, hover */
-  --ease: var(--ease-out);                           /* the old name */
+  /* One shadow, for the one thing that floats. */
+  --shadow-float: 0 10px 28px rgba(0, 0, 0, 0.38), 0 1px 2px rgba(0, 0, 0, 0.4);
 
-  /* Durations. Everything the user triggers stays under 300ms; a 180ms
-     dropdown feels more responsive than a 400ms one, and the difference is
-     not subtle. */
+  /* ── Controls ────────────────────────────────────────────────────────────
+     Desktop sizes, not touch sizes: a pointer is precise, and a 44-point
+     button beside a text field is what made the old composer look like a
+     phone. 28 is the titlebar control, 32 the everyday one. */
+  --h-tool:    28px;
+  --h-control: 32px;
+  --h-field:   36px;
+
+  /* ── Window ──────────────────────────────────────────────────────────────
+     Measured on the real window, not assumed: WKWebView draws the page from
+     the very top of the window, under the titlebar, and the close, minimise
+     and zoom buttons are centred 16 points down and end 69 points in. So the
+     first row of every surface is 32 points tall, and where that row starts
+     at the window's left edge it keeps 78 points clear for them. */
+  --titlebar: 32px;
+  --traffic:  78px;
+
+  --rail-w: 248px;
+  --measure: 62ch;      /* the longest comfortable line of his */
+
+  /* Motion, unchanged in this pass; the motion build owns these. */
+  --ease-out:    cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-move:   cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-hover:  ease;
+  --ease: var(--ease-out);
   --t-press: 140ms;
   --t-hover: 160ms;
   --t-enter: 220ms;
-  --t-leave: 140ms;   /* leaving is always faster than arriving */
+  --t-leave: 140ms;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -83,306 +124,312 @@ html, body, #root { height: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
-  font: 400 14px/1.55 var(--font);
+  font: 400 var(--fs-body)/var(--lh-body) var(--font);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
-  /* The window is draggable by its chrome, not its content */
   user-select: none;
   cursor: default;
 }
 
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+summary { cursor: pointer; }
 
-/* Every pressable thing answers to a press.
-   A button that does not move under the cursor leaves a half-second where
-   the interface has not said whether it heard you, and that gap is where an
-   app starts to feel unresponsive — regardless of how fast the work behind
-   it is. The scale is small on purpose: 0.97 registers, 0.9 is a toy. */
-button, [role="button"] {
+button, [role="button"], summary {
   transition: transform var(--t-press) var(--ease-out);
 }
 button:active:not(:disabled), [role="button"]:active {
   transform: scale(0.97);
 }
 
-/* Focus is never removed, only restyled. Keyboard users need to see where
-   they are, and this app has a text field people will tab into. */
+/* Focus is never removed, only restyled. Gold against a red-and-black
+   interface on purpose: it has to be the one thing on screen that cannot be
+   mistaken for a state. */
 :focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 2px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--r-sm);
+  transition: outline-offset 120ms var(--ease-out);
 }
 :focus:not(:focus-visible) { outline: none; }
 
-::selection { background: var(--crimson-dim); color: #fff; }
+::selection { background: var(--crimson-dim); color: var(--text); }
+
+/* Read by screen readers, invisible on screen. */
+.sr {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+
+kbd {
+  display: inline-block; min-width: 18px; padding: 1px 5px;
+  font: 500 var(--fs-meta)/1.4 var(--font); text-align: center;
+  color: var(--text-2); background: var(--raise);
+  border: 1px solid var(--line-strong); border-radius: 4px;
+}
 
 /* ─── Shell ──────────────────────────────────────────────────────────────────
-   A rail of conversations and a stage, the shape a messages app has.
-
-   It used to be five tabs across the top. That put Talk, Agents, Trace, Health
-   and Settings in front of someone at equal weight, when four of the five are
-   things you open twice a month and the fifth is the whole point of the app.
-   The rail answers "what has it been doing" without a click, and the three
-   utility sections sit at its foot where a settings link belongs.
-*/
+   A narrow sidebar and a stage. The sidebar only exists when the window is
+   wide enough to spare it; at the size Diablo opens at there is one surface. */
 
 .app {
   display: grid;
-  grid-template-columns: 292px 1fr;
+  grid-template-columns: var(--rail-w) 1fr;
   height: 100%;
   background: var(--bg);
 }
+
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.stage { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+/* ── The titlebar row ────────────────────────────────────────────────────
+   The window's own title row, shared with the traffic lights rather than
+   stacked under them. The name and one or two quiet tools; state is not
+   here, because state belongs to his face. */
+
+.topbar {
+  display: flex; align-items: center; gap: var(--s2);
+  height: var(--titlebar); flex-shrink: 0;
+  padding: 0 var(--s2) 0 var(--s4);
+}
+.topbar .title {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2);
+  font: 600 13px/1 var(--font); color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.topbar .title .sub { font-weight: 400; color: var(--faint); }
+.topbar .tools { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+
+.tool {
+  width: var(--h-tool); height: var(--h-tool);
+  display: grid; place-items: center; flex-shrink: 0;
+  border-radius: var(--r-sm); color: var(--dim);
+  list-style: none;
+  transition: background var(--t-hover) var(--ease-hover),
+              color var(--t-hover) var(--ease-hover),
+              transform var(--t-press) var(--ease-out);
+}
+.tool::-webkit-details-marker { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .tool:hover { background: var(--raise-2); color: var(--text); }
+}
+
+.back {
+  display: inline-flex; align-items: center; gap: 2px;
+  height: var(--h-tool); padding: 0 var(--s2) 0 2px; margin-left: -4px;
+  border-radius: var(--r-sm); color: var(--dim); font: 500 var(--fs-label)/1 var(--font);
+  transition: background var(--t-hover) var(--ease-hover),
+              color var(--t-hover) var(--ease-hover);
+}
+@media (hover: hover) and (pointer: fine) {
+  .back:hover { background: var(--raise-2); color: var(--text); }
+}
+
+/* The sections, from the titlebar, when there is no sidebar to hold them. */
+.menu { position: relative; display: none; }
+.menulist {
+  position: absolute; right: 0; top: calc(100% + var(--s1)); z-index: 10;
+  min-width: 148px; padding: var(--s1);
+  display: flex; flex-direction: column;
+  background: var(--raise); border: 1px solid var(--line-strong);
+  border-radius: var(--r-md); box-shadow: var(--shadow-float);
+}
+.menulist button {
+  text-align: left; padding: 6px var(--s2); border-radius: var(--r-sm);
+  font-size: var(--fs-label); color: var(--text-2);
+}
+@media (hover: hover) and (pointer: fine) {
+  .menulist button:hover { background: var(--raise-2); color: var(--text); }
+}
+.menulist button[data-active="true"] { color: var(--text); background: var(--raise-2); }
 
 /* ── Rail ─────────────────────────────────────────────────────────────── */
 
 .rail {
   display: flex; flex-direction: column; min-height: 0;
-  border-right: 1px solid var(--line-soft);
-  background: var(--surface);
-  -webkit-app-region: drag;
+  background: var(--bg-rail);
+  border-right: 1px solid var(--line);
 }
-.rail input, .rail button { -webkit-app-region: no-drag; }
+/* Nothing but the traffic lights lives in the rail's first row. */
+.railhead { height: var(--titlebar); flex-shrink: 0; }
 
-.railhead {
-  display: flex; align-items: center; justify-content: space-between;
-  height: 46px; padding: 0 var(--s4) 0 80px;   /* room for the traffic lights */
+.searchrow {
+  display: flex; gap: var(--s1); padding: var(--s1) var(--s3) var(--s2);
   flex-shrink: 0;
 }
-.wordmark {
-  font: 600 11px/1 var(--mono); letter-spacing: 0.26em; color: var(--dim);
+.search {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2);
+  padding: 0 10px; height: var(--h-control); border-radius: var(--r-md);
+  background: var(--raise); border: 1px solid transparent;
+  color: var(--faint);
+  transition: border-color var(--t-hover) var(--ease-hover),
+              background var(--t-hover) var(--ease-hover);
 }
-.railhead .dot {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--idle);
-  transition: background var(--t-enter) var(--ease-hover);
+.search:focus-within { border-color: var(--line-strong); }
+.search input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: none;
+  font: 400 13px/1 var(--font); color: var(--text);
 }
-.railhead .dot[data-state="listening"] { background: var(--listening); animation: pulse 1.1s infinite; }
-.railhead .dot[data-state="processing"] { background: var(--thinking); animation: pulse 0.8s infinite; }
-.railhead .dot[data-state="responding"] { background: var(--speaking); animation: pulse 1.4s infinite; }
-.railhead .dot[data-state="error"] { background: var(--error); }
+.search input::placeholder { color: var(--faint); }
+.search:has(input:focus-visible) { outline: 2px solid var(--gold); outline-offset: 1px; }
+
+.plus { width: var(--h-control); height: var(--h-control); border-radius: var(--r-md); }
+
+.convos { flex: 1; overflow-y: auto; padding: 0 var(--s2) var(--s3); min-height: 0; }
+.convos::-webkit-scrollbar { width: 8px; }
+.convos::-webkit-scrollbar-thumb { background: var(--raise-2); border-radius: var(--r-round); }
+.convos::-webkit-scrollbar-track { background: transparent; }
+
+.railempty {
+  padding: var(--s3) var(--s2); font-size: var(--fs-label);
+  line-height: var(--lh-body); color: var(--faint);
+}
+
+/* A row is a face and two lines. The face carries who; the words carry what. */
+.convo {
+  position: relative; width: 100%;
+  display: grid; grid-template-columns: 28px 1fr;
+  align-items: center; gap: 10px;
+  padding: 7px var(--s2); border-radius: var(--r-md); text-align: left;
+  transition: background var(--t-hover) var(--ease-hover),
+              transform var(--t-press) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .convo:hover { background: var(--raise); }
+}
+.convo[data-active="true"] { background: var(--raise-2); }
+
+.convo .face {
+  position: relative; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--raise-2);
+}
+.convo .face .mascot { border-radius: 50%; overflow: hidden; }
+/* Working: a dot in the agent's colour on the face's shoulder, and the line
+   below reads "now". Shape, position and word, so colour is never alone. */
+.convo .unread {
+  position: absolute; right: -2px; top: -2px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--bg-rail);
+  opacity: 0;
+  transition: opacity var(--t-enter) var(--ease-out);
+}
+.convo[data-busy="true"] .unread { opacity: 1; animation: pulse 1.2s infinite; }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50%      { opacity: 0.45; transform: scale(0.82); }
 }
 
-.searchrow {
-  display: flex; gap: var(--s2); padding: var(--s1) var(--s3) var(--s3);
-  flex-shrink: 0;
-}
-.search {
-  flex: 1; display: flex; align-items: center; gap: var(--s2);
-  padding: 0 10px; height: 32px; border-radius: 9px;
-  background: var(--surface-2); border: 1px solid transparent;
-  color: var(--faint);
-  transition: border-color var(--t-hover) var(--ease-hover),
-              background var(--t-hover) var(--ease-hover);
-}
-.search:focus-within { border-color: var(--line); background: var(--surface-3); }
-.search input {
-  flex: 1; min-width: 0; border: 0; outline: 0; background: none;
-  font: 400 13px/1 var(--font); color: var(--text);
-}
-.search input::placeholder { color: var(--faint); }
-
-.plus {
-  width: 32px; height: 32px; flex-shrink: 0;
-  display: grid; place-items: center; border-radius: 9px;
-  background: var(--surface-2); color: var(--dim);
-  transition: background var(--t-hover) var(--ease-hover),
-              color var(--t-hover) var(--ease-hover),
-              transform var(--t-press) var(--ease-out);
-}
-@media (hover: hover) and (pointer: fine) {
-  .plus:hover { background: var(--surface-3); color: var(--text); }
-}
-
-.convos { flex: 1; overflow-y: auto; padding: 0 var(--s2) var(--s3); min-height: 0; }
-.convos::-webkit-scrollbar { width: 8px; }
-.convos::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 999px; }
-.convos::-webkit-scrollbar-track { background: transparent; }
-
-.railempty { padding: var(--s4) var(--s3); font-size: 12.5px; color: var(--faint); }
-
-.convo {
-  position: relative; width: 100%;
-  display: grid; grid-template-columns: 10px 38px 1fr;
-  align-items: center; gap: var(--s2);
-  padding: 9px 10px 9px 0; border-radius: 10px; text-align: left;
-  transition: background var(--t-hover) var(--ease-hover),
-              transform var(--t-press) var(--ease-out);
-}
-@media (hover: hover) and (pointer: fine) {
-  .convo:hover { background: var(--surface-2); }
-}
-.convo[data-active="true"] { background: var(--surface-3); }
-
-/* The unread dot is the agent's own colour, so the rail reads as a roster
-   rather than a list of notifications. It appears only while that agent is
-   working — a permanent dot beside every row tells you nothing. */
-.convo .unread {
-  width: 6px; height: 6px; border-radius: 50%; justify-self: center;
-  background: var(--accent); opacity: 0;
-  transition: opacity var(--t-enter) var(--ease-out);
-}
-.convo[data-busy="true"] .unread { opacity: 1; animation: pulse 1.2s infinite; }
-
-.convo .face {
-  width: 38px; height: 38px; border-radius: 50%; overflow: hidden;
-  background: var(--surface-3);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
-}
 .convo .meta { min-width: 0; display: block; }
 .convo .top { display: flex; align-items: baseline; gap: var(--s2); }
 .convo .nm {
-  font: 600 13.5px/1.3 var(--font); color: var(--text);
+  font: 500 13px/var(--lh-tight) var(--font); color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .convo .when {
   margin-left: auto; flex-shrink: 0;
-  font: 400 11px/1.3 var(--font); color: var(--faint);
+  font: 400 var(--fs-meta)/var(--lh-tight) var(--font); color: var(--faint);
 }
 .convo .line {
   display: block; margin-top: 1px;
-  font: 400 12.5px/1.45 var(--font); color: var(--dim);
+  font: 400 12px/1.4 var(--font); color: var(--faint);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.convo[data-busy="true"] .line { color: var(--accent); }
+.convo[data-busy="true"] .line { color: var(--text-2); }
 
 .railfoot {
-  display: flex; gap: var(--s1); padding: var(--s2) var(--s3) var(--s3);
-  border-top: 1px solid var(--line-soft); flex-shrink: 0;
+  display: flex; gap: 2px; padding: var(--s2);
+  border-top: 1px solid var(--line); flex-shrink: 0;
 }
 .chip {
-  padding: 5px 10px; border-radius: 8px;
-  font: 500 12px/1 var(--font); color: var(--dim);
+  height: var(--h-tool); padding: 0 10px; border-radius: var(--r-sm);
+  font: 500 12px/1 var(--font); color: var(--faint);
   transition: background var(--t-hover) var(--ease-hover),
               color var(--t-hover) var(--ease-hover),
               transform var(--t-press) var(--ease-out);
 }
 @media (hover: hover) and (pointer: fine) {
-  .chip:hover { color: var(--dim); background: var(--surface-2); }
+  .chip:hover { color: var(--text-2); background: var(--raise); }
 }
-.chip[data-active="true"] { color: var(--text); background: var(--surface-3); }
+.chip[data-active="true"] { color: var(--text); background: var(--raise-2); }
 
-/* ── Main ─────────────────────────────────────────────────────────────── */
+/* ── Presence ────────────────────────────────────────────────────────────
+   Diablo's face in a ring, the same thing the orb in the corner of the
+   screen is. It sits at the head of the command bar, the part of this
+   window closest to the orb, so the window reads as that orb opened up.
 
-.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-/* A strip at the top of the stage that drags the window, since there is no
-   title bar left to grab. */
-.draghandle { height: 22px; flex-shrink: 0; -webkit-app-region: drag; }
+   The ring is the state, told by shape as well as colour. Static here; how
+   it moves between states is the motion build's job. */
 
-.stage { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-
-/* ── Hero ─────────────────────────────────────────────────────────────── */
-
-/* ── The head of the conversation ────────────────────────────────────────
-   Him at 22px, his name, and one word for what he is doing. Forty points of
-   chrome, where there used to be four hundred. */
-
-.head {
-  display: flex; align-items: center; gap: var(--s2);
-  height: 40px; padding: 0 var(--s4); flex-shrink: 0;
-  border-bottom: 1px solid var(--line-soft);
-  -webkit-app-region: drag;
+.presence {
+  position: relative; flex-shrink: 0;
+  display: grid; place-items: center;
+  padding: 2px; border-radius: 50%;
+  background: var(--bg);
+  outline: 1.5px solid var(--line-strong); outline-offset: 1px;
 }
-.head .mascot { flex-shrink: 0; }
-.head .mark {
-  font-size: 13px; font-weight: 550; letter-spacing: 0.01em; color: var(--text);
-}
-.head .state {
-  margin-left: auto; display: flex; align-items: center; gap: var(--s2);
-  font-size: 11.5px; color: var(--dim);
-}
-.head .dot {
-  width: 5px; height: 5px; border-radius: 50%; background: var(--idle);
-  flex-shrink: 0;
-}
-.head .dot[data-state="listening"] { background: var(--listening); }
-.head .dot[data-state="processing"] { background: var(--thinking); }
-/* Preparing shares thinking's colour on purpose. To the user it is still
-   "working on it"; the distinction that matters is that it is not yet
-   speaking, and that is carried by not showing the speaking colour. */
-.head .dot[data-state="preparing"]  { background: var(--thinking); }
-.head .dot[data-state="responding"] { background: var(--speaking); }
-.head .dot[data-state="error"]      { background: var(--error); }
-
-/* ── Nothing said yet ────────────────────────────────────────────────────
-   One line, vertically centred, and no character. The character is in the
-   corner of the screen and at the top of this window; a third copy of him
-   filling the middle of an empty surface is not presence, it is wallpaper. */
-
-/* Named .blank, not .empty: there is already an .empty further down for the
-   trace and health views, and it won on source order — quietly resetting this
-   one's type size to 13px. Two rules with one name is a bug waiting for
-   whoever edits next. */
-.blank {
-  flex: 1; display: grid; place-items: center; padding: var(--s6) var(--s5);
-}
-.blank p {
-  font-size: 15px; color: var(--faint); letter-spacing: -0.01em;
-}
+.presence .mascot { border-radius: 50%; overflow: hidden; background: var(--raise-2); }
+.presence[data-state="listening"]  { outline: 2px solid var(--listening); }
+.presence[data-state="processing"],
+.presence[data-state="preparing"]  { outline: 2px dashed var(--thinking); }
+.presence[data-state="responding"] { outline: 3px double var(--speaking); outline-offset: 0; }
+.presence[data-state="error"]      { outline: 2px dotted var(--error); }
+.presence[data-state="cold"],
+.presence[data-state="init"],
+.presence[data-state="shutdown"]   { opacity: 0.6; }
 
 /* ── When something is missing ───────────────────────────────────────────
-   Diablo asking, in his own voice, where the request is relevant — not a
-   settings pane the user has to go and find.
-
-   One request at a time and no card around it. The diagnostic page still
-   lists every permission with its state; this is the moment of asking, and
-   the moment of asking is a sentence and a button. */
+   Diablo asking, in his own voice, where the request is relevant. One
+   request at a time, a sentence and a button, and no card around it. */
 
 .needs {
-  flex-shrink: 0; padding: var(--s3) var(--s4) var(--s4);
-  border-bottom: 1px solid var(--line-soft);
-  display: flex; flex-direction: column; gap: var(--s3);
+  flex-shrink: 0; margin: var(--s1) var(--s4) var(--s2);
+  padding: var(--s3) var(--s3) var(--s3) var(--s4);
+  border-left: 2px solid var(--crimson);
+  display: flex; flex-direction: column; gap: var(--s2);
 }
 .needs .why {
-  font-size: 13px; line-height: 1.5; color: var(--text); max-width: 46ch;
+  font-size: 13.5px; line-height: var(--lh-body); color: var(--text); max-width: 46ch;
 }
 .needs .act { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
 
 .grantbtn {
-  font-size: 12.5px; font-weight: 500; color: var(--text);
-  padding: 7px 14px; border-radius: var(--radius-sm);
-  background: var(--surface-2); border: 1px solid var(--line);
-  transition: background var(--t-hover) var(--ease-hover),
-              border-color var(--t-hover) var(--ease-hover);
+  height: var(--h-control); padding: 0 14px; border-radius: var(--r-sm);
+  font-size: var(--fs-label); font-weight: 500; color: var(--text);
+  background: var(--crimson-dim); border: 1px solid var(--crimson);
+  transition: background var(--t-hover) var(--ease-hover);
 }
-.grantbtn:hover  { background: var(--surface-3); border-color: var(--crimson-dim); }
-.grantbtn:active { transform: translateY(1px); }
-.grantbtn:focus-visible {
-  outline: 2px solid var(--crimson); outline-offset: 2px;
+@media (hover: hover) and (pointer: fine) {
+  .grantbtn:hover:not([disabled]) { background: var(--crimson); }
 }
+.grantbtn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .grantbtn[disabled] { opacity: 0.55; cursor: default; }
 .grantnote { font-size: 12px; color: var(--dim); max-width: 42ch; line-height: 1.45; }
 
 /* ── Working ─────────────────────────────────────────────────────────────
-   What is running, in one line per errand, under a rule that moves.
-
-   Not a spinner and not a "Thinking…" screen: the application the user is
-   actually working in stays the thing they are looking at, and this is a
-   status line, not a destination. */
+   What is running, one line per errand, under a rule that moves. A status
+   line, not a destination. */
 
 .running {
-  flex-shrink: 0; padding: var(--s3) var(--s4) var(--s2);
+  flex-shrink: 0; margin: 0 var(--s4) var(--s2);
+  padding: var(--s2) var(--s3);
   display: flex; flex-direction: column; gap: var(--s2);
-  border-bottom: 1px solid var(--line-soft);
+  background: var(--raise); border-radius: var(--r-md);
 }
-.runjob { display: flex; flex-direction: column; gap: var(--s2); }
-.runpart {
-  display: flex; align-items: center; gap: var(--s2); min-width: 0;
-}
-.runface { flex-shrink: 0; display: block; opacity: 0.9; }
+.runjob { display: flex; flex-direction: column; gap: 6px; }
+.runpart { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.runface { flex-shrink: 0; display: block; }
+.runface .mascot { border-radius: 50%; overflow: hidden; }
 .runtask {
-  font-size: 12.5px; color: var(--dim); min-width: 0;
+  font-size: var(--fs-label); color: var(--text-2); min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.runpart[data-status="queued"] .runtask,
 .runpart[data-status="done"] .runtask { color: var(--faint); }
 
 /* An indeterminate rule rather than a percentage, because there is no
-   percentage: the model does not know how long it will take and a bar that
-   invents one is a lie that gets found out every time. */
+   percentage to show. */
 .runrule {
-  display: block; height: 1px; background: var(--line); overflow: hidden;
+  display: block; height: 1px; background: var(--line-strong); overflow: hidden;
   border-radius: 1px;
 }
 .runrule i {
@@ -395,234 +442,241 @@ button:active:not(:disabled), [role="button"]:active {
   100% { transform: translateX(340%); }
 }
 /* Reduced motion still needs to say "working", so the rule stays and stops
-   moving: the segment sits at a third of the width rather than sweeping.
-   Removing it entirely would take the only signal that anything is running. */
+   moving. Removing it would take the only signal that anything is running. */
 @media (prefers-reduced-motion: reduce) {
   .runrule i { animation: none; width: 100%; opacity: 0.45; }
 }
 
-.jobcard {
-  padding: var(--s3) var(--s4); margin-bottom: var(--s3);
-  border-radius: var(--radius);
-  background: var(--surface); border: 1px solid var(--line-soft);
+/* ─── The conversation ───────────────────────────────────────────────────────
+   His words are text, not bubbles: left, full measure, in the column his
+   face sits at the foot of, so what he says reads as coming from him. Yours
+   are shorter, to the right, on a quiet surface. Nothing else — no avatars
+   per message, no names, no cards. */
+
+.pane { flex: 1; overflow-y: auto; padding: var(--s4) var(--s5) var(--s5); }
+.pane::-webkit-scrollbar { width: 9px; }
+.pane::-webkit-scrollbar-thumb { background: var(--raise-2); border-radius: var(--r-round); }
+.pane::-webkit-scrollbar-track { background: transparent; }
+
+.thread {
+  display: flex; flex-direction: column; gap: var(--s4);
+  max-width: 720px; margin: 0 auto; min-height: 100%;
+  justify-content: flex-end;
 }
+
+.turn { display: flex; }
+.turn .text {
+  user-select: text; cursor: text; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-size: var(--fs-body); line-height: var(--lh-body);
+}
+.turn.him .text { color: var(--text); max-width: var(--measure); }
+.turn.you { justify-content: flex-end; }
+.turn.you .text {
+  max-width: 80%; padding: 7px 12px;
+  color: var(--text-2); background: var(--raise);
+  border-radius: var(--r-lg);
+}
+
+/* Nothing said yet. Not a void with a sentence floating in the middle of
+   it: his first line, sat where his next line would appear, directly above
+   his face. */
+.blank {
+  flex: 1; display: flex; flex-direction: column; justify-content: flex-end;
+  gap: 6px; padding: var(--s5) var(--s5) var(--s4);
+}
+.blank .lead { font-size: var(--fs-title); color: var(--text); letter-spacing: -0.01em; }
+.blank .hint { font-size: var(--fs-label); color: var(--faint); }
+
+/* ─── The command bar ────────────────────────────────────────────────────────
+   Who you are addressing, the line, and one action. The only floating
+   surface in the window, and the only one with a shadow. */
+
+.command {
+  flex-shrink: 0; display: flex; align-items: flex-end; gap: 10px;
+  /* The thread's width, so his face sits under his column of text. */
+  width: calc(100% - 2 * var(--s3)); max-width: 744px;
+  margin: 0 auto var(--s3);
+  padding: 6px 6px 6px 8px;
+  background: var(--raise); border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-float);
+  transition: border-color var(--t-hover) var(--ease-hover);
+}
+/* 2 points of solid gold on focus: a 7:1 change from the resting border.
+   Gold at 45% on 1 point measured 2.1:1, under the 3:1 a focus change needs. */
+.command:focus-within {
+  border-color: var(--gold);
+  box-shadow: var(--shadow-float), 0 0 0 1px var(--gold);
+}
+.command .presence { margin-bottom: 1px; }
+
+.command textarea {
+  flex: 1; align-self: center; resize: none;
+  min-height: 22px; max-height: 132px; padding: 7px 0;
+  background: none; border: 0; outline: none;
+  color: var(--text); font: 400 var(--fs-body)/1.45 var(--font);
+  user-select: text; cursor: text;
+}
+.command textarea::placeholder { color: var(--faint); }
+
+.send {
+  width: var(--h-control); height: var(--h-control); flex-shrink: 0;
+  display: grid; place-items: center; border-radius: var(--r-md);
+  background: var(--crimson); color: var(--text);
+  transition: background var(--t-hover) var(--ease-hover),
+              opacity var(--t-hover) var(--ease-hover),
+              transform var(--t-press) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .send:hover:not(:disabled) { background: #F03A52; }
+}
+.send:disabled { background: var(--raise-2); color: var(--faint); cursor: default; }
+.send[data-active="true"] { background: var(--text); color: var(--bg); }
+
+/* ─── Another agent's page ─────────────────────────────────────────────── */
+
+.intro {
+  display: flex; align-items: center; gap: var(--s3);
+  max-width: 720px; margin: 0 auto var(--s5);
+}
+.intro .mascot { border-radius: 50%; overflow: hidden; background: var(--raise-2); flex-shrink: 0; }
+.intro h1 { font: 600 var(--fs-title)/var(--lh-tight) var(--font); color: var(--text); }
+.intro .role { font-size: var(--fs-label); color: var(--dim); }
+.intro .blurb { font-size: 13px; color: var(--dim); margin-top: 2px; }
+
+.works { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; }
+.quiet { font-size: 13px; color: var(--faint); max-width: 46ch; line-height: var(--lh-body); }
+
+.jobcard { padding: var(--s3) 0; border-top: 1px solid var(--line); }
+.jobcard:first-child { border-top: 0; padding-top: 0; }
 .jobcard .task { font-size: 13px; color: var(--dim); }
 .jobcard .answer {
-  margin-top: 6px; font-size: 13.5px; line-height: 1.6; color: var(--text);
+  margin-top: 4px; font-size: var(--fs-body); line-height: var(--lh-body); color: var(--text);
   user-select: text; cursor: text;
 }
 .jobcard .stamp {
   margin-top: var(--s2); display: flex; align-items: center; gap: var(--s2);
-  font: 400 11px/1 var(--font); color: var(--faint);
+  font: 400 var(--fs-meta)/1 var(--font); color: var(--faint);
 }
 
-/* ─── Body ───────────────────────────────────────────────────────────────── */
-
-/* Column, not row. The Talk view returns a pane and a composer as siblings,
-   and as a row they sat side by side — the conversation in the left 60% and
-   the text box floating in the right 40%. */
-.body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-.pane { flex: 1; overflow-y: auto; padding: var(--s5); }
-.pane::-webkit-scrollbar { width: 9px; }
-.pane::-webkit-scrollbar-thumb { background: var(--surface-3); border-radius: 999px; }
-.pane::-webkit-scrollbar-track { background: transparent; }
-
-/* ─── Conversation ───────────────────────────────────────────────────────── */
-
-.thread { display: flex; flex-direction: column; gap: var(--s4); max-width: 720px; margin: 0 auto; }
-
-.turn { display: flex; gap: var(--s3); align-items: flex-start; }
-.turn.you { flex-direction: row-reverse; }
-
-.turn .bubble {
-  padding: 10px 14px; border-radius: var(--radius);
-  background: var(--surface-2); border: 1px solid var(--line-soft);
-  max-width: 78%; user-select: text; cursor: text;
-  font-size: 14px; line-height: 1.6;
-}
-.turn.you .bubble { background: var(--surface-3); border-color: var(--line); }
-
-/* The speaker labels are for screen readers only.
-   YOU and DIABLO sat in caps above every message, saying what the alignment
-   and the bubble colour already say, in the one typographic treatment the
-   interface otherwise avoids. Hidden visually, kept in the accessibility
-   tree, so a screen reader still announces who is speaking. */
-.turn .who {
-  position: absolute; width: 1px; height: 1px; overflow: hidden;
-  clip-path: inset(50%); white-space: nowrap;
-}
+/* ─── Utility pages: trace, health, settings ────────────────────────────── */
 
 .empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: var(--s4); height: 100%; color: var(--faint); text-align: center;
+  gap: var(--s2); height: 100%; color: var(--faint); text-align: center;
 }
-.empty h2 { font: 500 16px/1.4 var(--font); color: var(--dim); }
+.empty h2 { font: 500 var(--fs-title)/1.4 var(--font); color: var(--text-2); }
 .empty p { font-size: 13px; max-width: 320px; }
-.empty kbd {
-  font: 500 11px/1 var(--mono); padding: 3px 6px; border-radius: 4px;
-  background: var(--surface-3); border: 1px solid var(--line); color: var(--dim);
-}
-
-/* ─── Composer ───────────────────────────────────────────────────────────── */
-
-.composer {
-  flex-shrink: 0; display: flex; align-items: flex-end; gap: var(--s3);
-  padding: var(--s3) var(--s5) var(--s4);
-  border-top: 1px solid var(--line-soft); background: var(--surface);
-}
-
-.composer textarea {
-  flex: 1; resize: none; min-height: 42px; max-height: 140px;
-  padding: 11px 14px; border-radius: var(--radius);
-  background: var(--surface-2); border: 1px solid var(--line);
-  color: var(--text); font: 400 14px/1.5 var(--font);
-  user-select: text; cursor: text;
-  transition: border-color 160ms var(--ease);
-}
-.composer textarea:focus { border-color: var(--surface-3); outline: none; }
-.composer textarea:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
-.composer textarea::placeholder { color: var(--faint); }
-
-/* 44x44 minimum touch target, even on a desktop app — it is also the size
-   that stops a mis-click landing on the text field instead. */
-.iconbtn {
-  width: 44px; height: 44px; flex-shrink: 0;
-  display: grid; place-items: center;
-  border-radius: var(--radius); border: 1px solid var(--line);
-  background: var(--surface-2); color: var(--dim);
-  transition: background 160ms var(--ease), color 160ms var(--ease),
-              border-color 160ms var(--ease);
-}
-@media (hover: hover) and (pointer: fine) {
-  .iconbtn:hover { background: var(--surface-3); color: var(--text); }
-}
-.iconbtn[data-active="true"] { border-color: var(--crimson); color: var(--crimson); }
-.iconbtn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-/* ─── Cards, lists ───────────────────────────────────────────────────────── */
 
 .grid { display: grid; gap: var(--s3); }
-.grid.two { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.grid.two { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 
-.card {
-  padding: var(--s4); border-radius: var(--radius);
-  background: var(--surface); border: 1px solid var(--line-soft);
-}
+.card { padding: var(--s3) var(--s4); border-radius: var(--r-md); background: var(--raise); }
 .card h3 {
-  font: 600 10.5px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase;
-  color: var(--faint); margin-bottom: var(--s3);
+  font: 600 var(--fs-meta)/1 var(--font); color: var(--dim);
+  letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: var(--s2);
 }
 
 .row {
   display: flex; align-items: center; justify-content: space-between;
-  gap: var(--s3); padding: 7px 0;
-  border-bottom: 1px solid var(--line-soft); font-size: 13px;
+  gap: var(--s3); padding: 6px 0; min-height: var(--h-control);
+  border-bottom: 1px solid var(--line); font-size: 13px;
 }
 .row:last-child { border-bottom: 0; }
 .row .k { color: var(--dim); }
-.row .v { font-family: var(--mono); font-size: 12px; color: var(--text); }
+.row .v {
+  font-family: var(--mono); font-size: 12px; color: var(--text-2);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .pill {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 2px 8px; border-radius: 999px; font: 500 11px/18px var(--font);
-  background: var(--surface-3); color: var(--dim);
+  padding: 2px 8px; border-radius: var(--r-round); font: 500 var(--fs-meta)/18px var(--font);
+  background: var(--raise-2); color: var(--dim);
 }
-.pill[data-tone="ok"]   { color: #B6EEC6; background: #17301E; }
-.pill[data-tone="warn"] { color: #FFE6A8; background: #33290D; }
-.pill[data-tone="bad"]  { color: #FFC9C9; background: #351717; }
-
-/* ─── Agents ─────────────────────────────────────────────────────────────── */
-
-.agents { display: grid; gap: var(--s3); grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-
-.agent {
-  display: flex; gap: var(--s3); align-items: flex-start;
-  padding: var(--s3); border-radius: var(--radius);
-  background: var(--surface); border: 1px solid var(--line-soft);
-  transition: border-color var(--t-enter) var(--ease-hover),
-              transform var(--t-enter) var(--ease-out);
-}
-@media (hover: hover) and (pointer: fine) {
-  .agent:hover { border-color: var(--line); transform: translateY(-1px); }
-}
-.agent[data-busy="true"] { border-color: var(--accent, var(--crimson)); }
-
-.agent .av { width: 46px; height: 46px; flex-shrink: 0; border-radius: 10px; overflow: hidden; }
-.agent .nm { font-weight: 600; font-size: 13.5px; }
-.agent .rl { font-size: 11.5px; color: var(--faint); margin-top: 1px; }
-.agent .st { font-size: 11.5px; color: var(--dim); margin-top: 6px; }
-
-/* ─── Trace ──────────────────────────────────────────────────────────────── */
+.pill[data-tone="ok"]   { color: #B6EEC6; background: rgba(70, 196, 107, 0.14); }
+.pill[data-tone="warn"] { color: #FFE6A8; background: rgba(242, 194, 48, 0.14); }
+.pill[data-tone="bad"]  { color: #FFC9C9; background: rgba(255, 107, 107, 0.14); }
 
 .turnblock { margin-bottom: var(--s4); }
-.turnblock .head {
-  font: 500 11px/1 var(--mono); color: var(--faint); margin-bottom: 6px;
+.turnblock .tbhead {
+  font: 500 var(--fs-meta)/1 var(--mono); color: var(--faint); margin-bottom: 6px;
 }
 .ev {
-  display: grid; grid-template-columns: 64px 100px 1fr; gap: var(--s3);
+  display: grid; grid-template-columns: 56px 72px 1fr; gap: var(--s3);
   padding: 3px 0; font: 400 11.5px/1.6 var(--mono);
-  border-bottom: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line);
   user-select: text; cursor: text;
 }
 .ev .ms { color: var(--faint); text-align: right; }
 .ev .st { color: var(--dim); }
-.ev .dt { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev .dt { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ev[data-stage="guard"] .st { color: var(--gold); }
-.ev[data-stage="decide"] .st { color: var(--speaking); }
+.ev[data-stage="decide"] .st { color: var(--crimson-text); }
 .ev[data-stage="tool"] .st { color: var(--ok); }
 
-/* ─── Settings ───────────────────────────────────────────────────────────── */
-
 .field { margin-bottom: var(--s4); }
-.field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 3px; }
-.field .help { font-size: 11.5px; color: var(--faint); margin-bottom: var(--s2); }
+.field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+.field .help { font-size: 12px; color: var(--faint); margin-bottom: var(--s2); }
 
 .steps { display: flex; gap: var(--s1); }
 .steps button {
-  flex: 1; height: 34px; border-radius: var(--radius-sm);
-  border: 1px solid var(--line); background: var(--surface-2);
-  color: var(--dim); font-size: 12.5px;
-  /* Named properties, never `all`. `all` transitions things you did not
-     mean to — including layout properties that force a reflow per frame. */
+  flex: 1; height: var(--h-control); border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong); background: var(--raise);
+  color: var(--dim); font-size: var(--fs-label);
   transition: background var(--t-hover) var(--ease-hover),
               color var(--t-hover) var(--ease-hover),
               transform var(--t-press) var(--ease-out);
 }
 @media (hover: hover) and (pointer: fine) {
-  .steps button:hover { background: var(--surface-3); color: var(--text); }
+  .steps button:hover { background: var(--raise-2); color: var(--text); }
 }
 .steps button[aria-pressed="true"] {
-  background: var(--crimson-dim); border-color: var(--crimson); color: #fff;
+  background: var(--crimson-dim); border-color: var(--crimson); color: var(--text);
 }
 
 .field input[type="text"] {
-  width: 100%; padding: 9px 12px; border-radius: var(--radius-sm);
-  background: var(--surface-2); border: 1px solid var(--line);
+  width: 100%; height: var(--h-field); padding: 0 12px; border-radius: var(--r-sm);
+  background: var(--raise); border: 1px solid var(--line-strong);
   color: var(--text); font: 400 13px var(--font);
   user-select: text; cursor: text;
 }
 
 .btn {
-  padding: 9px 16px; border-radius: var(--radius-sm);
-  background: var(--surface-3); border: 1px solid var(--line); color: var(--text);
+  height: var(--h-control); padding: 0 16px; border-radius: var(--r-sm);
+  background: var(--raise-2); border: 1px solid var(--line-strong); color: var(--text);
   font-size: 13px; font-weight: 500;
-  transition: background 160ms var(--ease);
-}
-@media (hover: hover) and (pointer: fine) {
-  .btn:hover { background: #2C2C34; }
+  transition: background var(--t-hover) var(--ease-hover);
 }
 .btn[data-variant="primary"] { background: var(--crimson-dim); border-color: var(--crimson); }
-.btn[data-variant="primary"]:hover { background: var(--crimson); }
-.btn[data-variant="quiet"] { background: transparent; }
+@media (hover: hover) and (pointer: fine) {
+  .btn[data-variant="primary"]:hover { background: var(--crimson); }
+}
 
 .saved { font-size: 12px; color: var(--ok); margin-left: var(--s3); }
 
+.perm { display: inline-flex; align-items: center; gap: var(--s2); }
+.ghost {
+  height: var(--h-tool); padding: 0 10px; border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong); background: transparent; color: var(--text);
+  font-size: 12px;
+  transition: background var(--t-hover) var(--ease-hover),
+              border-color var(--t-hover) var(--ease-hover);
+}
+@media (hover: hover) and (pointer: fine) {
+  .ghost:hover:not(:disabled) { background: var(--raise-2); border-color: var(--crimson); }
+}
+.ghost:disabled { opacity: 0.5; cursor: default; }
+
+.note {
+  margin-top: var(--s2); font-size: 12px; line-height: var(--lh-body);
+  color: var(--faint); max-width: 62ch;
+}
+
 /* ─── Motion, and the people who do not want it ──────────────────────────── */
 
-/* Reduced motion means fewer and gentler, not none.
-   Killing every transition also kills the colour and opacity changes that
-   tell someone what just happened; what causes motion sickness is movement,
-   so movement is what goes. */
+/* Reduced motion means fewer and gentler, not none. What causes motion
+   sickness is movement, so movement is what goes; colour and opacity stay
+   because they tell someone what just happened. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -631,118 +685,18 @@ button:active:not(:disabled), [role="button"]:active {
     transition-duration: 120ms !important;
     scroll-behavior: auto !important;
   }
-  .pane > *, .turn, .agent, .row { animation: none !important; opacity: 1 !important; }
+  .pane > *, .turn, .row { animation: none !important; opacity: 1 !important; }
   button:active, [role="button"]:active { transform: none; }
+  .convos .convo { animation: none !important; opacity: 1 !important; }
 }
 
-/* Narrow: the rail collapses to faces only, rather than wrapping names onto
-   two lines or pushing the stage off the edge. Nothing here ever scrolls
-   sideways. */
-@media (max-width: 760px) {
-  .app { grid-template-columns: 64px 1fr; }
-  .wordmark, .searchrow, .convo .meta, .railfoot .chip span { display: none; }
-  .railhead { padding-left: 0; justify-content: center; }
-  .convo { grid-template-columns: 1fr; justify-items: center; padding: 8px 0; }
-  .convo .unread { position: absolute; top: 6px; right: 10px; }
-  .railfoot { flex-direction: column; }
-  /* No room reserved for the traffic lights, and the reason is worth
-     writing down. WKWebView applies the window's titlebar as a top safe-area
-     inset, so the page already begins below the close, minimise and zoom
-     buttons — they are drawn over the titlebar, not over the head. Adding
-     left padding as well pushed the character a third of the way across an
-     otherwise empty row, which looked like a mistake because it was one. */
-  .pane { padding: var(--s4); }
-  }
-
-/* ─── Delegation ─────────────────────────────────────────────────────────── */
-/*
-   A fanned-out job, drawn as its pieces. The accent bar down the left is the
-   agent's colour and is the only thing tying a row to the card above it, so it
-   carries real information rather than decoration: at a glance you can see
-   which three of the six are busy and which half each one took.
-*/
-.agent[data-busy="true"] { animation: agent-working 2.4s var(--ease) infinite; }
-@keyframes agent-working {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
-  50%      { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .agent[data-busy="true"] { animation: none; border-color: var(--accent); }
-}
-
-.parts { margin: 4px 0 var(--s3) 0; display: grid; gap: 4px; }
-.part {
-  display: grid; grid-template-columns: 62px 1fr auto;
-  gap: var(--s2); align-items: center;
-  padding: 6px var(--s2) 6px 10px;
-  border-left: 2px solid var(--accent, var(--line));
-  background: var(--surface-2, rgba(255, 255, 255, 0.02));
-  border-radius: 0 6px 6px 0;
-}
-.part[data-status="queued"] { opacity: 0.55; }
-.part .who  { font: 600 11px/1 var(--mono); color: var(--accent); }
-.part .what { font-size: 12px; color: var(--dim); overflow: hidden;
-              text-overflow: ellipsis; white-space: nowrap; }
-.row .owner { font-weight: 600; margin-right: 2px; }
-
-/* ─── Permissions ────────────────────────────────────────────────────────── */
-
-.perm { display: inline-flex; align-items: center; gap: var(--s2); }
-.ghost {
-  padding: 4px 10px; border-radius: 7px;
-  border: 1px solid var(--line); background: transparent; color: var(--text);
-  transition: background 160ms var(--ease), border-color 160ms var(--ease);
-}
-@media (hover: hover) and (pointer: fine) {
-  .ghost:hover:not(:disabled) { background: #2C2C34; border-color: var(--crimson); }
-}
-.ghost:disabled { opacity: 0.5; cursor: default; }
-.ghost.sm { font-size: 11.5px; padding: 3px 9px; }
-.ghost:focus-visible { outline: 2px solid var(--crimson); outline-offset: 2px; }
-
-.note {
-  margin-top: var(--s2); font-size: 12px; line-height: 1.55;
-  color: var(--faint); max-width: 62ch;
-}
-
-/* ─── Arrival ────────────────────────────────────────────────────────────── */
-/*
-   Things that appear do not appear from nothing.
-
-   Nothing in the world pops into being at full size, so nothing here starts
-   at scale(0) — a few pixels of rise and a fade is enough to read as "this
-   arrived" rather than "this was always here and you blinked". The whole
-   move is under a quarter of a second, because a panel you switch to twenty
-   times an hour must never make you wait to read it.
-
-   @starting-style rather than a mounted flag in JavaScript: the browser
-   already knows the element is new, and asking React to tell it again means
-   a second render before anything moves.
-*/
+/* Arrival. Unchanged in this pass. */
 @keyframes arrive {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+.pane > * { animation: arrive var(--t-enter) var(--ease-out) both; }
 
-.pane > * {
-  animation: arrive var(--t-enter) var(--ease-out) both;
-}
-
-/* Staggered, because a grid where six cards land at once reads as a page
-   load and a grid where they land in sequence reads as a list being dealt.
-   Delays stay short — past about 80ms apart it stops feeling considered and
-   starts feeling slow. */
-.agents .agent { animation: arrive 260ms var(--ease-out) both; }
-.agents .agent:nth-child(1) { animation-delay: 0ms; }
-.agents .agent:nth-child(2) { animation-delay: 40ms; }
-.agents .agent:nth-child(3) { animation-delay: 80ms; }
-.agents .agent:nth-child(4) { animation-delay: 120ms; }
-.agents .agent:nth-child(5) { animation-delay: 160ms; }
-.agents .agent:nth-child(6) { animation-delay: 200ms; }
-
-/* A new turn in the conversation. Transitions rather than keyframes: turns
-   arrive in bursts while he is answering, and a keyframe restarts from zero
-   when it is interrupted where a transition retargets from where it is. */
 .turn {
   opacity: 1;
   transform: translateY(0);
@@ -753,41 +707,6 @@ button:active:not(:disabled), [role="button"]:active {
   .turn { opacity: 0; transform: translateY(8px); }
 }
 
-/* A piece of work handed to an agent, sliding in under its parent row. */
-.part {
-  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
-}
-@starting-style {
-  .part { opacity: 0; transform: translateX(-6px); }
-}
-
-/* ─── Depth ──────────────────────────────────────────────────────────────── */
-/*
-   The composer floats over the conversation rather than sitting below it,
-   which is what stops a dark window reading as two flat rectangles stacked.
-   The blur is the only expensive thing in this stylesheet and it is on one
-   element that never scrolls.
-*/
-.composer {
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-}
-
-.card, .agent, .jobcard {
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.32);
-}
-
-/* The focus ring is gold against a red-and-black interface on purpose: it
-   has to be the one thing on screen that cannot be mistaken for a state. */
-:focus-visible {
-  outline: 2px solid var(--gold);
-  outline-offset: 2px;
-  transition: outline-offset 120ms var(--ease-out);
-}
-
-/* The rail deals itself out on first paint. Short delays — past about 80ms
-   apart a stagger stops feeling considered and starts feeling slow. */
 .convos .convo { animation: arrive 240ms var(--ease-out) both; }
 .convos .convo:nth-child(1) { animation-delay: 0ms; }
 .convos .convo:nth-child(2) { animation-delay: 30ms; }
@@ -796,20 +715,26 @@ button:active:not(:disabled), [role="button"]:active {
 .convos .convo:nth-child(5) { animation-delay: 120ms; }
 .convos .convo:nth-child(6) { animation-delay: 150ms; }
 
-@media (prefers-reduced-motion: reduce) {
-  .convos .convo { animation: none !important; opacity: 1 !important; }
-}
-
+/* ─── Sizes ──────────────────────────────────────────────────────────────── */
 
 /* Below this width there is one surface, not two.
    Diablo opens at 392 points — wide enough for a sentence and a reply, narrow
    enough to sit beside the application being worked in rather than in front
    of it. Dragging the window wider brings the rail back, so nothing is lost;
-   it is simply not what you get for asking one question. */
+   the sections move into the titlebar menu until it does. */
 @media (max-width: 719px) {
   .app { grid-template-columns: 1fr; }
   .rail { display: none; }
-  .pane { padding: var(--s4); }
+  .topbar { padding-left: var(--traffic); }
+  .menu { display: block; }
+  .pane { padding: var(--s3) var(--s4) var(--s4); }
+  .blank { padding: var(--s4); }
   .thread { gap: var(--s3); }
-  .composer { padding: var(--s3) var(--s3) var(--s4); }
+  .running, .needs { margin-left: var(--s3); margin-right: var(--s3); }
+}
+
+/* Large windows: the conversation keeps its measure and gains margin, not
+   line length. */
+@media (min-width: 1100px) {
+  .pane { padding-left: var(--s6); padding-right: var(--s6); }
 }
