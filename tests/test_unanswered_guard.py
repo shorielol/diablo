@@ -6,9 +6,14 @@ when it looks like a question. If nobody answers, the turn used to carry on:
 the same text came back out of run() and the caller said it a second time,
 20-30 seconds later, or the loop asked the model again and said a new version.
 
-Both real incidents from 19 September are reproduced here with a scripted
-model and a recording speaker. No model, microphone or audio is used, and the
-job store is a temporary file.
+Both real incidents from 19 September are reproduced here in shape with a
+scripted model and a recording speaker. No model, microphone or audio is used,
+and the job store is a temporary file.
+
+The incidents' own sentences only reached the guard through a detector
+false positive (a relative ", which"), fixed in Phase 2E and pinned by
+test_question_detector.py. The guard is driven here by genuine questions, so
+this file keeps testing the unanswered path rather than the detector.
 """
 
 import os
@@ -22,18 +27,16 @@ from harness import Results, guard  # noqa: E402
 
 from skills import agent_core, conversation, delegation_tool, local_brain  # noqa: E402
 
-# Incident 1, word for word: a finished answer the guard read as a question
-# because of the relative "which".
-INCIDENT_1 = ("I did not make any changes because the request was to research "
-              "the latest news about OpenAI, which I completed by retrieving and "
-              "summarizing current updates. No file or system state was modified. "
-              "The research is now complete and available in the search results above.")
+# Incident 1's shape: a final answer that is a question, asked aloud by the
+# guard, and nobody answers.
+UNANSWERED_1 = ("I found two drafts about the OpenAI news, draft-a and draft-b. "
+                "Which one should I summarise?")
 
-# Incident 2's shape: a screen description the guard misreads, carrying a quote
-# no tool returned, so an unanswered ask used to fall into quoted_unread and
-# run the model a second time.
-INCIDENT_2_FIRST = ('The frontmost window is a YouTube video titled "I asked '
-                    'Jacksepticeye 100 Questions", which is playing in Zen.')
+# Incident 2's shape: a screen answer the guard asks aloud, carrying a quote no
+# tool returned, so an unanswered ask used to fall into quoted_unread and run
+# the model a second time.
+UNANSWERED_2_FIRST = ('The frontmost window shows a video titled "I asked '
+                      'Jacksepticeye 100 Questions". Should I summarise it?')
 INCIDENT_2_SECOND = ("A corrupted YouTube page shows garbled text about a video "
                      "with Jacksepticeye and MrBeast.")
 
@@ -129,9 +132,9 @@ def _wait_for(predicate, timeout=5.0):
 def run():
     results = Results()
 
-    results.head("R2. guard misfire, nobody answers (run level)")
+    results.head("R2. guard fires, nobody answers (run level)")
     with guard(results, "unanswered guard ends the turn"):
-        model = _Model(INCIDENT_1, "a second answer that must never be asked for")
+        model = _Model(UNANSWERED_1, "a second answer that must never be asked for")
         voice = _Voice(reply="")
         with _Patched(model):
             summary = agent_core.run("Research into the latest news about OpenAI",
@@ -142,12 +145,12 @@ def run():
                       bool(voice.asked) and str(summary).strip() == voice.asked[0].strip())
         results.check("the result is marked as already spoken",
                       _is_marked_spoken(summary), type(summary).__name__)
-        results.check("run() itself spoke it only once", voice.times(INCIDENT_1) == 1,
-                      f"times={voice.times(INCIDENT_1)}")
+        results.check("run() itself spoke it only once", voice.times(UNANSWERED_1) == 1,
+                      f"times={voice.times(UNANSWERED_1)}")
 
     results.head("R3. guard fires, the user answers")
     with guard(results, "answered guard continues"):
-        model = _Model(INCIDENT_1, "Done. The latest OpenAI news is the analytics launch.")
+        model = _Model(UNANSWERED_1, "Done. The latest OpenAI news is the analytics launch.")
         voice = _Voice(reply="yes, the enterprise news")
         with _Patched(model):
             summary = agent_core.run("Research into the latest news about OpenAI",
@@ -171,23 +174,23 @@ def run():
         results.check("the answer is spoken exactly once", voice.times(ORDINARY) == 1,
                       f"times={voice.times(ORDINARY)}")
 
-    results.head("E. incident 1 shape, inline")
+    results.head("E. unanswered question, inline")
     with guard(results, "inline caller"):
-        model = _Model(INCIDENT_1, "must not be generated")
+        model = _Model(UNANSWERED_1, "must not be generated")
         voice = _Voice(reply="")
         with _Patched(model):
             delegation_tool._run_inline("research OpenAI news", "research OpenAI news",
                                         voice.speak, voice.ask, None)
             turns = conversation.session.snapshot()["turns"]
-        results.check("spoken once, never repeated", voice.times(INCIDENT_1) == 1,
-                      f"times={voice.times(INCIDENT_1)}")
+        results.check("spoken once, never repeated", voice.times(UNANSWERED_1) == 1,
+                      f"times={voice.times(UNANSWERED_1)}")
         results.check("no second model call", model.calls == 1, f"calls={model.calls}")
         results.check("the answer is still recorded in the conversation",
-                      bool(turns) and turns[-1]["content"].strip() == INCIDENT_1.strip())
+                      bool(turns) and turns[-1]["content"].strip() == UNANSWERED_1.strip())
 
-    results.head("D. incident 1 shape, queued job")
+    results.head("D. unanswered question, queued job")
     with guard(results, "queue worker"):
-        model = _Model(INCIDENT_1, "must not be generated")
+        model = _Model(UNANSWERED_1, "must not be generated")
         voice = _Voice(reply="")
         with _Patched(model):
             task = "Research into the latest news about OpenAI"
@@ -196,17 +199,17 @@ def run():
             done = _wait_for(lambda: _job(job["id"]).get("status") == "done")
             stored = _job(job["id"])
             # The worker speaks after marking the job done; let it get there.
-            _wait_for(lambda: voice.times(INCIDENT_1) >= 2, timeout=0.5)
+            _wait_for(lambda: voice.times(UNANSWERED_1) >= 2, timeout=0.5)
         results.check("the job finished", done, repr(stored.get("status")))
         results.check("the job result did not repeat the asked text",
-                      voice.times(INCIDENT_1) == 1, f"times={voice.times(INCIDENT_1)}")
+                      voice.times(UNANSWERED_1) == 1, f"times={voice.times(UNANSWERED_1)}")
         results.check("no second model call", model.calls == 1, f"calls={model.calls}")
         results.check("the job still records its summary",
-                      (stored.get("summary") or "").strip() == INCIDENT_1.strip())
+                      (stored.get("summary") or "").strip() == UNANSWERED_1.strip())
 
-    results.head("F. incident 1 shape, escalated")
+    results.head("F. unanswered question, escalated")
     with guard(results, "escalation caller"):
-        model = _Model(INCIDENT_1, "must not be generated")
+        model = _Model(UNANSWERED_1, "must not be generated")
         voice = _Voice(reply="")
         saved = (local_brain.available, local_brain.with_model,
                  delegation_tool.route, delegation_tool.tutor.wants_teaching)
@@ -225,16 +228,16 @@ def run():
             (local_brain.available, local_brain.with_model,
              delegation_tool.route, delegation_tool.tutor.wants_teaching) = saved
         results.check("the escalated route ran", outcome == "escalated", repr(outcome))
-        results.check("spoken once, never repeated", voice.times(INCIDENT_1) == 1,
-                      f"times={voice.times(INCIDENT_1)}")
+        results.check("spoken once, never repeated", voice.times(UNANSWERED_1) == 1,
+                      f"times={voice.times(UNANSWERED_1)}")
         results.check("no second model call", model.calls == 1, f"calls={model.calls}")
 
-    results.head("I2. incident 2 shape: no second model call, no second answer")
+    results.head("I2. screen answer: no second model call, no second answer")
     with guard(results, "screen answer"):
         # As on the day: read_screen first, then an answer quoting a title the
         # tool never returned, which used to send an unanswered ask on into
         # quoted_unread and a fresh model call. The screen read is faked.
-        model = _Model(READ_SCREEN_CALL, INCIDENT_2_FIRST, INCIDENT_2_SECOND)
+        model = _Model(READ_SCREEN_CALL, UNANSWERED_2_FIRST, INCIDENT_2_SECOND)
         voice = _Voice(reply="")
         saved_execute = agent_core.agent_tools.execute
         try:
@@ -250,8 +253,8 @@ def run():
                       f"calls={model.calls} (1 tool step + 1 answer expected)")
         results.check("the rewritten second answer is never spoken",
                       voice.times(INCIDENT_2_SECOND) == 0)
-        results.check("the first answer is heard once", voice.times(INCIDENT_2_FIRST) == 1,
-                      f"times={voice.times(INCIDENT_2_FIRST)}")
+        results.check("the first answer is heard once", voice.times(UNANSWERED_2_FIRST) == 1,
+                      f"times={voice.times(UNANSWERED_2_FIRST)}")
 
     return results.report("unanswered guard question")
 

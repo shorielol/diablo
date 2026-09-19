@@ -870,8 +870,10 @@ def _claims_unperformed_action(answer: str, performed: set) -> bool:
 
 
 _ENDS_IN_QUESTION = re.compile(r"\?\s*$")
+# "which" after a comma opens a relative clause, not a choice: ", which I
+# completed" is a statement. A finished answer was asked aloud because of it.
 _OFFERS_A_CHOICE = re.compile(
-    r"\b(which|would you like|do you want|should i|shall i|let me know which|"
+    r"\b((?<!,\s)which|would you like|do you want|should i|shall i|let me know which|"
     r"i found (two|three|several|multiple)|there are (two|three|several|multiple))\b",
     re.IGNORECASE)
 
