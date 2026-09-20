@@ -1095,6 +1095,10 @@ class Shell:
             self.approach(**data)
         elif event == "region":
             self.approach_region(**data)
+        elif event == "focus":
+            self.focus_content(**data)
+        elif event == "unreadable":
+            self.reading_failed()
         elif event == "no_target":
             self.no_target()
         elif event == "await_user":
@@ -1145,6 +1149,66 @@ class Shell:
 
         presence.approach_target(stand, on_ready=ready, facing=_appkit(x, y))
         self.wake()
+
+    def focus_content(self, x: float, y: float, w: float, h: float,
+                      label: str = "", seconds: float = 0.0,
+                      generation: Optional[int] = None) -> None:
+        """
+        Stand beside content he has actually read, and outline it.
+
+        The same three beats as `approach`, and the same geometry — this is
+        not a second way of going somewhere. What differs is what appears
+        when he arrives: passing a width and height makes the overlay draw a
+        soft outline round the region instead of a ring on a point. That is
+        the whole distinction between "look at this" and "this is the thing
+        you can press", and it is one parameter rather than a second visual
+        language.
+
+        The rectangle comes from `reading.focus_of`, which returns one only
+        when the text actually groups into one region, so there is nothing
+        here that can send him to an invented place. A region too large to
+        mean anything never reaches this method; he stays home and the
+        surface says what he is reading instead.
+        """
+        stand = motion.stand_for(x + w / 2.0, y + h / 2.0, label,
+                                 extent=(w / 2.0 + 6.0, h / 2.0 + 6.0))
+        if stand is None:
+            return
+        presence = self.presence
+        # Already pointing at something, or on his way to: a read does not
+        # interrupt an indication a person may still be reading.
+        if presence.guiding or (presence.phase == motion.MOVING
+                                and presence.motion_owner in presence._on_ready):
+            return
+        presence.covering = self._under_surface(x, y, w, h)
+        self.guide.hide()
+        self.guide.prepare(x, y, label, w, h)
+
+        def ready():
+            if generation is not None and not _current_generation(generation):
+                self.clear_target()
+                return
+            self.guide.show(x, y, label, w, h)
+            presence.hold_target(max(seconds, motion.Timing.GUIDE_HOLD),
+                                 then=self.clear_target, until_quiet=True)
+            self.wake()
+
+        # indicating=False: he is reading it, not pointing at it, so he keeps
+        # the reading ring rather than taking the guide's look.
+        presence.approach_target(stand, on_ready=ready, indicating=False,
+                                 facing=_appkit(x + w / 2.0, y + h / 2.0))
+        self.wake()
+
+    def reading_failed(self) -> None:
+        """
+        He could not read what he was asked to read.
+
+        No movement and no outline: there is nothing to stand beside, and
+        going anywhere would be the invention this build exists to avoid.
+        The cue is the one `no_target` already uses; the sentence saying
+        which kind of failure it was goes to the surface, not here.
+        """
+        self.no_target()
 
     def approach_region(self, x: float, y: float, w: float, h: float,
                         generation: Optional[int] = None) -> None:

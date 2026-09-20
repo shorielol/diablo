@@ -593,6 +593,23 @@ def _label_for(span, fragments_in_span) -> str:
     return "main area"
 
 
+def _extent(fragments):
+    """
+    The box a group of fragments occupies, normalised inside the capture.
+
+    The fragments already carry their boxes; this only takes the outside of
+    them. A region knew where it was across the window (`span`) but not how
+    far down it ran, so nothing above could outline it or stand beside it.
+    (u0, v0, u1, v1) — left, top, right, bottom, each 0..1.
+    """
+    if not fragments:
+        return None
+    return (min(f["left"] for f in fragments),
+            min(f["top"] for f in fragments),
+            max(f["right"] for f in fragments),
+            max(f["top"] + f["height"] for f in fragments))
+
+
 def ocr_regions(path: str, window: Optional[dict] = None):
     """OCR one window into labelled, spatially coherent regions."""
     fragments = _ocr_fragments(path, window)
@@ -618,6 +635,7 @@ def ocr_regions(path: str, window: Optional[dict] = None):
         regions.append({
             "label": _label_for(span, inside),
             "span": span,
+            "bounds": _extent(inside),
             "lines": lines,
             "headings": headings[:6],
             "chars": sum(len(line) for line in lines),

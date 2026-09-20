@@ -43,10 +43,34 @@ export function isLong(text) {
   return lines.filter(l => l.trim()).length >= 6;
 }
 
+/* Looking at the screen, as the surface sees it.
+
+   Every field here was produced by something that actually happened in the
+   runtime — a capture asked for, text grouped, a read that failed — and the
+   sentence was written by skills/reading.py, which the spoken side uses too.
+   The page decides only where it goes. Nothing here is on a timer, so a read
+   that hangs leaves the last true line up instead of a reassuring one. */
+export const READING_PHASES = ['looking', 'reading', 'understood'];
+
+export function screenStatus(screen) {
+  if (!screen || !screen.phase) return null;
+  if (screen.phase === 'failed') {
+    return { failed: true, line: screen.line || "I couldn't read the screen.", source: '' };
+  }
+  if (screen.phase === 'done') return { failed: false, line: '', source: screen.source || '' };
+  if (!READING_PHASES.includes(screen.phase)) return null;
+  return { failed: false, line: screen.line || '', source: '' };
+}
+
 /* What kind of moment this is. Order is priority. */
-export function kindOf({ state, turns, jobs, activeTool, flash } = {}) {
+export function kindOf({ state, turns, jobs, activeTool, flash, screen } = {}) {
+  const looking = screenStatus(screen);
+  if (looking && looking.failed) return 'error';
   if (state === 'error') return 'error';
   if (flash && flash.kind === 'failed') return 'error';
+  // Reading outranks "thinking": he is doing something more specific than
+  // thinking, and saying which window makes that believable.
+  if (looking && looking.line) return 'reading';
   const running = live(jobs);
   if (running.some(j => (j.parts || []).length > 1)) return 'multistep';
   if (state === 'listening') return 'listening';

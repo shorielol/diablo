@@ -125,7 +125,40 @@ def _bridge_presence(voice_bridge) -> None:
     app_shell.notify() returns False and everything behaves as it did.
     """
     import app_shell
-    from skills import pointing, screen_context, server, voice
+    from skills import pointing, reading, screen_context, server, voice
+
+    def _generation():
+        try:
+            return voice.current_interaction_generation()
+        except Exception:
+            return None
+
+    def _screen(phase: str, **data) -> None:
+        """
+        Tell the window what the screen work is doing, as it happens.
+
+        The same events the orb already gets, sent to the other surface that
+        needs them. The page keeps no clock of its own for this: every line it
+        shows came from one of these, so a read that stalls shows the last
+        true thing rather than a convincing animation.
+
+        The wording is worked out here rather than in the page, so the spoken
+        side and the written side cannot drift into describing the same
+        moment two different ways.
+        """
+        try:
+            app = str(data.get("app") or "")
+            label = str(data.get("label") or "")
+            if phase == reading.FAILED:
+                line = str(data.get("message") or "")
+                source = ""
+            else:
+                line = reading.status_for(phase, app, label)
+                source = (reading.source_line(app, str(data.get("title") or ""), label)
+                          if phase == reading.DONE else "")
+            server.push("screen", phase=phase, line=line, source=source, **data)
+        except Exception:
+            pass
 
     # Reading the screen: a span from the first call in to the last call out.
     # The notification is sent under the lock so the depths reach the shell
@@ -135,7 +168,7 @@ def _bridge_presence(voice_bridge) -> None:
     lock = threading.Lock()
 
     def span(fn):
-        def reading(*args, **kwargs):
+        def spanned(*args, **kwargs):
             with lock:
                 depth[0] += 1
                 app_shell.notify("reading", depth=depth[0])
@@ -145,7 +178,7 @@ def _bridge_presence(voice_bridge) -> None:
                 with lock:
                     depth[0] -= 1
                     app_shell.notify("reading", depth=depth[0])
-        return reading
+        return spanned
 
     for name in ("capture_screen", "capture_window", "look", "look_everything",
                  "describe_visually", "structured"):
@@ -159,16 +192,48 @@ def _bridge_presence(voice_bridge) -> None:
     # many windows reports nothing, so he never darts from window to window.
     local = threading.local()
 
+    def _ended(result) -> None:
+        """
+        How the read finished, in the terms the surface shows.
+
+        Read off what perception returned rather than off whether an
+        exception escaped: `look` and `structured` report "could not capture
+        this window" and "no readable text" as ordinary values, and those two
+        are exactly the distinction §12 asks the interface to keep. A read
+        that raised has no result at all, which is the same situation as
+        having nothing legible and says so.
+        """
+        window = getattr(local, "window", None) or {}
+        app = str(window.get("app") or "")
+        outcome = reading.outcome_of(result)
+        if outcome == reading.OK:
+            _screen(reading.DONE, app=app, title=str(window.get("title") or ""),
+                    label=getattr(local, "label", "") or "")
+            return
+        # Nowhere to stand and nothing to outline: he stays put, and the
+        # surface carries the sentence. No movement invented from a failure.
+        app_shell.notify("unreadable")
+        _screen(reading.FAILED, app=app, outcome=outcome,
+                message=reading.message_for(outcome, app))
+
     def reading_one(fn):
         def one(*args, **kwargs):
             outer = not getattr(local, "open", False)
             if outer:
                 local.open, local.reported = True, False
+                local.window, local.label = None, ""
+                _screen(reading.LOOKING)
+            result = None
             try:
-                return fn(*args, **kwargs)
+                result = fn(*args, **kwargs)
+                return result
             finally:
                 if outer:
                     local.open = False
+                    try:
+                        _ended(result)
+                    except Exception:
+                        pass
         return one
 
     for name in ("look", "describe_visually", "structured"):
@@ -184,18 +249,48 @@ def _bridge_presence(voice_bridge) -> None:
             try:
                 window = screen_context.window_by_id(window_id)
                 if window and window.get("width") and window.get("height"):
-                    try:
-                        generation = voice.current_interaction_generation()
-                    except Exception:
-                        generation = None
+                    # Kept for the rest of this read: which window the text
+                    # came out of is what turns a normalised box into a place
+                    # on the desktop, and it is resolved once, here.
+                    local.window = window
                     app_shell.notify("region", x=float(window["x"]), y=float(window["y"]),
                                      w=float(window["width"]), h=float(window["height"]),
-                                     generation=generation)
+                                     generation=_generation())
+                    _screen(reading.READING, app=str(window.get("app") or ""),
+                            title=str(window.get("title") or ""))
             except Exception:
                 pass
         return captured(window_id, *args, **kwargs)
 
     screen_context.capture_window = capture_window
+
+    # What he is reading, once it is known — which is only after the text has
+    # been grouped, never before. The window notified above says "this is the
+    # window I am looking at"; this narrows it to the part that carries the
+    # content, so a full-screen document stops producing no visible focus at
+    # all. `focus_of` returns nothing when the page has no single subject,
+    # and nothing is then what happens: he stays where he is.
+    grouped = screen_context.ocr_regions
+
+    def ocr_regions(path, window=None, *args, **kwargs):
+        result = grouped(path, window, *args, **kwargs)
+        if not getattr(local, "open", False) or not isinstance(result, list):
+            return result
+        known = window or getattr(local, "window", None)
+        try:
+            found = reading.focus_of(result, known) if known else None
+            if found is not None and reading.still_shows(known):
+                local.label = found.label
+                x, y, w, h = found.rect
+                app_shell.notify("focus", x=x, y=y, w=w, h=h,
+                                 label=found.label, generation=_generation())
+                _screen(reading.UNDERSTOOD, app=found.app, title=found.title,
+                        label=found.label)
+        except Exception:
+            pass
+        return result
+
+    screen_context.ocr_regions = ocr_regions
 
     # A question asked and waiting for the next press to answer it.
     asked = voice_bridge._answer_by_press

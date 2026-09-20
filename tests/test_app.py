@@ -125,7 +125,9 @@ def run():
     r.head("The page and its assets")
     for path, needle in [
         ("/", b"<div id=\"root\">"),
-        ("/static/styles.css", b"--crimson"),
+        # --crimson until GUI-4 retired the accent from the interface; the
+        # ground colour is the token that has outlived every palette.
+        ("/static/styles.css", b"--bg:"),
         ("/static/app.js", b"function App()"),
         ("/static/mascot.js", b"export function mascot"),
         ("/static/vendor/react.js", b"react.production.min.js"),

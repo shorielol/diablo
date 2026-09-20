@@ -14,7 +14,7 @@
 
 import { mascot, AGENTS, byId, index as indexRoster, agent as pickAgent } from './mascot.js';
 import { presentation, lastExchange, reportLevel, reportEngaged, requestClose,
-         requestDismiss, forgetReports, INTERACTION, WORK,
+         requestDismiss, forgetReports, screenStatus, INTERACTION, WORK,
          INTERACTION_MAX_HEIGHT } from './surface.js';
 
 const { createElement, useState, useEffect, useRef, useCallback, useMemo, memo } = React;
@@ -302,10 +302,16 @@ const toolWords = tool => String(tool || '').replace(/[_-]+/g, ' ').trim();
 
 /* One line for the moment, when the moment needs one. Never colour alone:
    the words carry it, and red is kept for the one line that is a fault. */
-export function statusLine(kind, tool, flash, running) {
+export function statusLine(kind, tool, flash, running, screen) {
+  const looking = screenStatus(screen);
+  // What he is reading, when he is reading, in preference to anything
+  // generic: "Reading Preview…" is the point of this build, and the sentence
+  // came from the runtime rather than from this file.
+  if (looking && looking.line) return looking.line;
   switch (kind) {
     case 'listening': return 'Listening…';
     case 'thinking':  return 'Thinking…';
+    case 'reading':   return 'Reading your screen…';
     case 'status':    return tool ? `Using ${toolWords(tool)}…`
                                   : running ? `Working on ${running === 1 ? 'it' : `${running} things`}…` : 'Working…';
     case 'multistep': return `${running} things running`;
@@ -317,14 +323,17 @@ export function statusLine(kind, tool, flash, running) {
 }
 
 /* The compact surface's body: the last exchange and the moment it is in. */
-const Exchange = memo(({ ask, answer, kind, line }) => {
+const Exchange = memo(({ ask, answer, kind, line, source }) => {
   if (kind === 'empty') return null;
-  const showAnswer = answer && kind !== 'thinking' && kind !== 'listening';
+  const showAnswer = answer && kind !== 'thinking' && kind !== 'listening'
+                            && kind !== 'reading';
   return html`
     <section class="exchange">
       ${ask ? html`<p class="ask"><span class="sr">You: </span>${ask}</p>` : null}
       ${showAnswer
-        ? html`<div class="answer"><span class="sr">Diablo: </span><p class="text">${answer}</p></div>`
+        ? html`<div class="answer"><span class="sr">Diablo: </span><p class="text">${answer}</p>
+            ${source ? html`<p class="source">${source}</p>` : null}
+          </div>`
         : null}
       ${line ? html`<p class="line" data-kind=${kind} role="status" aria-live="polite">${line}</p>` : null}
     </section>`;
@@ -402,7 +411,7 @@ function Command({ agent, state, kind, target, speaking, onSend, onInterrupt, on
    The first row is the window's title row: it is where the surface can be
    dragged from, and it holds the two ways out of it — larger, or more. */
 
-function Interaction({ exchange, kind, line, permissions, onPermissions, menu,
+function Interaction({ exchange, kind, line, source, permissions, onPermissions, menu,
                        onExpand, command, bodyRef }) {
   return html`
     <div class="stage" data-level="interaction">
@@ -412,7 +421,8 @@ function Interaction({ exchange, kind, line, permissions, onPermissions, menu,
         ${menu}`} />
       <div class="body" ref=${bodyRef}>
         <${Needs} perms=${permissions || {}} onPermissions=${onPermissions} />
-        <${Exchange} ask=${exchange.ask} answer=${exchange.answer} kind=${kind} line=${line} />
+        <${Exchange} ask=${exchange.ask} answer=${exchange.answer} kind=${kind}
+                     line=${line} source=${source} />
       </div>
       ${command}
     </div>`;
@@ -424,7 +434,7 @@ function Interaction({ exchange, kind, line, permissions, onPermissions, menu,
    brings it back to one exchange is the first one in its title row. */
 
 function Work({ turns, agent, jobs, liveAgents, roster, permissions, onPermissions,
-               menu, onCollapse, onReset, onHome, line, kind, command }) {
+               menu, onCollapse, onReset, onHome, line, source, kind, command }) {
   const endRef = useRef(null);
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [turns.length]);
 
@@ -492,6 +502,7 @@ function Work({ turns, agent, jobs, liveAgents, roster, permissions, onPermissio
             <div class="thread">
               ${turns.map((t, i) => html`
                 <${Turn} key=${i} role=${t.role} content=${t.content} />`)}
+              ${source ? html`<p class="source">${source}</p>` : null}
               ${line && kind !== 'multistep'
                 ? html`<p class="line" data-kind=${kind} role="status" aria-live="polite">${line}</p>`
                 : null}
@@ -850,6 +861,10 @@ function App() {
   const [pinned, setPinned] = useState(null);
   const [overflow, setOverflow] = useState(false);
   const [flash, setFlash] = useState(null);
+  // The screen work, as the runtime reports it. Null between turns, so a
+  // question that never touched the screen cannot inherit the last one's
+  // "From Preview — …" line.
+  const [screen, setScreen] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [drafting, setDrafting] = useState(false);
@@ -885,8 +900,15 @@ function App() {
         if (payload.event === 'state_changed') {
           setState(s => ({ ...s, state: payload.new_state }));
           if (payload.new_state !== 'processing') setActiveTool(null);
+          // A turn beginning clears what the last one read. Everything the
+          // screen line says after this came from this turn.
+          if (payload.new_state === 'processing') setScreen(null);
           // A finished turn is the cheapest moment to pick up everything else.
           if (payload.new_state === 'idle') refresh();
+        } else if (payload.event === 'screen') {
+          // Looking, reading, what was understood, or why it failed. Each
+          // one is a thing that happened; the page adds no phases of its own.
+          setScreen(payload);
         } else if (payload.event === 'tool') {
           setActiveTool(payload.tool);
         } else if (payload.event === 'agent_started') {
@@ -953,12 +975,16 @@ function App() {
   /* ─── Which surface, and what it says ─────────────────────────────────── */
 
   const { level, kind } = presentation({ view, picked, pinned, overflow,
-                                         state: state.state, turns, jobs, activeTool, flash });
+                                         state: state.state, turns, jobs, activeTool,
+                                         flash, screen });
   const exchange = useMemo(() => {
     const ex = lastExchange(turns);
     return kind === 'success' && !ex.answer && flash?.text ? { ...ex, answer: flash.text } : ex;
   }, [turns, kind, flash]);
-  const line = statusLine(kind, activeTool, flash, running);
+  const line = statusLine(kind, activeTool, flash, running, screen);
+  // Where the answer came from, shown only once there is an answer to
+  // attach it to. Provenance the shell watched happen, not a citation.
+  const source = (screenStatus(screen) || {}).source || '';
 
   // A new exchange starts from the compact surface again.
   useEffect(() => { setOverflow(false); }, [exchange.ask]);
@@ -1071,7 +1097,7 @@ function App() {
   let main;
   if (level === INTERACTION) {
     main = html`
-      <${Interaction} exchange=${exchange} kind=${kind} line=${line}
+      <${Interaction} exchange=${exchange} kind=${kind} line=${line} source=${source}
          permissions=${state.permissions} onPermissions=${refresh}
          menu=${menu} onExpand=${() => setPinned(WORK)} command=${command}
          bodyRef=${bodyRef} />`;
@@ -1080,7 +1106,8 @@ function App() {
       <${Work} turns=${turns} agent=${agent} jobs=${jobs} liveAgents=${liveAgents}
          roster=${roster} permissions=${state.permissions} onPermissions=${refresh}
          menu=${menu} onCollapse=${() => setPinned(INTERACTION)} onReset=${reset}
-         onHome=${() => onPick(null)} line=${line} kind=${kind} command=${command} />`;
+         onHome=${() => onPick(null)} line=${line} source=${source} kind=${kind}
+         command=${command} />`;
   } else {
     main = html`
       <${Section} title=${SECTION_TITLES[view] || 'Tasks'} setView=${setView} menu=${menu}>

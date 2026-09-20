@@ -487,6 +487,20 @@ kbd {
 }
 .line[data-kind="error"]::before { background: var(--error); }
 
+/* Where an answer was read from: "From Preview — worksheet.pdf". Provenance,
+   so it sits under the answer and below it in weight — the answer is the
+   thing, this only says what it came off. Never a URL, never a quotation,
+   never anything the user would have to decode. */
+.source {
+  margin-top: var(--s2); font-size: var(--fs-label); line-height: var(--lh-tight);
+  color: var(--faint);
+}
+.source::before {
+  content: ''; display: inline-block; width: 10px; height: 1px;
+  margin-right: var(--s2); vertical-align: 4px; background: currentColor;
+  opacity: 0.6;
+}
+
 /* Nothing said yet, on the larger surface: one hint at the foot. */
 .blank {
   flex: 1; display: flex; flex-direction: column; justify-content: flex-end;
