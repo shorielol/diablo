@@ -56,9 +56,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from skills import guidance  # noqa: E402
 
-# The crimson. One accent, used for the ring, the connector and his streak,
-# and for nothing else.
-ACCENT = (0.85, 0.16, 0.18)
+# No colour of its own. Pointing is not a warning, so the ring, the leader and
+# a region's outline are drawn in the ink Diablo's mark and the caption use:
+# light on dark content, dark on light. Each stroke sits on a keyline of the
+# opposite value, so it holds on any surface, including the ones nobody
+# measured (the shell does not pass --on-light). Red means an error, and the
+# overlay never shows one.
+# Measured on light content with light ink (the shell's case): at 0.45 the
+# ring faded to a grey hairline and the target stopped being the focus. On
+# contrasting content the keyline disappears into the surface either way.
+KEYLINE = 2.0          # how much wider the underlay is than the stroke it carries
+KEYLINE_ALPHA = 0.75   # of the stroke's own alpha
 
 
 def main() -> int:
@@ -115,9 +123,19 @@ def main() -> int:
     # The flip is against the PRIMARY display, not the display the point is on.
     primary_height = screens[0].frame().size.height
 
-    def _rgb(rgb, alpha):
-        return NSColor.colorWithCalibratedRed_green_blue_alpha_(
-            rgb[0], rgb[1], rgb[2], alpha)
+    def tones(view):
+        """(ink, paper) as greys. The caption's pair, so ring and caption agree."""
+        return (0.08, 0.98) if view.on_light else (0.97, 0.08)
+
+    def keyed_stroke(path, width, alpha, view):
+        """Stroke a path in the ink, over a slightly wider keyline of the paper."""
+        ink, paper = tones(view)
+        path.setLineWidth_(width + KEYLINE)
+        NSColor.colorWithCalibratedWhite_alpha_(paper, alpha * KEYLINE_ALPHA).set()
+        path.stroke()
+        path.setLineWidth_(width)
+        NSColor.colorWithCalibratedWhite_alpha_(ink, alpha).set()
+        path.stroke()
 
     # The drawing helpers are plain functions, not methods.
     #
@@ -149,9 +167,7 @@ def main() -> int:
             box = NSMakeRect(cx - spot.ring_w, cy - spot.ring_h,
                              spot.ring_w * 2, spot.ring_h * 2)
             outline = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(box, 8, 8)
-            _rgb(ACCENT, 0.85 * view.opacity).set()
-            outline.setLineWidth_(1.8)
-            outline.stroke()
+            keyed_stroke(outline, 1.8, 0.85 * view.opacity, view)
             return
         radius = guidance.RING
 
@@ -159,27 +175,18 @@ def main() -> int:
         grow = radius + 2.0 + spread * 16.0
         fade = (1.0 - spread) * 0.42 * view.opacity
         if fade > 0.01:
-            _rgb(ACCENT, fade).set()
+            # The pulse is the quiet part: ink alone, no keyline.
+            NSColor.colorWithCalibratedWhite_alpha_(tones(view)[0], fade).set()
             pulse = NSBezierPath.bezierPathWithOvalInRect_(
                 NSMakeRect(cx - grow, cy - grow, grow * 2, grow * 2))
             pulse.setLineWidth_(1.6)
             pulse.stroke()
 
-        _rgb(ACCENT, 0.95 * view.opacity).set()
+        # The keyline under the ring is what lets it survive landing on a
+        # surface its own value.
         ring = NSBezierPath.bezierPathWithOvalInRect_(
             NSMakeRect(cx - radius, cy - radius, radius * 2, radius * 2))
-        ring.setLineWidth_(2.2)
-        ring.stroke()
-
-        # A hairline of the opposite value just inside it, so the ring survives
-        # landing on a surface its own colour.
-        NSColor.colorWithCalibratedWhite_alpha_(
-            0.0 if view.on_light else 1.0, 0.22 * view.opacity).set()
-        inner = NSBezierPath.bezierPathWithOvalInRect_(
-            NSMakeRect(cx - radius + 2, cy - radius + 2,
-                       (radius - 2) * 2, (radius - 2) * 2))
-        inner.setLineWidth_(1.0)
-        inner.stroke()
+        keyed_stroke(ring, 2.2, 0.95 * view.opacity, view)
 
     def draw_connector(view, start, end):
         """
@@ -219,13 +226,11 @@ def main() -> int:
             width = 2.8 - 1.7 * along
             if alpha <= 0.02:
                 continue
-            _rgb(ACCENT, alpha).set()
             piece = NSBezierPath.bezierPath()
             piece.moveToPoint_(NSPoint(sx + ux * t0, sy + uy * t0))
             piece.lineToPoint_(NSPoint(sx + ux * t1, sy + uy * t1))
-            piece.setLineWidth_(width)
             piece.setLineCapStyle_(1)
-            piece.stroke()
+            keyed_stroke(piece, width, alpha, view)
 
     def draw_marker(view, centre):
         """
@@ -275,8 +280,7 @@ def main() -> int:
         One weight, one size. The step counter is the only secondary thing and
         it is smaller and quieter rather than a different colour.
         """
-        ink = 0.08 if view.on_light else 0.97
-        paper = 0.98 if view.on_light else 0.08
+        ink, paper = tones(view)
         fade = view.opacity * min(1.0, max(0.0, (view.travel - 0.55) / 0.25))
         if fade <= 0.01:
             return

@@ -238,6 +238,12 @@ def run():
         overlay = open(os.path.join(HOME, "skills", "overlay.py")).read()
         r.check("the guidance marker draws the mark",
                 "draw_signal" in overlay and "draw_head" not in overlay)
+        r.check("pointing is not an error: the overlay has no red",
+                "ACCENT" not in overlay and "systemRedColor" not in overlay
+                and "colorWithCalibratedRed" not in overlay)
+        r.check("its strokes carry a keyline, so they hold on light and dark content",
+                "keyed_stroke(ring" in overlay and "keyed_stroke(piece" in overlay
+                and "keyed_stroke(outline" in overlay)
     with guard(r, "the window"):
         mascot = open(os.path.join(HOME, "app", "mascot.js")).read()
         r.check("the panel's mark is two strokes, no face",
