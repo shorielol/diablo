@@ -79,6 +79,8 @@ from WebKit import WKWebView, WKWebViewConfiguration  # noqa: E402
 from skills import make_icon  # noqa: E402
 # Every moving thing is driven by one motion system; the shell only draws it.
 from skills import motion  # noqa: E402
+# Where the conversation surface goes and how big it is at each level.
+from skills import surface  # noqa: E402
 
 
 # ─── Push to talk ────────────────────────────────────────────────────────────
@@ -383,123 +385,222 @@ def _contains(frame, point):
 
 # ─── The panel ───────────────────────────────────────────────────────────────
 
+class _SurfaceBridge(NSObject):
+    """
+    What the page tells the shell: which level it is at, how tall its
+    content is, whether someone is using it, and when it is finished with.
+    WebKit delivers these on the main thread; the panel checks their order.
+    """
+
+    def initWithPanel_(self, panel):
+        self = objc.super(_SurfaceBridge, self).init()
+        if self is None:
+            return None
+        self.panel = panel
+        return self
+
+    def userContentController_didReceiveScriptMessage_(self, controller, message):
+        try:
+            body = message.body()
+            report = {str(k): body[k] for k in body.keys()} if hasattr(body, "keys") else {}
+            self.panel.report(report)
+        except Exception:
+            traceback.print_exc()
+
+
+class _SurfaceDelegate(NSObject):
+    """The window's own events: a person resizing, moving or closing it."""
+
+    def initWithPanel_(self, panel):
+        self = objc.super(_SurfaceDelegate, self).init()
+        if self is None:
+            return None
+        self.panel = panel
+        return self
+
+    def windowShouldClose_(self, sender):
+        # The red button folds it back into him like every other way out,
+        # rather than making it vanish.
+        self.panel.close()
+        return False
+
+    def windowWillStartLiveResize_(self, note):
+        self.panel.live = True
+
+    def windowDidEndLiveResize_(self, note):
+        self.panel.live = False
+        self.panel.resized_by_hand()
+
+    def windowDidMove_(self, note):
+        self.panel.moved()
+
+
 class Panel:
     """
-    The full window. Built the first time it is opened, and not before.
+    Diablo's conversation surface. Built the first time it is needed, and
+    not before: until then there is no web view and no 33 MB.
 
-    That laziness is the point of the whole split: until you press the menu bar
-    icon there is no web view and no 33 MB.
+    It is one object at three sizes (see skills/surface.py): nothing but
+    the orb; a compact surface as tall as one exchange; a larger work
+    surface when the content needs it. The page decides which, from what it
+    is showing, and reports it; the geometry decides what that means on this
+    screen; the motion system moves between them.
 
-    It opens out of the orb and closes back into it: it sits directly above
-    him, and on opening it rises the last few points out of him while it
-    fades in; on closing it sinks back and fades, faster. Both are driven by
-    the same motion system as everything else, and a close that is overtaken
-    by a reopen never hides the window.
+    It comes out of the orb and folds back into him. Its bottom-right corner
+    is anchored just above him and never moves on its own, so growing into
+    the work surface and shrinking back both happen away from him, from the
+    corner he is at. Opening, it rises the last few points out of him, grows
+    from that corner and fades in; closing is the same, reversed and faster.
+    A close overtaken by a reopen never hides the window.
     """
 
-    # How far the window travels as it opens: enough to read as coming out
-    # of the orb below it, not so far that it reads as sliding in.
+    # How far it travels and grows as it opens: enough to read as coming out
+    # of the orb, not so much that it reads as sliding or zooming in.
     RISE = 14.0
+    GROW = 0.04
 
     def __init__(self, url: str, presence=None, wake=None):
         self.url = url
         self.window = None
         self.webview = None
+        self.container = None
         self.presence = presence
         self.wake = wake or (lambda: None)
-        self.rest = None          # the window's origin when fully open
         self.closing = False
+        self.level = surface.INTERACTION
+        self.content_height = surface.INTERACTION_MIN_HEIGHT
+        self.last_seq = 0
+        self.chosen_work = None     # the size someone dragged the work surface to
+        self.detached = None        # the corner someone dragged it to, instead of his
+        self.live = False           # a person is resizing it right now
+        self.placing = False        # the frame change in progress is ours
+        self.implicit = False       # opened by him for a spoken turn, not by you
+        self.engaged = False        # someone is reading, hovering or typing in it
+        self._dwell = 0             # owner token of the pending fold-away
 
-    # The size it opens at.
-    #
-    # It opened at 1040x680 and centred, which is a window you go TO. Almost
-    # every use of this surface is one sentence and one reply, and a centred
-    # window two-thirds the width of the screen for that put a dashboard in
-    # front of whatever was being worked on.
-    #
-    # 392 is wide enough for a sentence and a reply at a comfortable measure
-    # and narrow enough to sit beside an editor rather than over it. The rail,
-    # the trace and the settings are all still there — the stylesheet brings
-    # the rail back above 720 points, so dragging the window wider restores
-    # the old layout exactly. Nothing was removed; it simply is not what you
-    # get for asking one question.
-    COMPACT = (392.0, 560.0)
-
+    # ── building ─────────────────────────────────────────────────────────
     def _build(self):
-        frame = NSMakeRect(0, 0, *Panel.COMPACT)
+        width, height = surface.INTERACTION_WIDTH, surface.INTERACTION_MIN_HEIGHT
+        frame = NSMakeRect(0, 0, width, height)
         style = (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
-                 | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
-                 | NSWindowStyleMaskFullSizeContentView)
+                 | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskFullSizeContentView)
         self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             frame, style, NSBackingStoreBuffered, False)
         self.window.setTitle_("Diablo")
         self.window.setTitlebarAppearsTransparent_(True)
         self.window.setTitleVisibility_(NSWindowTitleHidden)
-        self.window.setBackgroundColor_(_colour((0.043, 0.043, 0.051), 1.0))
-        self.window.setMinSize_(NSMakeSize(340, 360))
-        # Released only by us: closing it with the red button hides it, and
-        # the next open reuses the same web view.
+        # The system's window colour, so light and dark follow the Mac; the
+        # page paints over it with the same values once it has loaded.
+        self.window.setBackgroundColor_(NSColor.windowBackgroundColor())
+        # Released only by us: closing hides it, and the next open reuses
+        # the same web view.
         self.window.setReleasedWhenClosed_(False)
-        self._anchor()
+        self.delegate = _SurfaceDelegate.alloc().initWithPanel_(self)
+        self.window.setDelegate_(self.delegate)
 
         config = WKWebViewConfiguration.alloc().init()
+        self.bridge = _SurfaceBridge.alloc().initWithPanel_(self)
+        config.userContentController().addScriptMessageHandler_name_(self.bridge, "surface")
+        # A layer-backed container holds the page, so the whole surface can
+        # grow out of his corner in the compositor without the page laying
+        # itself out again every frame.
+        self.container = NSView.alloc().initWithFrame_(frame)
+        self.container.setWantsLayer_(True)
         self.webview = WKWebView.alloc().initWithFrame_configuration_(frame, config)
         self.webview.setValue_forKey_(False, "drawsBackground")
-        self.window.setContentView_(self.webview)
+        self.webview.setAutoresizingMask_(2 | 16)          # width and height sizable
+        self.container.addSubview_(self.webview)
+        self.window.setContentView_(self.container)
+        self._chrome()
         self.webview.loadRequest_(
             NSURLRequest.requestWithURL_(NSURL.URLWithString_(self.url)))
 
-    def _anchor(self):
+    def _chrome(self):
         """
-        Open beside the orb, not in the middle of the screen.
+        The window's own controls follow the level. The compact surface is
+        part of him: no traffic lights, no resize handle, as tall as what is
+        in it. The work surface is a window you may arrange: all three
+        buttons, and it resizes within bounds for this screen.
+        """
+        if self.window is None:
+            return
+        work = self.level == surface.WORK
+        for button in (0, 1, 2):     # close, miniaturize, zoom
+            control = self.window.standardWindowButton_(button)
+            if control is not None:
+                control.setHidden_(not work)
+        mask = self.window.styleMask()
+        mask = (mask | NSWindowStyleMaskResizable) if work else (mask & ~NSWindowStyleMaskResizable)
+        self.window.setStyleMask_(mask)
+        if work:
+            low, high = surface.work_bounds(self._visible(), self._anchor())
+            self.window.setMinSize_(NSMakeSize(*low))
+            self.window.setMaxSize_(NSMakeSize(*high))
 
-        The expansion has to read as the presence growing into a surface. A
-        window that appears centred is an unrelated thing arriving; a window
-        that appears where Diablo already was is the same thing, larger. The
-        orb sits 18 points in from the bottom-right of whichever screen the
-        cursor is on, so the panel sits directly above it with the same inset,
-        and both share a right edge.
-        """
-        width, height = Panel.COMPACT
-        try:
-            mouse = NSEvent.mouseLocation()
-            screen = next((s for s in NSScreen.screens()
-                           if _contains(s.frame(), mouse)), NSScreen.mainScreen())
-            visible = screen.visibleFrame()
-            x = visible.origin.x + visible.size.width - width - 18
-            # Clear of the orb, which is CANVAS tall with an 18 point inset.
-            y = visible.origin.y + 18 + CANVAS + 10
-            # Never taller than the screen it is on.
-            if y + height > visible.origin.y + visible.size.height:
-                y = max(visible.origin.y + 18,
-                        visible.origin.y + visible.size.height - height - 18)
-            self.window.setFrameOrigin_(NSPoint(x, y))
-        except Exception:
-            self.window.center()
-        origin = self.window.frame().origin
-        self.rest = (origin.x, origin.y)
+    # ── where ────────────────────────────────────────────────────────────
+    def _screen(self):
+        home = self.presence.home if self.presence is not None else None
+        point = NSPoint(*home) if home else NSEvent.mouseLocation()
+        return next((s for s in NSScreen.screens() if _contains(s.frame(), point)),
+                    NSScreen.mainScreen())
+
+    def _visible(self):
+        v = self._screen().visibleFrame()
+        return (v.origin.x, v.origin.y, v.size.width, v.size.height)
+
+    def _anchor(self):
+        """His corner: just above the orb's home, or wherever it was dragged to."""
+        if self.detached is not None:
+            return self.detached
+        if self.presence is not None and self.presence.home:
+            return surface.anchor_for(self.presence.home, CANVAS)
+        v = self._visible()
+        return (v[0] + v[2] - surface.INSET, v[1] + surface.INSET + CANVAS + surface.GAP)
+
+    def _size(self):
+        return surface.size_for(self.level, self.content_height, self._visible(),
+                                self._anchor(), chosen=self.chosen_work)
+
+    # ── opening and closing ──────────────────────────────────────────────
+    def visible(self) -> bool:
+        return self.window is not None and self.window.isVisible() and not self.closing
 
     def toggle(self):
-        if self.window is None:
-            self._build()
-        if self.window.isVisible() and not self.closing:
+        if self.visible():
             self.close()
         else:
             self.open()
 
     def open(self):
+        """Opened by you: it takes the keyboard, and stays until you are done."""
+        self.present(activate=True, implicit=False)
+
+    def present(self, activate: bool = True, implicit: bool = False):
+        """
+        Bring the surface out of the orb. `activate=False` shows it without
+        taking the keyboard from whatever you are working in — how it appears
+        for a spoken turn, which you did not ask to type into.
+        """
         if self.window is None:
             self._build()
+        self._cancel_dwell()
+        showing = self.visible()
+        self.implicit = implicit and (not showing or self.implicit)
         self.closing = False
-        hidden = not self.window.isVisible()
-        if hidden:
-            self.apply(0.0)
+        if not self.window.isVisible():
+            self.detached = None
             if self.presence is not None:
-                # Closed some other way (the red button): start from closed,
-                # or the spring would think it is already open and never run.
+                # Closed some other way: start from closed, or the spring
+                # would think it is already open and never run.
                 self.presence.panel.jump(0.0)
-        self.window.makeKeyAndOrderFront_(None)
-        NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+                self.presence.size_panel(*self._size(), instant=True)
+            self._chrome()
+            self.apply(0.0)
+        if activate:
+            self.window.makeKeyAndOrderFront_(None)
+            NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+        else:
+            self.window.orderFrontRegardless()
         if self.presence is None:
             self.apply(1.0)
             return
@@ -509,13 +610,10 @@ class Panel:
     def close(self):
         if self.window is None or not self.window.isVisible():
             return
+        self._cancel_dwell()
         if self.presence is None:
             self.window.orderOut_(None)
             return
-        if self.presence.panel.at_rest():
-            # Fully open: wherever it has been dragged to is where it rests.
-            origin = self.window.frame().origin
-            self.rest = (origin.x, origin.y)
         self.closing = True
         self.presence.close_panel(on_done=self._closed)
         self.wake()
@@ -525,20 +623,152 @@ class Panel:
         # took ownership, and this completion was dropped.
         if not is_open and self.window is not None:
             self.closing = False
+            self.implicit = False
+            self.engaged = False
+            self.detached = None
             self.window.orderOut_(None)
+            # The page forgets any level it was holding for this opening.
+            self._script("window.diabloSurface && window.diabloSurface.closed()")
 
-    def apply(self, progress, surface=1.0):
+    # ── what the page reports ────────────────────────────────────────────
+    def report(self, message: Dict[str, Any]) -> None:
         """
-        One frame of opening or closing: 0 is inside the orb, 1 is open.
-        `surface` steps the panel back while Diablo is away at a target, so
-        the eye goes to him, not to a window in the corner.
+        One message from the page. Levels and heights arrive numbered and
+        only a newer one is used, so a late report from before the last
+        change can never shrink or grow the surface back.
         """
-        if self.window is None or self.rest is None:
+        if "engaged" in message:
+            self.engaged = bool(message.get("engaged"))
+            if self.engaged:
+                self.implicit = False
+                self._cancel_dwell()
+        if message.get("close"):
+            self.close()
+            return
+        if message.get("dismiss"):
+            self.dwell(motion.Timing.CONFIRM_DWELL)
+        seq = int(message.get("seq") or 0)
+        if not seq or not surface.accept(seq, self.last_seq):
+            return
+        self.last_seq = seq
+        level = message.get("level")
+        if level not in (surface.INTERACTION, surface.WORK):
+            return
+        changed = level != self.level
+        self.level = level
+        try:
+            self.content_height = float(message.get("height") or self.content_height)
+        except (TypeError, ValueError):
+            pass
+        if changed:
+            self._chrome()
+        if self.window is not None and self.window.isVisible() and self.presence is not None \
+                and not self.live:
+            self.presence.size_panel(*self._size())
+            self.wake()
+
+    # ── a person arranging it ────────────────────────────────────────────
+    def resized_by_hand(self):
+        """Dragged to a size: that is the work surface's size from now on."""
+        frame = self.window.frame()
+        if self.level == surface.WORK:
+            self.chosen_work = (frame.size.width, frame.size.height)
+        self._adopt(frame)
+
+    def moved(self):
+        """Dragged somewhere: it stays there, anchored at its own corner, until closed."""
+        if self.placing or self.live or self.window is None or not self.window.isVisible():
+            return
+        if self.presence is not None and not self.presence.panel.at_rest():
+            return
+        self._adopt(self.window.frame())
+
+    def _adopt(self, frame):
+        corner = (frame.origin.x + frame.size.width, frame.origin.y)
+        if abs(corner[0] - self._anchor()[0]) > 1 or abs(corner[1] - self._anchor()[1]) > 1:
+            self.detached = corner
+        if self.presence is not None:
+            self.presence.size_panel(frame.size.width, frame.size.height, instant=True)
+
+    # ── folding away by itself ───────────────────────────────────────────
+    def dwell(self, seconds: float) -> None:
+        """
+        Fold back into him after `seconds`, unless someone is using the
+        surface by then or anything newer happens. A token, not a sleep: a
+        later dwell, a present or a close makes this one void.
+        """
+        if not self.visible():
+            return
+        self._dwell += 1
+        token = self._dwell
+
+        def due(_timer):
+            if token == self._dwell and not self.engaged and self.visible():
+                self.close()
+        NSTimer.scheduledTimerWithTimeInterval_repeats_block_(float(seconds), False, due)
+
+    def _cancel_dwell(self):
+        self._dwell += 1
+
+    def turn_over(self) -> None:
+        """A spoken turn has finished. If he opened the surface for it, let it go."""
+        if self.implicit and self.visible():
+            self.dwell(motion.Timing.SURFACE_DWELL)
+
+    # ── drawing a frame ──────────────────────────────────────────────────
+    def frame(self) -> Optional[tuple]:
+        """Where it is right now, AppKit (x, y, w, h), or None when hidden."""
+        if not self.visible():
+            return None
+        f = self.window.frame()
+        return (f.origin.x, f.origin.y, f.size.width, f.size.height)
+
+    def _script(self, source: str) -> None:
+        if self.webview is not None:
+            try:
+                self.webview.evaluateJavaScript_completionHandler_(source, None)
+            except Exception:
+                pass
+
+    def apply(self, progress, surface_alpha=1.0, size=None):
+        """
+        One frame: `progress` 0 is inside the orb and 1 is open; `size` is
+        the surface's current size from the motion system; `surface_alpha`
+        steps it back while Diablo is away at a target, so the eye goes to
+        him, and all the way out when what he points at is under it.
+        """
+        if self.window is None or self.live:
             return
         progress = max(0.0, min(1.0, progress))
-        self.window.setAlphaValue_(progress * max(0.0, min(1.0, surface)))
-        self.window.setFrameOrigin_(
-            NSPoint(self.rest[0], self.rest[1] - (1.0 - progress) * Panel.RISE))
+        reduced = self.presence is not None and self.presence.reduced
+        if size is None or size[0] <= 0 or size[1] <= 0:
+            size = self._size()
+        x, y, w, h = surface.frame_for(size, self._anchor(), self._visible())
+        # Whole points: the last fraction of a spring's tail is invisible on
+        # screen and a fractional window frame is a blurred one.
+        x, y, w, h = round(x), round(y), round(w), round(h)
+        rise = 0.0 if reduced else (1.0 - progress) * Panel.RISE
+        self.placing = True
+        try:
+            self.window.setFrame_display_(NSMakeRect(x, y - rise, w, h), True)
+        finally:
+            self.placing = False
+        alpha = progress * max(0.0, min(1.0, surface_alpha))
+        self.window.setAlphaValue_(alpha)
+        # Out of the way means out of the way: an invisible surface must not
+        # catch the click meant for what he is pointing at.
+        self.window.setIgnoresMouseEvents_(alpha < 0.3)
+        self._grow(1.0 if reduced else 1.0 - Panel.GROW * (1.0 - progress), w)
+
+    def _grow(self, scale, width):
+        """Scale the surface about its bottom-right corner, his corner."""
+        layer = self.container.layer() if self.container is not None else None
+        if layer is None:
+            return
+        t = Quartz.CATransform3DMakeTranslation(width, 0.0, 0.0)
+        t = Quartz.CATransform3DScale(t, scale, scale, 1.0)
+        t = Quartz.CATransform3DTranslate(t, -width, 0.0, 0.0)
+        layer.setSublayerTransform_(t)
 
 
 def _status_icon():
@@ -811,11 +1041,25 @@ class Shell:
             event = payload.get("event")
             _log("event", event, payload.get("new_state", ""))
             if event == "state_changed":
-                self._apply_state(payload.get("new_state", "idle"))
+                state = payload.get("new_state", "idle")
+                self._apply_state(state)
+                if state == "idle":
+                    _on_main(self.panel.turn_over)
             elif event == "wake_detected":
                 self._apply_state("listening")
+            elif event == "transcript_ready":
+                # Something was said to him. The exchange comes out of the orb
+                # where it can be read, without taking the keyboard from
+                # whatever you were doing; typed turns already have it open.
+                _on_main(self._present_turn)
         except Exception:
             traceback.print_exc()
+
+    def _present_turn(self) -> None:
+        if not self.panel.visible():
+            self.panel.present(activate=False, implicit=True)
+        else:
+            self.panel._cancel_dwell()
 
     def _apply_state(self, state: str) -> None:
         _, words = STATE_LOOK.get(state, (GREY, state))
@@ -886,6 +1130,7 @@ class Shell:
             self.no_target()
             return
         presence = self.presence
+        presence.covering = self._under_surface(x, y, w, h)
         self.guide.hide()
         self.guide.prepare(x, y, label, w, h)
 
@@ -936,9 +1181,27 @@ class Shell:
             presence.hold_target(1.0, then=presence.return_home, until_quiet=True)
             self.wake()
 
+        presence.covering = self._under_surface(x, y, w, h)
         presence.approach_target(stand, on_ready=ready, indicating=False,
                                  facing=_appkit(x + w / 2.0, y + h / 2.0))
         self.wake()
+
+    def _under_surface(self, x: float, y: float, w: float = 0.0, h: float = 0.0) -> bool:
+        """
+        Does what he is about to refer to (Quartz, top-left) lie under the
+        open surface? Then the surface must get out of its way, not merely
+        step back: the point of going there is that you can see it.
+        """
+        panel = getattr(self, "panel", None)
+        frame = panel.frame() if panel is not None else None
+        if frame is None:
+            return False
+        fx, fy, fw, fh = frame
+        a, b = _appkit(x, y), _appkit(x + w, y + h)
+        if a is None or b is None:
+            return False
+        (left, top), (right, bottom) = a, b     # AppKit: top is the larger y
+        return not (right < fx or left > fx + fw or top < fy or bottom > fy + fh)
 
     def clear_target(self) -> None:
         """The indication has done its job: fade it, and go home."""
@@ -991,18 +1254,21 @@ class Shell:
             except Exception:
                 pass
 
-        panel_moving = not (presence.panel.at_rest() and presence.surface.at_rest())
+        panel_moving = not (presence.panel.at_rest() and presence.surface.at_rest()
+                            and presence.panel_w.at_rest() and presence.panel_h.at_rest())
         presence.step(interval)
         look = presence.look()
         self.pill.place(look)
         if panel_moving and self.panel.window is not None and self.panel.window.isVisible():
-            self.panel.apply(look.panel, look.surface)
+            self.panel.apply(look.panel, look.surface, look.panel_size)
         self.pill.view.setNeedsDisplay_(True)
 
-        # Travel and the panel at the display's full rate; loops alone at 60,
-        # which is plenty for a ring and half the work on a ProMotion panel.
+        # Travel, the panel and its resizing at the display's full rate; loops
+        # alone at 60, which is plenty for a ring and half the work on a
+        # ProMotion panel.
         fast = not (presence.position.at_rest() and presence.panel.at_rest()
-                    and presence.scale.at_rest())
+                    and presence.scale.at_rest() and presence.panel_w.at_rest()
+                    and presence.panel_h.at_rest())
         if fast != self._fast:
             self._fast = fast
             try:

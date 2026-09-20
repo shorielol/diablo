@@ -63,6 +63,12 @@ class Timing:
     MISSED = 0.50         # searched and found nothing: a warning, not a fault
     GUIDE_HOLD = 2.5      # the least time an indication stays up, to be read
     REDUCED_FADE = 0.16   # reduced motion: fade out, move, fade in
+    RESIZE = 0.30         # the surface growing into the work surface, or back
+    # A surface Diablo opened by himself (a spoken turn) folds back into him
+    # when the turn is over and nobody has touched it: long enough to read a
+    # sentence twice. "Done" is shorter, because there is less to read.
+    SURFACE_DWELL = 6.0
+    CONFIRM_DWELL = 2.5
 
 
 class Scale:
@@ -410,6 +416,7 @@ class Look:
     panel: float              # 0 closed … 1 open
     still: bool               # preparing: the thinking ring, not sweeping
     surface: float = 1.0      # the open panel's opacity multiplier
+    panel_size: Point = (0.0, 0.0)   # the surface's width and height, points
     radius: float = 0.30      # the front's distance from the source
     span: float = 52.0        # half the front, degrees
     luminosity: float = 0.90  # the mark's opacity
@@ -436,6 +443,15 @@ class Presence:
         self.alpha = Spring(1.0, Timing.REDUCED_FADE)
         self.panel = Spring(0.0, Timing.PANEL_OPEN)
         self.surface = Spring(1.0, Timing.LOOK)
+        # The surface's size. Two springs rather than a frame: it only ever
+        # grows from, and shrinks toward, the corner nearest him, and where
+        # that corner is belongs to the shell.
+        self.panel_w = Spring(0.0, Timing.RESIZE)
+        self.panel_h = Spring(0.0, Timing.RESIZE)
+        # Set by the shell when what he is going to point at lies under the
+        # open surface: then the surface steps all the way out of the way,
+        # not just back, until he is home again.
+        self.covering = False
         # The mark's own channels. Heading is an angle and always takes the
         # short way round; the orbit is advanced by time while thinking and
         # eases back to the nearest whole turn when thinking ends.
@@ -692,6 +708,25 @@ class Presence:
         self.panel.to(target, Timing.REDUCED_FADE if self.reduced else duration)
         return token
 
+    def size_panel(self, width: float, height: float, instant: bool = False) -> None:
+        """
+        The size the surface should be. It grows or shrinks there on the
+        same clock as everything else, and a new size mid-change retargets
+        from wherever it has got to.
+
+        Straight there, without animating, when the surface is not on screen
+        (nothing to watch), under reduced motion (a surface that changes size
+        on its own is exactly the movement that setting asks to lose), or
+        when asked.
+        """
+        closed = self.panel.value <= 0.0 and self.panel.target <= 0.0
+        if instant or closed or self.reduced or self.panel_w.value <= 0.0:
+            self.panel_w.jump(width)
+            self.panel_h.jump(height)
+        else:
+            self.panel_w.to(width, Timing.RESIZE)
+            self.panel_h.to(height, Timing.RESIZE)
+
     # ── deriving the look ────────────────────────────────────────────────
     def derive(self) -> Visual:
         """One visual state from all the facts. The order is the priority."""
@@ -760,7 +795,10 @@ class Presence:
             target = max(Scale.REST - Scale.REDUCED_LIMIT,
                          min(Scale.REST + Scale.REDUCED_LIMIT, target))
         self.scale.to(target, duration)
-        self.surface.to(1.0 if self.phase == HOME else SURFACE_AWAY, Timing.LOOK)
+        if self.phase == HOME:
+            self.covering = False
+        away = 0.0 if self.covering else SURFACE_AWAY
+        self.surface.to(1.0 if self.phase == HOME else away, Timing.LOOK)
 
         radius, span, lum = SIGNAL.get(visual, SIGNAL[Visual.IDLE])
         if self.runtime in DIM_RUNTIME:
@@ -816,6 +854,8 @@ class Presence:
 
         if self.panel.step(dt):
             self._fire(self._on_panel, self.panel_owner, self.panel.value >= 0.5)
+        self.panel_w.step(dt)
+        self.panel_h.step(dt)
 
     def turn_to(self, dx: float, dy: float) -> None:
         """Face a direction: pick a side, lean toward it. (0, 0) faces forward."""
@@ -892,7 +932,8 @@ class Presence:
             return True
         if not (self.position.at_rest() and self.scale.at_rest()
                 and self.alpha.at_rest() and self.panel.at_rest()
-                and self.surface.at_rest()):
+                and self.surface.at_rest() and self.panel_w.at_rest()
+                and self.panel_h.at_rest()):
             return True
         if not all(s.at_rest() for s in (self.sig_radius, self.sig_span, self.sig_lum,
                                          self.side, self.lean, self.sweep)):
@@ -931,6 +972,7 @@ class Presence:
             alpha=self.alpha.value, dim=self.runtime in DIM_RUNTIME,
             panel=self.panel.value, still=self.runtime == "preparing",
             surface=self.surface.value,
+            panel_size=(self.panel_w.value, self.panel_h.value),
             radius=self.sig_radius.value, span=self.sig_span.value,
             luminosity=self.sig_lum.value, side=self.side.value, lean=self.lean.value,
             turn=self.sweep.value * math.sin(self._sweep_phase) + self._scan(t),

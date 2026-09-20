@@ -13,6 +13,9 @@
 */
 
 import { mascot, AGENTS, byId, index as indexRoster, agent as pickAgent } from './mascot.js';
+import { presentation, lastExchange, reportLevel, reportEngaged, requestClose,
+         requestDismiss, forgetReports, INTERACTION, WORK,
+         INTERACTION_MAX_HEIGHT } from './surface.js';
 
 const { createElement, useState, useEffect, useRef, useCallback, useMemo, memo } = React;
 const html = htm.bind(createElement);
@@ -51,6 +54,9 @@ const ICONS = {
   plus:   'M12 5v14M5 12h14',
   back:   'M14.5 18 8.5 12l6-6',
   more:   'M5.5 12h.01M12 12h.01M18.5 12h.01',
+  // Two corners opening out, and closing back in: larger, and back to one exchange.
+  expand:   'M14 5h5v5M10 19H5v-5M19 5l-5.5 5.5M5 19l5.5-5.5',
+  collapse: 'M13.5 5.5v5h5M10.5 18.5v-5h-5M19 5l-5.5 5.5M5 19l5.5-5.5',
 };
 
 const Icon = memo(({ name, size = 16 }) => html`
@@ -75,25 +81,15 @@ const Mascot = memo(({ agent, size = 96, wave = true, crop = '' }) => {
       dangerouslySetInnerHTML=${{ __html: svg }} />`;
 });
 
-/* Every size he is drawn at, in one table. He is never drawn at any other
-   size, and never large: the orb on the desktop is the full-strength
-   presence, and in here he is the face at the head of the line you type
-   into. The stylesheet sizes the rings around these, not the drawings. */
+/* Every size a mark is drawn at in here, in one table, and never large: the
+   orb on the desktop is Diablo, and the surface comes out of him, so the
+   surface does not draw him again. The others' marks say who a piece of
+   work belongs to, and whom you are addressing. */
 const MASCOT = {
-  presence: 30,   // the command bar: who you are talking to, and their state
-  row: 28,        // a row in the rail
-  inline: 16,     // one line of work in flight
+  row: 28,        // a row in the task list
+  inline: 16,     // one line of work in flight; the head of the command line
   portrait: 44,   // the top of another agent's page
 };
-
-/* The face in its state ring. The ring is the state, by shape as well as
-   colour, the same language the orb uses; the word is spoken to screen
-   readers and shown as the field's placeholder, next to the face. */
-const Presence = memo(({ agent, state }) => html`
-  <span class="presence" data-state=${state || 'idle'}
-        title=${STATE_WORDS[state] || agent.name}>
-    <${Mascot} agent=${agent} size=${MASCOT.presence} wave=${false} crop="head" />
-  </span>`);
 
 /* ─── Chrome ─────────────────────────────────────────────────────────────── */
 
@@ -253,10 +249,6 @@ function Rail({ roster, jobs, liveAgents, picked, onPick, view, setView, state }
                when=${r.when} busy=${r.busy}
                active=${picked === r.pick && view === 'home'}
                onPick=${() => { setView('home'); onPick(r.pick); }} />`)}
-        ${shown.length === 1 && !query
-          ? html`<p class="railempty">Ask for something that takes a while and it
-                   will appear here while it runs.</p>`
-          : null}
       </div>
 
       <nav class="railfoot" aria-label="Sections">
@@ -267,26 +259,17 @@ function Rail({ roster, jobs, liveAgents, picked, onPick, view, setView, state }
     </aside>`;
 }
 
-/* ─── Talk ───────────────────────────────────────────────────────────────── */
+/* ─── Talk ───────────────────────────────────────────────────────────────────
+   No bubbles, no avatars, no names. What you asked is a quiet line, set like
+   the heading of what follows; what he said is the text under it. The orb
+   below the surface is who is speaking, so nothing in here needs to say it
+   again — except to screen readers, which are told in words. */
 
-/* His lines are plain text in his column; yours sit to the right on a quiet
-   surface. The speaker is said to screen readers only, because alignment
-   and surface already say it on screen. */
 const Turn = memo(({ role, content }) => html`
   <div class=${`turn ${role === 'user' ? 'you' : 'him'}`}>
     <span class="sr">${role === 'user' ? 'You:' : 'Diablo:'}</span>
     <p class="text">${content}</p>
   </div>`);
-
-/* ─── The stage ──────────────────────────────────────────────────────────────
-   A title row, whatever is running, the conversation, and the command bar.
-   In that order, and nothing else.
-
-   His face is at the foot, not the top. The window opens directly above the
-   orb, so the bottom edge is where Diablo already was; putting him at the
-   head of the line you type into keeps him in the same place he was before
-   the window opened, only larger. The title row is left to the window: the
-   traffic lights, the name, and a tool or two. */
 
 /* The window's own title row. Shares the row with the traffic lights. */
 const TopBar = memo(({ children, tools }) => html`
@@ -295,51 +278,88 @@ const TopBar = memo(({ children, tools }) => html`
     <div class="tools">${tools}</div>
   </header>`);
 
-/* Trace, Health and Settings, from the titlebar, when the window is too
-   narrow for the rail that normally lists them. A native disclosure rather
-   than a hand-rolled popover: it opens from the keyboard without any code
-   here. */
-function SectionMenu({ view, setView }) {
+/* Everything that is not the exchange itself, behind one control. A native
+   disclosure rather than a hand-rolled popover: it opens from the keyboard
+   without any code here. */
+function Menu({ items, onToggle }) {
   const ref = useRef(null);
-  const pick = useCallback((id) => {
-    if (ref.current) ref.current.open = false;
-    setView(view === id ? 'home' : id);
-  }, [view, setView]);
   return html`
-    <details class="menu" ref=${ref}>
-      <summary class="tool" title="Trace, health and settings"
-               aria-label="Trace, health and settings"><${Icon} name="more" /></summary>
-      <div class="menulist">
-        ${SECTIONS.map(([id, label]) => html`
-          <button key=${id} data-active=${view === id} aria-pressed=${view === id}
-                  onClick=${() => pick(id)}>${label}</button>`)}
+    <details class="menu" ref=${ref}
+             onToggle=${e => onToggle && onToggle(e.currentTarget.open)}>
+      <summary class="tool" title="More" aria-label="More"><${Icon} name="more" /></summary>
+      <div class="menulist" role="menu">
+        ${items.map(item => html`
+          <button key=${item.id} role="menuitem" data-active=${!!item.active}
+                  aria-pressed=${!!item.active}
+                  onClick=${() => { if (ref.current) ref.current.open = false; item.onPick(); }}>
+            ${item.label}</button>`)}
       </div>
     </details>`;
 }
 
-/* Nothing said yet. His first line, where his next one would appear, and
-   how to talk to him — once, in the one place it is useful. */
+/* A tool's name, said the way a person would. */
+const toolWords = tool => String(tool || '').replace(/[_-]+/g, ' ').trim();
+
+/* One line for the moment, when the moment needs one. Never colour alone:
+   the words carry it, and red is kept for the one line that is a fault. */
+export function statusLine(kind, tool, flash, running) {
+  switch (kind) {
+    case 'listening': return 'Listening…';
+    case 'thinking':  return 'Thinking…';
+    case 'status':    return tool ? `Using ${toolWords(tool)}…`
+                                  : running ? `Working on ${running === 1 ? 'it' : `${running} things`}…` : 'Working…';
+    case 'multistep': return `${running} things running`;
+    case 'error':     return flash?.kind === 'failed' ? "That didn't work."
+                                                      : 'Something went wrong. Try again, or open Health.';
+    case 'success':   return 'Done.';
+    default:          return '';
+  }
+}
+
+/* The compact surface's body: the last exchange and the moment it is in. */
+const Exchange = memo(({ ask, answer, kind, line }) => {
+  if (kind === 'empty') return null;
+  const showAnswer = answer && kind !== 'thinking' && kind !== 'listening';
+  return html`
+    <section class="exchange">
+      ${ask ? html`<p class="ask"><span class="sr">You: </span>${ask}</p>` : null}
+      ${showAnswer
+        ? html`<div class="answer"><span class="sr">Diablo: </span><p class="text">${answer}</p></div>`
+        : null}
+      ${line ? html`<p class="line" data-kind=${kind} role="status" aria-live="polite">${line}</p>` : null}
+    </section>`;
+});
+
+/* Nothing said yet, on the larger surface. One line, at the foot where his
+   next one would appear. The compact surface has not even this: the line
+   you type into says it. */
 const Empty = memo(() => html`
   <div class="blank">
-    <p class="lead">What are we doing?</p>
     <p class="hint">Hold <kbd>⌃</kbd> <kbd>⌥</kbd> anywhere to talk, or type below.</p>
   </div>`);
 
-/* The command bar. Whoever you are addressing, the line, and one action:
-   send, or stop while he is speaking. Enter sends and Shift+Enter is a new
+/* The command line. Diablo is the orb just below it, so it carries no face
+   of its own; addressing one of the others puts their mark at its head, the
+   one place identity is information. Enter sends and Shift+Enter is a new
    line; the opposite is always wrong and people have muscle memory for it. */
-function Command({ agent, state, target, speaking, onSend, onInterrupt }) {
+function Command({ agent, state, kind, target, speaking, onSend, onInterrupt, onDraft, autoFocus }) {
   const [draft, setDraft] = useState('');
   const areaRef = useRef(null);
-  const word = STATE_WORDS[state];
+  // The line says what he is doing while he is doing it; a fault is said
+  // calmly above it, not shouted from the field you type into.
+  const word = ['listening', 'processing', 'preparing', 'responding'].includes(state)
+    ? STATE_WORDS[state] : '';
+
+  useEffect(() => { if (autoFocus) areaRef.current?.focus(); }, [autoFocus]);
 
   const send = useCallback(() => {
     const text = draft.trim();
     if (!text) return;
     onSend(text, target);
     setDraft('');
+    onDraft && onDraft(false);
     if (areaRef.current) areaRef.current.style.height = 'auto';
-  }, [draft, onSend, target]);
+  }, [draft, onSend, target, onDraft]);
 
   const onKeyDown = useCallback((event) => {
     if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); }
@@ -347,50 +367,79 @@ function Command({ agent, state, target, speaking, onSend, onInterrupt }) {
 
   const grow = useCallback((event) => {
     setDraft(event.target.value);
+    onDraft && onDraft(!!event.target.value.trim());
     const el = event.target;
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 132) + 'px';
-  }, []);
+  }, [onDraft]);
 
-  const placeholder = word ? `${word}…`
-    : agent.id === 'diablo' ? 'Ask, or tell Diablo what to do'
-    : `Ask ${agent.name} something`;
+  const other = agent && agent.id !== 'diablo';
+  const placeholder = other ? `Ask ${agent.name} something`
+    : word ? `${word}…`
+    : kind === 'clarify' ? 'Answer Diablo'
+    : 'Ask, or hold ⌃⌥ to talk';
 
   return html`
     <div class="command">
-      <${Presence} agent=${agent} state=${state} />
-      <span class="sr" role="status" aria-atomic="true">${word ? `${agent.name}: ${word}` : ''}</span>
+      ${other ? html`<span class="to" title=${agent.name}>
+                       <${Mascot} agent=${agent} size=${MASCOT.inline} wave=${false} /></span>` : null}
+      <span class="sr" role="status" aria-atomic="true">${word ? `Diablo: ${word}` : ''}</span>
       <textarea ref=${areaRef} value=${draft} onInput=${grow} onKeyDown=${onKeyDown}
                 rows="1" placeholder=${placeholder}
-                aria-label=${`Message to ${agent.name}`} />
+                aria-label=${`Message to ${other ? agent.name : 'Diablo'}`} />
       ${speaking
         ? html`<button class="send" data-active="true" onClick=${onInterrupt}
                    title="Stop speaking" aria-label="Stop speaking">
                  <${Icon} name="stop" /></button>`
         : html`<button class="send" onClick=${send} disabled=${!draft.trim()}
-                   title="Send" aria-label=${`Send to ${agent.name}`}>
+                   title="Send" aria-label=${`Send to ${other ? agent.name : 'Diablo'}`}>
                  <${Icon} name="send" /></button>`}
     </div>`;
 }
 
-function Stage({ turns, state, agent, roster, jobs, liveAgents, view, setView,
-                 permissions, onPermissions, onSend, onInterrupt, onReset, onHome }) {
-  const endRef = useRef(null);
-  const speaking = state === 'responding';
-  const menu = html`<${SectionMenu} view=${view} setView=${setView} />`;
+/* ─── The compact surface ────────────────────────────────────────────────────
+   One exchange and the line to type into, as tall as that and no taller.
+   The first row is the window's title row: it is where the surface can be
+   dragged from, and it holds the two ways out of it — larger, or more. */
 
+function Interaction({ exchange, kind, line, permissions, onPermissions, menu,
+                       onExpand, command, bodyRef }) {
+  return html`
+    <div class="stage" data-level="interaction">
+      <${TopBar} tools=${html`
+        <button class="tool" onClick=${onExpand}
+                title="Open larger" aria-label="Open larger"><${Icon} name="expand" /></button>
+        ${menu}`} />
+      <div class="body" ref=${bodyRef}>
+        <${Needs} perms=${permissions || {}} onPermissions=${onPermissions} />
+        <${Exchange} ask=${exchange.ask} answer=${exchange.answer} kind=${kind} line=${line} />
+      </div>
+      ${command}
+    </div>`;
+}
+
+/* ─── The work surface ───────────────────────────────────────────────────────
+   The same surface with room: the whole conversation, whatever is running,
+   and the pages that are not the conversation. Temporary — the control that
+   brings it back to one exchange is the first one in its title row. */
+
+function Work({ turns, agent, jobs, liveAgents, roster, permissions, onPermissions,
+               menu, onCollapse, onReset, onHome, line, kind, command }) {
+  const endRef = useRef(null);
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [turns.length]);
 
-  /* An agent picked in the rail is who you are now talking to: their work
-     above, and the command bar below aimed at them, with their face on it.
-     Saying their name out loud does the same thing, so the two ways in agree.
-     Their ring stays idle: the manager's state is Diablo's, not theirs. */
+  const collapse = html`
+    <button class="tool" onClick=${onCollapse} title="Back to one exchange"
+            aria-label="Back to one exchange"><${Icon} name="collapse" /></button>`;
+
+  /* An agent picked from the tasks is who you are now talking to: their work
+     above, and the command line aimed at them, with their mark on it. */
   if (agent && agent.id !== 'diablo') {
     const mine = jobs.filter(j => j.agent === agent.id
       || (j.parts || []).some(p => p.agent === agent.id));
     return html`
-      <div class="stage" style=${{ '--accent': agent.accent }}>
-        <${TopBar} tools=${menu}>
+      <div class="stage" data-level="work" style=${{ '--accent': agent.accent }}>
+        <${TopBar} tools=${html`${menu}`}>
           <button class="back" onClick=${onHome} aria-label="Back to Diablo">
             <${Icon} name="back" /> Diablo</button>
         <//>
@@ -405,9 +454,7 @@ function Stage({ turns, state, agent, roster, jobs, liveAgents, view, setView,
           </div>
           <div class="works">
             ${mine.length === 0
-              ? html`<p class="quiet">${agent.name} has not been asked for anything yet.
-                       Say something that needs ${agent.role.toLowerCase()} and it will
-                       land here.</p>`
+              ? html`<p class="quiet">${agent.name} has not been asked for anything yet.</p>`
               : mine.slice(0, 20).map(job => html`
                 <article class="jobcard" key=${job.id}>
                   <p class="task">${job.task}</p>
@@ -421,14 +468,14 @@ function Stage({ turns, state, agent, roster, jobs, liveAgents, view, setView,
                 </article>`)}
           </div>
         </div>
-        <${Command} agent=${agent} state="idle" target=${agent.id}
-           speaking=${false} onSend=${onSend} onInterrupt=${onInterrupt} />
+        ${command}
       </div>`;
   }
 
   return html`
-    <div class="stage">
+    <div class="stage" data-level="work">
       <${TopBar} tools=${html`
+        ${collapse}
         ${turns.length > 0
           ? html`<button class="tool" onClick=${onReset}
                      title="Forget this conversation"
@@ -445,20 +492,22 @@ function Stage({ turns, state, agent, roster, jobs, liveAgents, view, setView,
             <div class="thread">
               ${turns.map((t, i) => html`
                 <${Turn} key=${i} role=${t.role} content=${t.content} />`)}
+              ${line && kind !== 'multistep'
+                ? html`<p class="line" data-kind=${kind} role="status" aria-live="polite">${line}</p>`
+                : null}
               <div ref=${endRef} />
             </div>
           </div>`}
-      <${Command} agent=${byId.diablo} state=${state} target=${null}
-         speaking=${speaking} onSend=${onSend} onInterrupt=${onInterrupt} />
+      ${command}
     </div>`;
 }
 
 /* A page that is not the conversation: its name in the title row, and the
    way back. */
-function Section({ title, view, setView, children }) {
+function Section({ title, setView, menu, children }) {
   return html`
-    <div class="stage">
-      <${TopBar} tools=${html`<${SectionMenu} view=${view} setView=${setView} />`}>
+    <div class="stage" data-level="work">
+      <${TopBar} tools=${menu}>
         <button class="back" onClick=${() => setView('home')} aria-label="Back to Diablo">
           <${Icon} name="back" /> Diablo</button>
         <span class="sub">${title}</span>
@@ -731,7 +780,27 @@ function Settings({ settings, onSave }) {
    utility sections; `picked` is which agent's work the stage is showing, and
    null means the conversation itself. Both live in the URL fragment so a
    reload comes back where you were. */
-const VALID_VIEWS = ['home', 'trace', 'health', 'settings'];
+const VALID_VIEWS = ['home', 'tasks', 'trace', 'health', 'settings'];
+
+/* Tasks: what has been handed off, one row per piece of work. It used to be
+   a sidebar that stood there whether or not anything had happened; now it
+   is a page you open when there is something in it. Wide work surfaces
+   still show the rail beside the conversation. */
+function Tasks({ roster, jobs, liveAgents, onPick }) {
+  const rows = useMemo(() => railRows(roster, jobs, liveAgents).slice(1),
+                       [roster, jobs, liveAgents]);
+  return html`
+    <div class="pane">
+      <div class="convos tasks" role="list">
+        ${rows.length === 0
+          ? html`<p class="quiet">Nothing has been handed off yet.</p>`
+          : rows.map(r => html`
+            <${RailRow} key=${r.key} agent=${r.agent} title=${r.title} line=${r.line}
+               when=${r.when} busy=${r.busy} active=${false}
+               onPick=${() => onPick(r.pick)} />`)}
+      </div>
+    </div>`;
+}
 
 function App() {
   const [view, setViewState] = useState(() => {
@@ -749,6 +818,7 @@ function App() {
     setPicked(p => { writeHash(next, next === 'home' ? p : null); return next === 'home' ? p : null; });
   }, [writeHash]);
   const onPick = useCallback((id) => {
+    setViewState('home');
     setPicked(id);
     writeHash('home', id);
   }, [writeHash]);
@@ -773,6 +843,18 @@ function App() {
   // Who is working right now, and on what. Keyed by agent id so a card can
   // light up the instant its piece starts rather than on the next poll.
   const [liveAgents, setLiveAgents] = useState({});
+
+  // The surface. `pinned` is the person's own choice of level, held until
+  // it folds away; `overflow` is the compact surface finding its exchange
+  // too tall for it; `flash` is a finished job, said once.
+  const [pinned, setPinned] = useState(null);
+  const [overflow, setOverflow] = useState(false);
+  const [flash, setFlash] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const appRef = useRef(null);
+  const bodyRef = useRef(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -802,6 +884,7 @@ function App() {
 
         if (payload.event === 'state_changed') {
           setState(s => ({ ...s, state: payload.new_state }));
+          if (payload.new_state !== 'processing') setActiveTool(null);
           // A finished turn is the cheapest moment to pick up everything else.
           if (payload.new_state === 'idle') refresh();
         } else if (payload.event === 'tool') {
@@ -815,10 +898,13 @@ function App() {
           refresh();
         } else if (payload.event === 'job_done' || payload.event === 'job_failed') {
           setLiveAgents({});
+          setFlash({ kind: payload.event === 'job_done' ? 'success' : 'failed',
+                     text: payload.summary || '', at: Date.now() });
           refresh();
         } else if (payload.event === 'permissions') {
           setState(s => ({ ...s, permissions: payload.permissions }));
         } else if (payload.event === 'transcript_ready') {
+          setFlash(null);
           setTurns(t => [...t, { role: 'user', content: payload.text }]);
         } else if (payload.event === 'response_ready') {
           setTurns(t => [...t, { role: 'assistant', content: payload.text }]);
@@ -845,6 +931,7 @@ function App() {
   }, [refresh]);
 
   const send = useCallback(async (text, agent) => {
+    setFlash(null);
     setTurns(t => [...t, { role: 'user', content: text }]);
     await api.post('/api/say', agent ? { text, agent } : { text });
   }, []);
@@ -853,39 +940,171 @@ function App() {
   const reset = useCallback(async () => {
     await api.post('/api/control', { action: 'reset' });
     setTurns([]);
+    setFlash(null);
   }, []);
   const saveSettings = useCallback((values) => api.post('/api/settings', values), []);
 
-  const busy = useMemo(
-    () => jobs.filter(j => j.status === 'running' || j.status === 'queued').length, [jobs]);
-
-  const address = settings?.address?.value || 'Sir';
   const rosterById = useMemo(() => indexRoster(roster), [roster]);
   const agent = picked ? pickAgent(picked, rosterById) : null;
+  const other = agent && agent.id !== 'diablo';
+  const running = useMemo(
+    () => jobs.filter(j => j.status === 'running' || j.status === 'queued').length, [jobs]);
+
+  /* ─── Which surface, and what it says ─────────────────────────────────── */
+
+  const { level, kind } = presentation({ view, picked, pinned, overflow,
+                                         state: state.state, turns, jobs, activeTool, flash });
+  const exchange = useMemo(() => {
+    const ex = lastExchange(turns);
+    return kind === 'success' && !ex.answer && flash?.text ? { ...ex, answer: flash.text } : ex;
+  }, [turns, kind, flash]);
+  const line = statusLine(kind, activeTool, flash, running);
+
+  // A new exchange starts from the compact surface again.
+  useEffect(() => { setOverflow(false); }, [exchange.ask]);
+
+  // The stylesheet sizes the compact surface to its content.
+  useEffect(() => { document.documentElement.dataset.level = level; }, [level]);
+
+  // Tell the shell the level, and at the compact level how tall it is.
+  useEffect(() => {
+    const measure = () => {
+      const app = appRef.current;
+      if (!app) return;
+      if (level !== INTERACTION) {
+        // The work surface follows its content too, so an answer that needs
+        // 600 points does not open a window of 900. What it cannot fit, it
+        // scrolls; what it does not need, it does not take.
+        const pane = document.querySelector('.pane');
+        reportLevel(level, app.offsetHeight + (pane ? pane.scrollHeight - pane.clientHeight : 0),
+                    kind);
+        return;
+      }
+      const body = bodyRef.current;
+      const natural = app.offsetHeight + (body ? body.scrollHeight - body.clientHeight : 0);
+      if (natural > INTERACTION_MAX_HEIGHT && pinned !== INTERACTION && !overflow) {
+        setOverflow(true);
+        return;
+      }
+      // An open menu needs room below the title row to be read.
+      reportLevel(INTERACTION, Math.max(natural, menuOpen ? 212 : 0), kind);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (appRef.current) observer.observe(appRef.current);
+    if (bodyRef.current) for (const child of bodyRef.current.children) observer.observe(child);
+    const thread = document.querySelector('.thread');
+    if (thread) observer.observe(thread);
+    return () => observer.disconnect();
+  }, [level, kind, pinned, overflow, menuOpen, exchange, line]);
+
+  // Someone reading, hovering or typing: the surface stays. Hovering means
+  // the pointer moved inside it; a surface that appears under a resting
+  // pointer has not been touched, and must still fold away.
+  useEffect(() => { reportEngaged(hovered || drafting || menuOpen); },
+            [hovered, drafting, menuOpen]);
+
+  // "Done", said once he has finished saying it, then the surface folds away
+  // unless someone is using it. The shell owns the wait.
+  useEffect(() => {
+    if (kind === 'success' && state.state === 'idle') requestDismiss('success');
+  }, [kind, state.state, flash?.at]);
+
+  // Folded away: the next opening starts from the one exchange, at home.
+  useEffect(() => {
+    window.diabloSurface = {
+      closed: () => {
+        setPinned(null);
+        setOverflow(false);
+        setMenuOpen(false);
+        setViewState('home');
+        setPicked(null);
+        writeHash('home', null);
+        forgetReports();
+      },
+    };
+  }, [writeHash]);
+
+  // Opened for typing: the line is ready without a click.
+  useEffect(() => {
+    const onFocus = () => document.querySelector('.command textarea')?.focus();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
+
+  // Escape steps back one level at a time: out of a menu, out of a page,
+  // out of the larger surface, and finally back into him. ⌘W folds it away.
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        const open = document.querySelectorAll('details[open]');
+        if (open.length) { open.forEach(d => { d.open = false; }); return; }
+        if (view !== 'home') setView('home');
+        else if (other) onPick(null);
+        else if (level === WORK) setPinned(INTERACTION);
+        else requestClose();
+        event.preventDefault();
+      } else if (event.key === 'w' && event.metaKey) {
+        requestClose();
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [view, other, level, setView, onPick]);
+
+  const menuItems = [
+    jobs.length ? { id: 'tasks', label: 'Tasks', active: view === 'tasks',
+                    onPick: () => setView(view === 'tasks' ? 'home' : 'tasks') } : null,
+    ...SECTIONS.map(([id, label]) => ({ id, label, active: view === id,
+                                        onPick: () => setView(view === id ? 'home' : id) })),
+    turns.length ? { id: 'forget', label: 'Forget this conversation', onPick: reset } : null,
+  ].filter(Boolean);
+  const menu = html`<${Menu} items=${menuItems} onToggle=${setMenuOpen} />`;
+
+  const command = html`
+    <${Command} agent=${other ? agent : byId.diablo} state=${other ? 'idle' : state.state}
+       kind=${kind} target=${other ? agent.id : null}
+       speaking=${!other && state.state === 'responding'}
+       onSend=${send} onInterrupt=${interrupt} onDraft=${setDrafting} />`;
+
+  let main;
+  if (level === INTERACTION) {
+    main = html`
+      <${Interaction} exchange=${exchange} kind=${kind} line=${line}
+         permissions=${state.permissions} onPermissions=${refresh}
+         menu=${menu} onExpand=${() => setPinned(WORK)} command=${command}
+         bodyRef=${bodyRef} />`;
+  } else if (view === 'home') {
+    main = html`
+      <${Work} turns=${turns} agent=${agent} jobs=${jobs} liveAgents=${liveAgents}
+         roster=${roster} permissions=${state.permissions} onPermissions=${refresh}
+         menu=${menu} onCollapse=${() => setPinned(INTERACTION)} onReset=${reset}
+         onHome=${() => onPick(null)} line=${line} kind=${kind} command=${command} />`;
+  } else {
+    main = html`
+      <${Section} title=${SECTION_TITLES[view] || 'Tasks'} setView=${setView} menu=${menu}>
+        ${view === 'tasks'
+          ? html`<${Tasks} roster=${roster.length ? roster : AGENTS} jobs=${jobs}
+                   liveAgents=${liveAgents} onPick=${onPick} />` : null}
+        ${view === 'trace' ? html`<${Trace} turns=${trace} />` : null}
+        ${view === 'health'
+          ? html`<${Health} state=${state} onPermissions=${refresh} />` : null}
+        ${view === 'settings' && settings
+          ? html`<${Settings} settings=${settings} onSave=${saveSettings} />` : null}
+      <//>`;
+  }
 
   return html`
-    <div class="app" data-view=${view}>
-      <${Rail} roster=${roster.length ? roster : AGENTS} jobs=${jobs}
-         liveAgents=${liveAgents} picked=${picked} onPick=${onPick}
-         view=${view} setView=${setView} state=${state.state} />
-
-      <main class="main">
-        ${view === 'home'
-          ? html`<${Stage} turns=${turns} state=${state.state} agent=${agent}
-               roster=${roster} jobs=${jobs} liveAgents=${liveAgents}
-               view=${view} setView=${setView} onHome=${() => onPick(null)}
-               permissions=${state.permissions}
-               onPermissions=${refresh} onSend=${send} onInterrupt=${interrupt}
-               onReset=${reset} />`
-          : html`
-            <${Section} title=${SECTION_TITLES[view]} view=${view} setView=${setView}>
-              ${view === 'trace' ? html`<${Trace} turns=${trace} />` : null}
-              ${view === 'health'
-                ? html`<${Health} state=${state} onPermissions=${refresh} />` : null}
-              ${view === 'settings' && settings
-                ? html`<${Settings} settings=${settings} onSave=${saveSettings} />` : null}
-            <//>`}
-      </main>
+    <div class="app" ref=${appRef} data-view=${view} data-level=${level} data-kind=${kind}
+         onMouseMove=${hovered ? undefined : () => setHovered(true)}
+         onMouseLeave=${() => setHovered(false)}>
+      ${level === WORK
+        ? html`<${Rail} roster=${roster.length ? roster : AGENTS} jobs=${jobs}
+                 liveAgents=${liveAgents} picked=${picked} onPick=${onPick}
+                 view=${view} setView=${setView} state=${state.state} />`
+        : null}
+      <main class="main">${main}</main>
     </div>`;
 }
 

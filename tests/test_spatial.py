@@ -57,7 +57,8 @@ def stand_in(home=(1461.0, 51.0), reduced=False):
     shell.presence = Presence(home=home, reduced=reduced)
     shell.guide = RecordingGuide()
     shell.wake = lambda: None
-    for name in ("approach", "approach_region", "clear_target", "no_target"):
+    for name in ("approach", "approach_region", "clear_target", "no_target",
+                 "_under_surface"):
         setattr(shell, name, types.MethodType(getattr(app_shell.Shell, name), shell))
     return shell
 

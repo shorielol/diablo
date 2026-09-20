@@ -120,13 +120,17 @@ def main():
     # ── One accent, his own ─────────────────────────────────────────────
     r.head("One palette, and it is his")
     shell = open(os.path.join(DIABLO_HOME, "app_shell.py")).read()
-    r.check("speaking no longer uses a colour from outside the character",
-            '"responding": (CRIMSON, "speaking")' in shell,
-            "it was a sky blue that belongs to no part of him")
-    r.check("and the web state dot agrees with the orb",
-            "--speaking:    #E0233C;" in css,
-            "two surfaces showing the same state in different colours is two "
-            "products")
+    # GUI-3.5 took colour out of the state entirely: the orb's mark is the
+    # label colour and its shape is the state, so a state colour in here
+    # would be a second, contradicting language. Red means a fault, in both
+    # surfaces, and nothing else does.
+    r.check("the surface keeps no colour of its own for a state",
+            not any(token in css for token in
+                    ("--listening:", "--thinking:", "--speaking:", "--idle:")),
+            "state is the mark's shape and a word, in both surfaces")
+    r.check("red is still reserved for a fault", "--error:" in css)
+    r.check("and the one primary action is the text colour, not a hue",
+            "background: var(--text); color: var(--bg);" in css)
     r.check("blue is no longer used for any state",
             "(BLUE," not in shell, "BLUE stays defined but unused by STATE_LOOK")
 
