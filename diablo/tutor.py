@@ -751,6 +751,26 @@ NEXT = "next_step"
 COMPLETED = "completed"
 CANCELLED = "cancelled"
 
+# Who else is told what the lesson is doing.
+#
+# The walkthrough has always announced these to stdout, where only a log can
+# read them, while the orb sat at home and a second overlay did the pointing.
+# A sink lets the interface hear the same lifecycle and show it. Left unset
+# there is no sink and nothing here behaves differently; the bridge sets it
+# when a shell exists.
+SINK = None
+
+
+def _tell(event: str, **data) -> None:
+    """Report one lifecycle moment. Never let the audience break the lesson."""
+    sink = SINK
+    if sink is None:
+        return
+    try:
+        sink(event, **data)
+    except Exception:
+        pass
+
 
 def read_window(window: dict):
     """
@@ -1340,10 +1360,13 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
     verified, unverified = 0, 0
     print(f"  [Tutor] {STARTED}: {len(steps)} steps in {window.get('app','')}, "
           f"interactive={interactive}")
+    _tell(STARTED, total=len(steps), app=window.get("app", ""),
+          interactive=interactive)
     try:
         for index, step in enumerate(steps, 1):
             if should_stop and should_stop():
                 speak("Stopping there, Sir.")
+                _tell(CANCELLED, reason="stopped")
                 break
             counter = f"{index} of {len(steps)}"
 
@@ -1390,6 +1413,10 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                 sample = ((spot.marker_x, spot.marker_y) if spot
                           else (step["x"], step["y"]))
                 light = background_is_light(capture, window, sample[0], sample[1])
+                _tell(PRESENTED, index=index, total=len(steps),
+                      x=float(step["x"]), y=float(step["y"]),
+                      label=step.get("matched", ""), say=step.get("say", ""),
+                      on_light=bool(light), found=True)
                 marker.move(step["x"], step["y"], step.get("matched", ""),
                             counter, on_light=light)
                 # A beat for the eye to find the marker before the sentence
@@ -1410,6 +1437,7 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
             if interactive and step.get("found") and asks_for_an_action(step["say"]):
                 waited += 1
                 print(f"  [Tutor] {WAITING} step {counter}")
+                _tell(WAITING, index=index, total=len(steps))
                 marker.ready(timeout=3.0)
                 clicked = marker.wait_for_click(step["x"], step["y"],
                                                 should_stop=should_stop)
@@ -1432,6 +1460,8 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                     speak(f"The {window.get('app', 'window')} window has gone, "
                           "Sir. Stopping there.")
                     print(f"  [Tutor] {CANCELLED}: target window disappeared")
+                    # Never keep pointing where the thing used to be.
+                    _tell(CANCELLED, reason="the window has gone")
                     break
 
                 after_path, after_fragments, window = read_window(window)
@@ -1442,6 +1472,7 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                     if changed:
                         print(f"  [Tutor] {SCREEN_CHANGED} -> {VERIFIED} "
                               f"({len(appeared)} new)")
+                        _tell(VERIFIED, index=index, total=len(steps))
                         # The screen moved, so every coordinate after this one
                         # belongs to a screen that no longer exists. Re-anchor
                         # the rest against what is there now — this is what
@@ -1458,6 +1489,8 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                         after_path = None
                     elif clicked:
                         print(f"  [Tutor] {NOT_VERIFIED} step {counter}")
+                        _tell(NOT_VERIFIED, index=index, total=len(steps),
+                              note="That didn't seem to change anything.")
                         unverified += 1
                         wanted = steps[index].get("look_for", "") if index < len(steps) else ""
                         if wanted and appeared:
@@ -1480,6 +1513,9 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                     speak("I'll carry on, Sir.")
             time.sleep(STEP_PAUSE)
     finally:
+        # However it ended — every step taken, stopped, or an exception on
+        # the way — the indication does not outlive the lesson.
+        _tell(COMPLETED, spoken=spoken, verified=verified, unverified=unverified)
         marker.close()
         try:
             os.unlink(capture)

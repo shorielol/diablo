@@ -14,8 +14,8 @@
 
 import { mascot, AGENTS, byId, index as indexRoster, agent as pickAgent } from './mascot.js';
 import { presentation, lastExchange, reportLevel, reportEngaged, requestClose,
-         requestDismiss, forgetReports, screenStatus, INTERACTION, WORK,
-         INTERACTION_MAX_HEIGHT } from './surface.js';
+         requestDismiss, forgetReports, screenStatus, lessonStatus,
+         INTERACTION, WORK, INTERACTION_MAX_HEIGHT } from './surface.js';
 
 const { createElement, useState, useEffect, useRef, useCallback, useMemo, memo } = React;
 const html = htm.bind(createElement);
@@ -302,7 +302,11 @@ const toolWords = tool => String(tool || '').replace(/[_-]+/g, ' ').trim();
 
 /* One line for the moment, when the moment needs one. Never colour alone:
    the words carry it, and red is kept for the one line that is a fault. */
-export function statusLine(kind, tool, flash, running, screen) {
+export function statusLine(kind, tool, flash, running, screen, lesson) {
+  // Being shown a step: which step, and whether he is waiting on you. The
+  // sentence comes from the runtime, so it cannot disagree with the spoken one.
+  const teaching = lessonStatus(lesson);
+  if (teaching && teaching.line) return teaching.line;
   const looking = screenStatus(screen);
   // What he is reading, when he is reading, in preference to anything
   // generic: "Reading Preview…" is the point of this build, and the sentence
@@ -312,6 +316,7 @@ export function statusLine(kind, tool, flash, running, screen) {
     case 'listening': return 'Listening…';
     case 'thinking':  return 'Thinking…';
     case 'reading':   return 'Reading your screen…';
+    case 'guiding':   return 'Showing you…';
     case 'status':    return tool ? `Using ${toolWords(tool)}…`
                                   : running ? `Working on ${running === 1 ? 'it' : `${running} things`}…` : 'Working…';
     case 'multistep': return `${running} things running`;
@@ -865,6 +870,9 @@ function App() {
   // question that never touched the screen cannot inherit the last one's
   // "From Preview — …" line.
   const [screen, setScreen] = useState(null);
+  // The lesson, if one is running. Cleared when it ends rather than when a
+  // turn ends: a walkthrough outlives the turn that asked for it.
+  const [lesson, setLesson] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [drafting, setDrafting] = useState(false);
@@ -905,6 +913,9 @@ function App() {
           if (payload.new_state === 'processing') setScreen(null);
           // A finished turn is the cheapest moment to pick up everything else.
           if (payload.new_state === 'idle') refresh();
+        } else if (payload.event === 'lesson') {
+          // Done or stopped: the caption goes with the indication.
+          setLesson(['done', 'cancelled'].includes(payload.phase) ? null : payload);
         } else if (payload.event === 'screen') {
           // Looking, reading, what was understood, or why it failed. Each
           // one is a thing that happened; the page adds no phases of its own.
@@ -976,12 +987,12 @@ function App() {
 
   const { level, kind } = presentation({ view, picked, pinned, overflow,
                                          state: state.state, turns, jobs, activeTool,
-                                         flash, screen });
+                                         flash, screen, lesson });
   const exchange = useMemo(() => {
     const ex = lastExchange(turns);
     return kind === 'success' && !ex.answer && flash?.text ? { ...ex, answer: flash.text } : ex;
   }, [turns, kind, flash]);
-  const line = statusLine(kind, activeTool, flash, running, screen);
+  const line = statusLine(kind, activeTool, flash, running, screen, lesson);
   // Where the answer came from, shown only once there is an answer to
   // attach it to. Provenance the shell watched happen, not a citation.
   const source = (screenStatus(screen) || {}).source || '';

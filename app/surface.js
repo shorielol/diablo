@@ -62,8 +62,28 @@ export function screenStatus(screen) {
   return { failed: false, line: screen.line || '', source: '' };
 }
 
+/* Being taught something: which step, and whether it is waiting on you.
+
+   One line, because the screen is the explanation and this is its caption.
+   The step's own sentence is spoken and shown as the answer; repeating it
+   here would be the same thing said twice in two places. skills/lesson.py
+   writes the wording, so the spoken and written sides cannot drift. */
+export const LESSON_LIVE = ['guiding', 'waiting', 'verified', 'unverified'];
+
+export function lessonStatus(lesson) {
+  if (!lesson || !lesson.phase) return null;
+  if (!LESSON_LIVE.includes(lesson.phase)) return null;
+  return { line: lesson.line || '', fault: !!lesson.fault,
+           waiting: lesson.phase === 'waiting' };
+}
+
 /* What kind of moment this is. Order is priority. */
-export function kindOf({ state, turns, jobs, activeTool, flash, screen } = {}) {
+export function kindOf({ state, turns, jobs, activeTool, flash, screen,
+                         lesson } = {}) {
+  const teaching = lessonStatus(lesson);
+  // Being shown a step outranks everything else on the surface: it is what
+  // the person is doing right now.
+  if (teaching) return teaching.fault ? 'error' : 'guiding';
   const looking = screenStatus(screen);
   if (looking && looking.failed) return 'error';
   if (state === 'error') return 'error';

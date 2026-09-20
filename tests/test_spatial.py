@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from harness import Results, guard  # noqa: E402
 
 import app_shell  # noqa: E402
-from skills import display, guidance, motion  # noqa: E402
+from skills import display, guidance, lesson, motion  # noqa: E402
 from skills.motion import HOME, Presence, Visual  # noqa: E402
 
 HZ = 120.0
@@ -57,6 +57,9 @@ def stand_in(home=(1461.0, 51.0), reduced=False):
     shell.presence = Presence(home=home, reduced=reduced)
     shell.guide = RecordingGuide()
     shell.wake = lambda: None
+    # The real Shell carries one of these, and clear_target now ends the
+    # lesson along with the indication, so the double needs it too.
+    shell.lesson = lesson.Lesson()
     for name in ("approach", "approach_region", "clear_target", "no_target",
                  "_under_surface"):
         setattr(shell, name, types.MethodType(getattr(app_shell.Shell, name), shell))

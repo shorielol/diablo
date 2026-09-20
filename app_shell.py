@@ -29,6 +29,7 @@ only arrangement macOS allows.
 import json
 import math
 import os
+import queue
 import sys
 import threading
 import time
@@ -78,6 +79,7 @@ from WebKit import WKWebView, WKWebViewConfiguration  # noqa: E402
 # them, so his face cannot differ between the Dock and the screen.
 from skills import make_icon  # noqa: E402
 # Every moving thing is driven by one motion system; the shell only draws it.
+from skills import lesson  # noqa: E402
 from skills import motion  # noqa: E402
 # Where the conversation surface goes and how big it is at each level.
 from skills import surface  # noqa: E402
@@ -808,46 +810,120 @@ class Guide:
 
     def __init__(self):
         self.process = None
+        # A lesson needs to know when the user actually did the thing. The
+        # overlay can already report clicks on stdout and is click-through,
+        # so the press still reaches the application underneath. Watching
+        # from here rather than from a second overlay is what keeps one mark
+        # on screen: the orb is the marker, and there is only ever one.
+        self.watch = False
+        self.clicks: "queue.Queue" = queue.Queue()
+        self.watching = threading.Event()
 
     def _alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
+
+    def _read(self) -> None:
+        """Drain the overlay's stdout: it says when it is watching, and clicks."""
+        process = self.process
+
+        def pump():
+            try:
+                for line in process.stdout:
+                    try:
+                        message = json.loads(line.strip())
+                    except Exception:
+                        continue
+                    if message.get("watching"):
+                        self.watching.set()
+                    if "click" in message:
+                        self.clicks.put(message["click"])
+            except Exception:
+                pass
+        threading.Thread(target=pump, daemon=True).start()
+
+    def ready(self, timeout: float = 5.0) -> bool:
+        """Wait until the overlay's click monitor is actually installed."""
+        if not self.watch:
+            return False
+        return self.watching.wait(timeout=timeout)
+
+    def wait_for_click(self, x: float, y: float, radius: float = 44.0,
+                       timeout: float = 90.0, should_stop=None) -> bool:
+        """
+        Wait until the user clicks near the target. True if they did.
+
+        Clicks elsewhere are ignored rather than counted: during a lesson
+        people click scrollbars and other windows, and none of that is the
+        step being taken.
+        """
+        while True:
+            try:
+                self.clicks.get_nowait()
+            except Exception:
+                break
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if should_stop and should_stop():
+                return False
+            try:
+                click = self.clicks.get(timeout=0.25)
+            except Exception:
+                continue
+            if ((click["x"] - x) ** 2 + (click["y"] - y) ** 2) ** 0.5 <= radius:
+                return True
+        return False
 
     def _send(self, message: Dict[str, Any]) -> bool:
         if not self._alive():
             return False
         try:
-            self.process.stdin.write((json.dumps(message) + "\n").encode())
+            # The pipe is text mode now that the overlay talks back on stdout;
+            # a bytes write would raise on every message.
+            self.process.stdin.write(json.dumps(message) + "\n")
             self.process.stdin.flush()
             return True
-        except (BrokenPipeError, OSError, ValueError):
+        except (BrokenPipeError, OSError, ValueError, TypeError):
             self.process = None
             return False
 
     def prepare(self, x: float, y: float, label: str = "",
-                w: float = 0.0, h: float = 0.0) -> None:
+                w: float = 0.0, h: float = 0.0, watch: bool = False,
+                step: str = "") -> None:
         """Have an overlay ready and invisible, so showing it costs nothing."""
         if self._alive():
             return
         try:
             import subprocess
             from skills import pointing
+            command = [sys.executable, pointing.OVERLAY, "--session", "--hidden",
+                       "--no-marker", "--marker-radius", f"{motion.STAND_RADIUS:.1f}",
+                       "--x", f"{x:.1f}", "--y", f"{y:.1f}",
+                       "--label", (label or "")[:48],
+                       "--w", f"{w:.1f}", "--h", f"{h:.1f}"]
+            if step:
+                command += ["--step", step[:12]]
+            if watch:
+                command.append("--watch-clicks")
+            self.watch = bool(watch)
+            self.watching.clear()
             self.process = subprocess.Popen(
-                [sys.executable, pointing.OVERLAY, "--session", "--hidden", "--no-marker",
-                 "--marker-radius", f"{motion.STAND_RADIUS:.1f}",
-                 "--x", f"{x:.1f}", "--y", f"{y:.1f}", "--label", (label or "")[:48],
-                 "--w", f"{w:.1f}", "--h", f"{h:.1f}"],
-                stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL, start_new_session=True)
+                command, stdin=subprocess.PIPE,
+                stdout=(subprocess.PIPE if watch else subprocess.DEVNULL),
+                stderr=subprocess.DEVNULL, start_new_session=True, text=True)
+            if watch:
+                self._read()
         except Exception:
             traceback.print_exc()
             self.process = None
 
     def show(self, x: float, y: float, label: str = "",
-             w: float = 0.0, h: float = 0.0) -> None:
+             w: float = 0.0, h: float = 0.0, step: str = "",
+             on_light: bool = False) -> None:
         """Indicate the target: fades in where it belongs, no slide."""
-        self.prepare(x, y, label, w, h)
+        self.prepare(x, y, label, w, h, step=step)
         self._send({"x": x, "y": y, "label": (label or "")[:80],
-                    "w": w, "h": h, "fresh": True})
+                    "w": w, "h": h, "fresh": True,
+                    "step": step[:12], "on_light": bool(on_light)})
 
     def hide(self) -> None:
         self._send({"hide": True})
@@ -971,6 +1047,8 @@ class Shell:
         self._last = None
         self._fast = None
         self.guide = Guide()
+        # Which step of a walkthrough is current, and the refusal to have two.
+        self.lesson = lesson.Lesson()
         self.stats = FrameStats()
         self._watch_reduce_motion()
 
@@ -1099,6 +1177,18 @@ class Shell:
             self.focus_content(**data)
         elif event == "unreadable":
             self.reading_failed()
+        elif event == "lesson_begin":
+            self.guide_begin(**data)
+        elif event == "lesson_step":
+            self.guide_step(**data)
+        elif event == "lesson_waiting":
+            self.guide_waiting(**data)
+        elif event == "lesson_verified":
+            self.guide_verified(**data)
+        elif event == "lesson_unverified":
+            self.guide_unverified(**data)
+        elif event == "lesson_finish":
+            self.guide_finish(**data)
         elif event == "no_target":
             self.no_target()
         elif event == "await_user":
@@ -1199,6 +1289,108 @@ class Shell:
                                  facing=_appkit(x + w / 2.0, y + h / 2.0))
         self.wake()
 
+    # ── teaching ─────────────────────────────────────────────────────────
+    #
+    # A lesson is the walkthrough tutor.py already runs, made visible. Each
+    # step arrives here as an event; this decides what is current and lets
+    # `approach` do the moving, so there is no second way of travelling and
+    # no second thing drawing.
+
+    def guide_begin(self, total: int = 0, app: str = "",
+                    seq: Optional[int] = None) -> None:
+        """A walkthrough is starting. Anything showing belongs to the last one."""
+        if not self.lesson.begin(total, app, seq):
+            return
+        self.guide.hide()
+        self.wake()
+
+    def guide_step(self, x: float, y: float, label: str = "", index: int = 1,
+                   total: int = 1, say: str = "", w: float = 0.0, h: float = 0.0,
+                   on_light: bool = False, found: bool = True,
+                   seq: Optional[int] = None,
+                   generation: Optional[int] = None) -> None:
+        """
+        Show one step: move, settle, then indicate. Never all at once.
+
+        The old target stops being current before he leaves, so there is one
+        ring on screen at a time — a second appearing while the first fades
+        is the thing that makes a walkthrough impossible to follow.
+
+        A step that was planned but never found on screen is not a place. He
+        stays where he is and the surface says so, rather than travelling to
+        (0, 0) and pointing at a corner with confidence.
+        """
+        step = lesson.Step(index=index, total=total, label=label, say=say,
+                           x=x, y=y, w=w, h=h, on_light=on_light, found=found)
+        if not self.lesson.present(step, seq):
+            return
+        # One current target: whatever is drawn now belongs to the step just
+        # replaced, so it goes before anything else happens.
+        self.guide.hide()
+        if not step.placed:
+            self.presence.await_user()
+            self.wake()
+            return
+
+        presence = self.presence
+        stand = motion.stand_for(x + w / 2.0, y + h / 2.0, label,
+                                 extent=((w / 2.0 + 6.0, h / 2.0 + 6.0)
+                                         if step.is_region else None))
+        if stand is None:
+            # On no display: nowhere honest to stand. Say it and stay.
+            self.no_target()
+            return
+        presence.covering = self._under_surface(x, y, w, h)
+        self.guide.prepare(x, y, label, w, h, watch=True, step=step.counter)
+
+        def ready():
+            # A step overtaken while he was still travelling: the lesson has
+            # already moved on, so this arrival draws nothing.
+            if self.lesson.current is not step:
+                return
+            if generation is not None and not _current_generation(generation):
+                self.guide_finish(lesson.CANCELLED)
+                return
+            self.guide.show(x, y, label, w, h, step=step.counter, on_light=on_light)
+            presence.hold_target(motion.Timing.GUIDE_HOLD, until_quiet=True)
+            self.wake()
+
+        presence.approach_target(stand, on_ready=ready, facing=_appkit(x, y))
+        self.wake()
+
+    def guide_waiting(self, seq: Optional[int] = None) -> None:
+        """He has asked for the click. The mark says waiting, and holds."""
+        if not self.lesson.waiting(seq):
+            return
+        self.presence.await_user()
+        self.wake()
+
+    def guide_verified(self, seq: Optional[int] = None) -> None:
+        """The screen really changed. A short acknowledgement, then the next step."""
+        if not self.lesson.verified(seq):
+            return
+        self.presence.verified()
+        self.wake()
+
+    def guide_unverified(self, note: str = "", seq: Optional[int] = None) -> None:
+        """
+        Asked, waited, and nothing changed.
+
+        No flash of success, and the indication stays where it is: the step
+        has not been taken, so the thing to look at has not changed either.
+        """
+        if not self.lesson.unverified(note, seq):
+            return
+        self.presence.await_user()
+        self.wake()
+
+    def guide_finish(self, why: str = lesson.DONE,
+                     seq: Optional[int] = None) -> None:
+        """Over, by completion or by cancellation. Clear, then home."""
+        if not self.lesson.finish(why, seq):
+            return
+        self.clear_target()
+
     def reading_failed(self) -> None:
         """
         He could not read what he was asked to read.
@@ -1269,6 +1461,12 @@ class Shell:
 
     def clear_target(self) -> None:
         """The indication has done its job: fade it, and go home."""
+        # Anything that clears the indication ends the lesson too. Otherwise a
+        # walkthrough interrupted by a pointing target would still think a
+        # step was current, and the next arrival would draw for a lesson the
+        # user had already left.
+        if self.lesson.live:
+            self.lesson.finish(lesson.CANCELLED)
         self.guide.close()
         self.presence.return_home()
         self.wake()

@@ -125,7 +125,8 @@ def _bridge_presence(voice_bridge) -> None:
     app_shell.notify() returns False and everything behaves as it did.
     """
     import app_shell
-    from skills import pointing, reading, screen_context, server, voice
+    from skills import (lesson, pointing, reading, screen_context, server,
+                        tutor, voice)
 
     def _generation():
         try:
@@ -352,6 +353,104 @@ def _bridge_presence(voice_bridge) -> None:
         return show(x, y, label, seconds, marker=marker)
 
     pointing.show = point
+
+    # ── teaching ─────────────────────────────────────────────────────────
+    #
+    # The walkthrough already plans steps, finds them, waits for the click and
+    # asks the screen whether anything changed. All of that stays exactly
+    # where it is. Two things are added: the lifecycle is reported to the orb
+    # and the window, and the drawing is moved onto the one overlay the shell
+    # already owns, so the orb is the marker instead of standing at home
+    # while a second mark does the pointing.
+
+    counted = [0]
+
+    def _lesson(event: str, **data) -> None:
+        """One lifecycle moment, to the orb and to the surface."""
+        counted[0] += 1
+        seq = counted[0]
+        phase, payload = None, {}
+        if event == tutor.STARTED:
+            phase = lesson.GUIDING
+            payload = {"total": int(data.get("total") or 0),
+                       "app": str(data.get("app") or "")}
+            app_shell.notify("lesson_begin", seq=seq, **payload)
+        elif event == tutor.PRESENTED:
+            phase = lesson.GUIDING
+            payload = {k: data.get(k) for k in
+                       ("x", "y", "label", "say", "index", "total", "on_light",
+                        "found")}
+            app_shell.notify("lesson_step", seq=seq,
+                             generation=_generation(), **payload)
+        elif event == tutor.WAITING:
+            phase = lesson.WAITING
+            app_shell.notify("lesson_waiting", seq=seq)
+        elif event == tutor.VERIFIED:
+            phase = lesson.VERIFIED
+            app_shell.notify("lesson_verified", seq=seq)
+        elif event == tutor.NOT_VERIFIED:
+            phase = lesson.UNVERIFIED
+            payload = {"note": str(data.get("note") or "")}
+            app_shell.notify("lesson_unverified", seq=seq, **payload)
+        elif event in (tutor.COMPLETED, tutor.CANCELLED):
+            phase = (lesson.CANCELLED if event == tutor.CANCELLED
+                     else lesson.DONE)
+            app_shell.notify("lesson_finish", seq=seq, why=phase)
+        if phase is None:
+            return
+        step = None
+        if data.get("index"):
+            step = lesson.Step(index=int(data.get("index") or 1),
+                               total=int(data.get("total") or 1),
+                               label=str(data.get("label") or ""))
+        try:
+            server.push("lesson", phase=phase, seq=seq,
+                        index=data.get("index"), total=data.get("total"),
+                        line=lesson.line_for(phase, step,
+                                             str(data.get("note") or "")),
+                        fault=lesson.is_fault(phase))
+        except Exception:
+            pass
+
+    tutor.SINK = _lesson
+
+    # One mark on screen. The tutor's own overlay drew a marker head of its
+    # own; with the orb travelling to the step as well that is two things
+    # pointing at one target. When a shell exists the shell's overlay does
+    # the drawing and the click watching, and the tutor's marker becomes a
+    # thin wrapper over it.
+    class ShellMarker(tutor.Marker):
+        """The tutor's marker, drawn by the shell so there is only one."""
+
+        def _shell(self):
+            shell = getattr(app_shell, "_SHELL", None)
+            return shell if shell is not None and shell.lesson.live else None
+
+        def move(self, x, y, label, step, on_light=False):
+            # The step event has already reached the shell and started the
+            # approach; the shell draws when he arrives, not before.
+            if self._shell() is not None:
+                return True
+            return super().move(x, y, label, step, on_light=on_light)
+
+        def ready(self, timeout: float = 5.0) -> bool:
+            shell = self._shell()
+            if shell is None:
+                return super().ready(timeout)
+            return shell.guide.ready(timeout)
+
+        def wait_for_click(self, x, y, radius=tutor.CLICK_RADIUS,
+                           timeout=tutor.CLICK_TIMEOUT, should_stop=None):
+            shell = self._shell()
+            if shell is None:
+                return super().wait_for_click(x, y, radius, timeout, should_stop)
+            return shell.guide.wait_for_click(x, y, radius, timeout, should_stop)
+
+        def close(self):
+            if self._shell() is None:
+                super().close()
+
+    tutor.Marker = ShellMarker
 
     # Looked for something to point at and found nothing: say so visibly,
     # rather than leaving him to wander or invent a place.
