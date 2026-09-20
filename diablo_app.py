@@ -125,7 +125,7 @@ def _bridge_presence(voice_bridge) -> None:
     app_shell.notify() returns False and everything behaves as it did.
     """
     import app_shell
-    from skills import (lesson, pointing, reading, screen_context, server,
+    from skills import (doing, lesson, pointing, reading, screen_context, server,
                         tutor, voice)
 
     def _generation():
@@ -451,6 +451,73 @@ def _bridge_presence(voice_bridge) -> None:
                 super().close()
 
     tutor.Marker = ShellMarker
+
+    # ── doing something ──────────────────────────────────────────────────
+    #
+    # The DO engine is complete and silent: two state machines, eleven named
+    # failures, verification against the screen, and not one print. Rather
+    # than edit it, `Task.to` — the single place every task state change goes
+    # through — is wrapped here, the same way the tutor's marker is. The
+    # engine keeps deciding; this only reports.
+    #
+    # Nothing below starts a task. There is no do_engine.run here, and
+    # computer_use stays disabled: the GUI can render every DO state without
+    # any of them being reachable in a live application.
+
+    acted = [0]
+
+    def _doing(phase: str, **data) -> None:
+        acted[0] += 1
+        seq = acted[0]
+        app_shell.notify("do_%s" % phase, seq=seq, **data)
+        try:
+            server.push("doing", phase=phase, seq=seq,
+                        line=data.get("line", ""),
+                        fault=doing.is_fault(phase),
+                        index=data.get("index"), total=data.get("total"))
+        except Exception:
+            pass
+
+    try:
+        from skills import do_engine
+    except Exception:
+        do_engine = None
+
+    if do_engine is not None:
+        moved = do_engine.Task.to
+
+        def reported(self, state, detail=""):
+            before = self.state
+            moved(self, state, detail)
+            if self.state is before:
+                return
+            try:
+                phase = doing.phase_for(self.state)
+                steps = getattr(self, "steps", None)
+                intent = doing.Intent()
+                if steps:
+                    last = steps[-1]
+                    intent = doing.Intent(
+                        verb=str(getattr(last, "verb", "") or "").title(),
+                        target=str(getattr(last, "target", "") or ""))
+                _doing(phase, task_id=self.id,
+                       line=doing.line_for(phase, intent, note=detail or ""),
+                       note=detail or "")
+            except Exception:
+                pass
+
+        do_engine.Task.to = reported
+
+    # Answering the question, from the window. Only ever resolves a request
+    # the backend made; it cannot begin one.
+    def _consent(allow: bool) -> bool:
+        shell = getattr(app_shell, "_SHELL", None)
+        if shell is None or shell.doing.phase != doing.ASKING:
+            return False
+        _on_main(shell.do_granted if allow else shell.do_denied)
+        return True
+
+    server.ON_CONSENT = _consent
 
     # Looked for something to point at and found nothing: say so visibly,
     # rather than leaving him to wander or invent a place.

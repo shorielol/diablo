@@ -39,6 +39,7 @@ SUITES = [
     ("test_surface.py",      False, "the conversation surface: compact, work, and back into him"),
     ("test_reading.py",      False, "understanding the screen, made visible"),
     ("test_lesson.py",       False, "teaching: one step at a time, and only one"),
+    ("test_doing.py",        False, "doing: what he is about to do, and whether it worked"),
     ("test_perception.py",   False, "finding a control, and deciding whether to touch it"),
     ("test_vision_targets.py", False, "vision as the third candidate source"),
     ("test_do_engine.py",     False, "a goal, a closed loop, and honest completion"),

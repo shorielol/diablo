@@ -14,7 +14,7 @@
 
 import { mascot, AGENTS, byId, index as indexRoster, agent as pickAgent } from './mascot.js';
 import { presentation, lastExchange, reportLevel, reportEngaged, requestClose,
-         requestDismiss, forgetReports, screenStatus, lessonStatus,
+         requestDismiss, forgetReports, screenStatus, lessonStatus, doingStatus,
          INTERACTION, WORK, INTERACTION_MAX_HEIGHT } from './surface.js';
 
 const { createElement, useState, useEffect, useRef, useCallback, useMemo, memo } = React;
@@ -302,7 +302,11 @@ const toolWords = tool => String(tool || '').replace(/[_-]+/g, ' ').trim();
 
 /* One line for the moment, when the moment needs one. Never colour alone:
    the words carry it, and red is kept for the one line that is a fault. */
-export function statusLine(kind, tool, flash, running, screen, lesson) {
+export function statusLine(kind, tool, flash, running, screen, lesson, doing) {
+  // Doing something is the most specific thing he can be doing, and the
+  // sentence was written by skills/doing.py from the engine's own state.
+  const acting = doingStatus(doing);
+  if (acting && acting.line) return acting.line;
   // Being shown a step: which step, and whether he is waiting on you. The
   // sentence comes from the runtime, so it cannot disagree with the spoken one.
   const teaching = lessonStatus(lesson);
@@ -326,6 +330,21 @@ export function statusLine(kind, tool, flash, running, screen, lesson) {
     default:          return '';
   }
 }
+
+/* Him asking before he does something.
+
+   Two buttons and his own sentence — the wording comes from the runtime, so
+   it says what the action would do and what it would cost, never a risk
+   class or a confidence value. It sits in the exchange rather than over it:
+   a question from Diablo, not a dialog from the system. */
+const Consent = memo(({ question, onAnswer }) => html`
+  <div class="consent" role="group" aria-label="Permission">
+    <p class="ask-line">${question}</p>
+    <div class="consent-row">
+      <button class="send" onClick=${() => onAnswer(true)}>Allow</button>
+      <button class="tool wide" onClick=${() => onAnswer(false)}>Not now</button>
+    </div>
+  </div>`);
 
 /* The compact surface's body: the last exchange and the moment it is in. */
 const Exchange = memo(({ ask, answer, kind, line, source }) => {
@@ -416,7 +435,8 @@ function Command({ agent, state, kind, target, speaking, onSend, onInterrupt, on
    The first row is the window's title row: it is where the surface can be
    dragged from, and it holds the two ways out of it — larger, or more. */
 
-function Interaction({ exchange, kind, line, source, permissions, onPermissions, menu,
+function Interaction({ exchange, kind, line, source, consent, onAnswer,
+                       permissions, onPermissions, menu,
                        onExpand, command, bodyRef }) {
   return html`
     <div class="stage" data-level="interaction">
@@ -427,7 +447,8 @@ function Interaction({ exchange, kind, line, source, permissions, onPermissions,
       <div class="body" ref=${bodyRef}>
         <${Needs} perms=${permissions || {}} onPermissions=${onPermissions} />
         <${Exchange} ask=${exchange.ask} answer=${exchange.answer} kind=${kind}
-                     line=${line} source=${source} />
+                     line=${consent ? '' : line} source=${source} />
+        ${consent ? html`<${Consent} question=${consent} onAnswer=${onAnswer} />` : null}
       </div>
       ${command}
     </div>`;
@@ -873,6 +894,9 @@ function App() {
   // The lesson, if one is running. Cleared when it ends rather than when a
   // turn ends: a walkthrough outlives the turn that asked for it.
   const [lesson, setLesson] = useState(null);
+  // A DO task, as the engine reports it. Held until it ends so the last
+  // outcome stays readable, then cleared.
+  const [doing, setDoing] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [drafting, setDrafting] = useState(false);
@@ -913,6 +937,11 @@ function App() {
           if (payload.new_state === 'processing') setScreen(null);
           // A finished turn is the cheapest moment to pick up everything else.
           if (payload.new_state === 'idle') refresh();
+        } else if (payload.event === 'doing') {
+          setDoing(payload);
+          // An outcome is worth reading, then it goes. Cancelled and blocked
+          // clear at once; done and failed linger briefly.
+          if (['cancelled'].includes(payload.phase)) setDoing(null);
         } else if (payload.event === 'lesson') {
           // Done or stopped: the caption goes with the indication.
           setLesson(['done', 'cancelled'].includes(payload.phase) ? null : payload);
@@ -987,12 +1016,22 @@ function App() {
 
   const { level, kind } = presentation({ view, picked, pinned, overflow,
                                          state: state.state, turns, jobs, activeTool,
-                                         flash, screen, lesson });
+                                         flash, screen, lesson, doing });
   const exchange = useMemo(() => {
     const ex = lastExchange(turns);
     return kind === 'success' && !ex.answer && flash?.text ? { ...ex, answer: flash.text } : ex;
   }, [turns, kind, flash]);
-  const line = statusLine(kind, activeTool, flash, running, screen, lesson);
+  const line = statusLine(kind, activeTool, flash, running, screen, lesson, doing);
+  // Answering the question he is waiting on. The endpoint only resolves a
+  // question the backend actually asked; with nothing pending it does nothing.
+  const answer = useCallback((allow) => {
+    setDoing(d => (d ? { ...d, phase: allow ? 'ready' : 'cancelled' } : d));
+    fetch('/api/control', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: allow ? 'do_consent:allow' : 'do_consent:deny' }),
+    }).catch(() => {});
+  }, []);
+  const consent = kind === 'permission' ? (doingStatus(doing) || {}).line : '';
   // Where the answer came from, shown only once there is an answer to
   // attach it to. Provenance the shell watched happen, not a citation.
   const source = (screenStatus(screen) || {}).source || '';
@@ -1109,6 +1148,7 @@ function App() {
   if (level === INTERACTION) {
     main = html`
       <${Interaction} exchange=${exchange} kind=${kind} line=${line} source=${source}
+         consent=${consent} onAnswer=${answer}
          permissions=${state.permissions} onPermissions=${refresh}
          menu=${menu} onExpand=${() => setPinned(WORK)} command=${command}
          bodyRef=${bodyRef} />`;

@@ -487,6 +487,21 @@ kbd {
 }
 .line[data-kind="error"]::before { background: var(--error); }
 
+/* Him asking before he acts. Two buttons under his sentence, inside the
+   exchange rather than over it — a question from Diablo, not a system
+   dialog. No colour carries the meaning: the words do, and the primary
+   button is the text colour like every other primary action. */
+.consent { margin-top: var(--s3); display: flex; flex-direction: column; gap: var(--s3); }
+.consent .ask-line {
+  font-size: var(--fs-body); line-height: var(--lh-body); color: var(--text);
+}
+.consent-row { display: flex; gap: var(--s2); align-items: center; }
+.consent-row .send { padding: 0 var(--s4); height: 28px; border-radius: var(--r-sm); }
+.tool.wide {
+  width: auto; padding: 0 var(--s4); height: 28px;
+  font-size: var(--fs-label); color: var(--text-2);
+}
+
 /* Where an answer was read from: "From Preview — worksheet.pdf". Provenance,
    so it sits under the answer and below it in weight — the answer is the
    thing, this only says what it came off. Never a URL, never a quotation,

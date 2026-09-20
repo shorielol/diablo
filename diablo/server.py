@@ -78,6 +78,12 @@ def _broadcast_event(payload: Dict[str, Any]) -> None:
             pass          # a stalled tab loses events, not the assistant
 
 
+# Answering a permission question Diablo asked. Set by the shell bridge when
+# there is a question outstanding, and cleared when it is answered; None here
+# means nothing is waiting, which is the normal state.
+ON_CONSENT = None
+
+
 def push(event: str, **data: Any) -> None:
     """Send an event that did not come from the manager."""
     _broadcast_event(dict(data, event=event, ts=time.time()))
@@ -451,6 +457,16 @@ def _control(action: str) -> Dict[str, Any]:
             focus = conversation.session.snapshot()["focus"]
             push("focus", agent=focus or "diablo")
             return {"ok": True, "focus": focus or "diablo"}
+        if action.startswith("do_consent:"):
+            # Answering a question the backend actually asked. It resolves a
+            # pending request and nothing else: with none outstanding it does
+            # nothing at all, and there is no path here that starts an action.
+            # The answer rides in the action the way focus: carries its agent,
+            # because a control action is all this handler receives.
+            if ON_CONSENT is None:
+                return {"ok": False, "error": "nothing is waiting on you"}
+            allow = action.split(":", 1)[1].strip().lower() == "allow"
+            return {"ok": bool(ON_CONSENT(allow))}
         if action == "recheck" and _manager is not None:
             perms = _manager.forget_permissions()
             push("permissions", permissions=perms)

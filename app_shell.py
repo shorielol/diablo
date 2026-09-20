@@ -79,6 +79,7 @@ from WebKit import WKWebView, WKWebViewConfiguration  # noqa: E402
 # them, so his face cannot differ between the Dock and the screen.
 from skills import make_icon  # noqa: E402
 # Every moving thing is driven by one motion system; the shell only draws it.
+from skills import doing  # noqa: E402
 from skills import lesson  # noqa: E402
 from skills import motion  # noqa: E402
 # Where the conversation surface goes and how big it is at each level.
@@ -1049,6 +1050,8 @@ class Shell:
         self.guide = Guide()
         # Which step of a walkthrough is current, and the refusal to have two.
         self.lesson = lesson.Lesson()
+        # What a DO task is doing, read from the engine's own states.
+        self.doing = doing.Doing()
         self.stats = FrameStats()
         self._watch_reduce_motion()
 
@@ -1388,6 +1391,114 @@ class Shell:
                      seq: Optional[int] = None) -> None:
         """Over, by completion or by cancellation. Clear, then home."""
         if not self.lesson.finish(why, seq):
+            return
+        self.clear_target()
+
+    # ── doing something ──────────────────────────────────────────────────
+    #
+    # The DO engine decides everything; these render what it decided. The
+    # target is GUI-6's, borrowed rather than rebuilt, so a task and a lesson
+    # can never put two rings on one control.
+
+    def do_begin(self, task_id: str = "", intent=None, index: int = 1,
+                 total: int = 1, seq: Optional[int] = None) -> None:
+        """A task, or its next step. Whatever was showing belonged to the last."""
+        if intent is not None and not isinstance(intent, doing.Intent):
+            intent = doing.Intent(**intent) if isinstance(intent, dict) else None
+        if not self.doing.begin(task_id, intent, index, total, seq):
+            return
+        # One target for the whole machine: the lesson owns it, and a task
+        # step is a step like any other.
+        self.lesson.begin(total, "", seq=None)
+        self.guide.hide()
+        self.wake()
+
+    def do_target(self, x: float, y: float, label: str = "",
+                  seq: Optional[int] = None, task_id: Optional[str] = None,
+                  generation: Optional[int] = None) -> None:
+        """
+        A place the engine actually located. Move, settle, then indicate.
+
+        Nothing here chooses a target: `located` is called only once the
+        backend has one, and an ambiguous reading never reaches this.
+        """
+        if not self.doing.located(x, y, label, seq, task_id):
+            return
+        self.guide_step(x=x, y=y, label=label, index=self.doing.index,
+                        total=self.doing.total, generation=generation)
+
+    def do_ask(self, question: str = "", seq: Optional[int] = None,
+               task_id: Optional[str] = None) -> None:
+        """Permission, asked where the action is rather than in a dialog."""
+        if not self.doing.asking(question, seq, task_id):
+            return
+        self.presence.await_user()
+        self.wake()
+
+    def do_granted(self, seq: Optional[int] = None,
+                   task_id: Optional[str] = None) -> None:
+        if not self.doing.granted(seq, task_id):
+            return
+        self.wake()
+
+    def do_denied(self, seq: Optional[int] = None,
+                  task_id: Optional[str] = None) -> None:
+        """Said no. Clear it down the way a cancellation clears it."""
+        if not self.doing.denied(seq, task_id):
+            return
+        self.clear_target()
+
+    def do_executing(self, seq: Optional[int] = None,
+                     task_id: Optional[str] = None) -> None:
+        if not self.doing.executing(seq, task_id):
+            return
+        self.presence.set_state("processing")
+        self.wake()
+
+    def do_verifying(self, seq: Optional[int] = None,
+                     task_id: Optional[str] = None) -> None:
+        """
+        Checking is its own state, and it is visible.
+
+        The gap between "the event was sent" and "the screen changed" is
+        exactly where a confident interface lies to someone, so it gets a
+        state of its own rather than being folded into the action.
+        """
+        if not self.doing.verifying(seq, task_id):
+            return
+        self.presence.set_state("processing")
+        self.wake()
+
+    def do_verified(self, seq: Optional[int] = None,
+                    task_id: Optional[str] = None) -> None:
+        """Verified by the engine against the screen. Only now is it done."""
+        if not self.doing.verified(seq, task_id):
+            return
+        self.presence.verified()
+        self.wake()
+
+    def do_failed(self, note: str = "", seq: Optional[int] = None,
+                  task_id: Optional[str] = None) -> None:
+        if not self.doing.failed(note, seq, task_id):
+            return
+        self.presence.flash("failure")
+        self.wake()
+
+    def do_blocked(self, note: str = "", seq: Optional[int] = None,
+                   task_id: Optional[str] = None) -> None:
+        """
+        Refused on purpose. Not a fault, so no failure cue — he simply
+        stops indicating and says why.
+        """
+        if not self.doing.blocked(note, seq, task_id):
+            return
+        self.clear_target()
+
+    def do_finish(self, why: str = doing.CANCELLED,
+                  seq: Optional[int] = None,
+                  task_id: Optional[str] = None) -> None:
+        """Over. Nothing is left pointing, pending or open."""
+        if not self.doing.finish(why, seq, task_id):
             return
         self.clear_target()
 

@@ -77,9 +77,41 @@ export function lessonStatus(lesson) {
            waiting: lesson.phase === 'waiting' };
 }
 
+/* Doing something: what he is about to do, and whether it worked.
+
+   The DO engine decides all of it; this only says which of its phases is
+   showing and whether it is asking. Asking is its own kind because it needs
+   two buttons, and a question is not a status line. skills/doing.py writes
+   every sentence, so the spoken and written sides cannot disagree. */
+export const DOING_LIVE = ['understanding', 'targeting', 'asking', 'ready',
+                           'executing', 'verifying', 'recovering', 'waiting',
+                           'ambiguous'];
+export const DOING_OVER = ['done', 'failed', 'blocked', 'cancelled'];
+
+export function doingStatus(doing) {
+  if (!doing || !doing.phase) return null;
+  const live = DOING_LIVE.includes(doing.phase);
+  const over = DOING_OVER.includes(doing.phase);
+  if (!live && !over) return null;          // a phase the page does not know
+  return {
+    line: doing.line || '',
+    fault: !!doing.fault,
+    // Asking and ambiguity both need an answer from the person, not a
+    // status line they cannot reply to.
+    asking: doing.phase === 'asking' || doing.phase === 'ambiguous',
+    over,
+  };
+}
+
 /* What kind of moment this is. Order is priority. */
 export function kindOf({ state, turns, jobs, activeTool, flash, screen,
-                         lesson } = {}) {
+                         lesson, doing } = {}) {
+  const acting = doingStatus(doing);
+  // A question he is waiting on outranks everything: nothing else can move
+  // until it is answered.
+  if (acting && acting.asking) return 'permission';
+  if (acting && acting.fault) return 'error';
+  if (acting && !acting.over) return 'doing';
   const teaching = lessonStatus(lesson);
   // Being shown a step outranks everything else on the surface: it is what
   // the person is doing right now.
