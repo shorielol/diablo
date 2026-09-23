@@ -744,6 +744,9 @@ def plan(question: str, screen_text: str,
 STARTED = "guidance_started"
 PRESENTED = "step_presented"
 WAITING = "waiting_for_user"
+# The press itself, told apart from whether it worked. Between these two the
+# screen is being re-read, which used to be a silent gap.
+ACTED = "user_acted"
 SCREEN_CHANGED = "screen_changed"
 VERIFIED = "step_verified"
 NOT_VERIFIED = "step_not_verified"
@@ -1443,6 +1446,9 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                                                 should_stop=should_stop)
                 if clicked:
                     done_by_hand += 1
+                    # They pressed it. Whether it did anything is the next
+                    # question, and the interface should say so meanwhile.
+                    _tell(ACTED, index=index, total=len(steps))
 
                 # Did it do anything? Ask the screen, not the click.
                 #

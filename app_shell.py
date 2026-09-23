@@ -819,6 +819,9 @@ class Guide:
         self.watch = False
         self.clicks: "queue.Queue" = queue.Queue()
         self.watching = threading.Event()
+        # When the current target went up. A press before this belonged to
+        # whatever was on screen before the step.
+        self.armed = 0.0
 
     def _alive(self) -> bool:
         return self.process is not None and self.process.poll() is None
@@ -837,7 +840,12 @@ class Guide:
                     if message.get("watching"):
                         self.watching.set()
                     if "click" in message:
-                        self.clicks.put(message["click"])
+                        # Stamped on arrival. Which step a press belongs to is
+                        # decided by when it happened, not by when something
+                        # got round to asking about it.
+                        press = dict(message["click"])
+                        press.setdefault("at", time.time())
+                        self.clicks.put(press)
             except Exception:
                 pass
         threading.Thread(target=pump, daemon=True).start()
@@ -848,29 +856,62 @@ class Guide:
             return False
         return self.watching.wait(timeout=timeout)
 
+    def arm(self, x: float = 0.0, y: float = 0.0) -> None:
+        """
+        From now on, a press counts for this step.
+
+        Called when the target goes up, which is the moment the user can
+        first act on it — not when something later gets round to waiting.
+        The distinction is the whole bug: the sentence about a step is
+        spoken before the wait begins, so anyone who presses the control
+        while Diablo is still talking pressed it during that gap.
+        """
+        self.armed = time.time()
+
     def wait_for_click(self, x: float, y: float, radius: float = 44.0,
                        timeout: float = 90.0, should_stop=None) -> bool:
         """
-        Wait until the user clicks near the target. True if they did.
+        Whether the user pressed the target. True if they did.
 
-        Clicks elsewhere are ignored rather than counted: during a lesson
-        people click scrollbars and other windows, and none of that is the
-        step being taken.
+        A press made since the target was armed counts, including one
+        already sitting in the queue — this used to begin by emptying the
+        queue, which threw away exactly the presses people actually make.
+        Presses from before the step, and presses somewhere else, are
+        discarded: during a lesson people click scrollbars and other
+        windows, and none of that is the step being taken.
+
+        True means the user appears to have acted. It does not mean the
+        step succeeded; that is the screen's business, checked afterwards.
         """
-        while True:
-            try:
-                self.clicks.get_nowait()
-            except Exception:
-                break
+        armed = getattr(self, "armed", 0.0)
+
+        def is_the_step(press) -> bool:
+            if float(press.get("at", 0.0)) < armed:
+                return False        # it belonged to whatever came before
+            return (((press["x"] - x) ** 2
+                     + (press["y"] - y) ** 2) ** 0.5) <= radius
+
+        # Anything already waiting, first: the press may well have happened
+        # while he was still speaking.
+        held = []
+        try:
+            while True:
+                held.append(self.clicks.get_nowait())
+        except Exception:
+            pass
+        for press in held:
+            if is_the_step(press):
+                return True
+
         deadline = time.time() + timeout
         while time.time() < deadline:
             if should_stop and should_stop():
                 return False
             try:
-                click = self.clicks.get(timeout=0.25)
+                press = self.clicks.get(timeout=0.05)
             except Exception:
                 continue
-            if ((click["x"] - x) ** 2 + (click["y"] - y) ** 2) ** 0.5 <= radius:
+            if is_the_step(press):
                 return True
         return False
 
@@ -922,6 +963,9 @@ class Guide:
              on_light: bool = False) -> None:
         """Indicate the target: fades in where it belongs, no slide."""
         self.prepare(x, y, label, w, h, step=step)
+        # The ring is up, so this is the first instant the user can act on
+        # it. Everything pressed from here belongs to this step.
+        self.arm(x, y)
         self._send({"x": x, "y": y, "label": (label or "")[:80],
                     "w": w, "h": h, "fresh": True,
                     "step": step[:12], "on_light": bool(on_light)})
@@ -1186,6 +1230,8 @@ class Shell:
             self.guide_step(**data)
         elif event == "lesson_waiting":
             self.guide_waiting(**data)
+        elif event == "lesson_acted":
+            self.guide_acted(**data)
         elif event == "lesson_verified":
             self.guide_verified(**data)
         elif event == "lesson_unverified":
@@ -1366,6 +1412,18 @@ class Shell:
         if not self.lesson.waiting(seq):
             return
         self.presence.await_user()
+        self.wake()
+
+    def guide_acted(self, seq: Optional[int] = None) -> None:
+        """
+        The user pressed the target. Not the same as it having worked.
+
+        This is the state that was missing: between the press and the
+        screen being re-read there was nothing to show, so a walkthrough
+        looked frozen on "Go ahead" while it was in fact checking.
+        """
+        if not self.lesson.acted(seq):
+            return
         self.wake()
 
     def guide_verified(self, seq: Optional[int] = None) -> None:

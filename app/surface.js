@@ -68,7 +68,8 @@ export function screenStatus(screen) {
    The step's own sentence is spoken and shown as the answer; repeating it
    here would be the same thing said twice in two places. skills/lesson.py
    writes the wording, so the spoken and written sides cannot drift. */
-export const LESSON_LIVE = ['guiding', 'waiting', 'verified', 'unverified'];
+export const LESSON_LIVE = ['guiding', 'waiting', 'acted', 'verified',
+                            'unverified'];
 
 export function lessonStatus(lesson) {
   if (!lesson || !lesson.phase) return null;

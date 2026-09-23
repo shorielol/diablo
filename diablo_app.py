@@ -385,6 +385,9 @@ def _bridge_presence(voice_bridge) -> None:
         elif event == tutor.WAITING:
             phase = lesson.WAITING
             app_shell.notify("lesson_waiting", seq=seq)
+        elif event == tutor.ACTED:
+            phase = lesson.ACTED
+            app_shell.notify("lesson_acted", seq=seq)
         elif event == tutor.VERIFIED:
             phase = lesson.VERIFIED
             app_shell.notify("lesson_verified", seq=seq)

@@ -33,12 +33,13 @@ from typing import List, Optional
 IDLE = "idle"
 GUIDING = "guiding"        # the step is shown and he is beside it
 WAITING = "waiting"        # the user has been asked to act
+ACTED = "acted"            # they appear to have done it; the screen is being read
 VERIFIED = "verified"      # the screen really changed
 UNVERIFIED = "unverified"  # it did not, and that is said plainly
 DONE = "done"
 CANCELLED = "cancelled"
 
-PHASES = (IDLE, GUIDING, WAITING, VERIFIED, UNVERIFIED, DONE, CANCELLED)
+PHASES = (IDLE, GUIDING, WAITING, ACTED, VERIFIED, UNVERIFIED, DONE, CANCELLED)
 
 # A lesson is over in these; a late event belonging to it is not acted on.
 CLOSED = (DONE, CANCELLED)
@@ -145,22 +146,36 @@ class Lesson:
         self._take(seq, WAITING)
         return True
 
+    def acted(self, seq: Optional[int] = None) -> bool:
+        """
+        They appear to have pressed it.
+
+        Only from WAITING, because a press means nothing until the user has
+        been asked to make one. This is deliberately not VERIFIED: a press
+        inside the target says someone acted, not that the thing they were
+        told would happen happened. The screen decides that, next.
+        """
+        if self.phase != WAITING or not self.accept(seq):
+            return False
+        self._take(seq, ACTED)
+        return True
+
     def verified(self, seq: Optional[int] = None) -> bool:
         """
         The screen really changed.
 
-        Only from WAITING. A lesson cannot congratulate the user on a step it
-        never asked them to take — which is what "do not falsely celebrate
-        success" looks like in code rather than in prose.
+        Only after the user was asked, and only ever from waiting for them
+        or having seen them act. A lesson cannot congratulate someone on a
+        step it never asked them to take.
         """
-        if self.phase != WAITING or not self.accept(seq):
+        if self.phase not in (WAITING, ACTED) or not self.accept(seq):
             return False
         self._take(seq, VERIFIED)
         return True
 
     def unverified(self, note: str = "", seq: Optional[int] = None) -> bool:
         """Asked, waited, and nothing changed. Said, not hidden."""
-        if self.phase != WAITING or not self.accept(seq):
+        if self.phase not in (WAITING, ACTED) or not self.accept(seq):
             return False
         self.note = note or ""
         self._take(seq, UNVERIFIED)
@@ -213,6 +228,10 @@ def line_for(phase: str, step: Optional[Step] = None, note: str = "") -> str:
         return "%s · %s" % (head, body) if head else body
     if phase == WAITING:
         return "%s · Go ahead" % head if head else "Go ahead"
+    if phase == ACTED:
+        # Between the press and the screen being read. Without this the
+        # walkthrough sat on "Go ahead" while it was already checking.
+        return "%s · Checking" % head if head else "Checking"
     if phase == VERIFIED:
         return "%s · Done" % head if head else "Done"
     if phase == UNVERIFIED:
