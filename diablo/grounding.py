@@ -65,30 +65,35 @@ CURSOR_PAD = config.env_float("DIABLO_CURSOR_PAD", 140.0, low=30.0, high=800.0)
 # looking. It can never out-rank an accessibility element.
 REGION_CEILING = 0.85
 
-# The reply, in a shape Ollama enforces. Coordinates are normalised INSIDE the
-# crop that was sent, never absolute — an absolute coordinate from a model is
-# an invented one, and the crop is a rectangle Diablo chose and can check.
+# The reply, in a shape Ollama enforces.
+#
+# `bbox_2d`, and the name is not cosmetic. Phase B asked for left/top/right/
+# bottom as fractions of the image, which is a format no Qwen VL model was
+# ever trained to produce, and the measured consequence was boxes quantised
+# to multiples of 0.05 — the model guessing round numbers rather than
+# measuring. Qwen2.5-VL and Qwen3-VL are trained to emit `bbox_2d` as
+# [x1, y1, x2, y2] in absolute pixels of the image they were handed.
+#
+# Same model, same crop, same wording, five trials each:
+#
+#     protocol        welfare loss IoU   consumer surplus IoU   latency
+#     fractions               0.01               0.29            4.0s
+#     bbox_2d                 0.59               0.53            1.5s
+#     bbox_2d + where         0.63               0.48            3.0s
+#
+# `where` stays because it costs about a second and it is what Diablo says
+# out loud: the sentence is right even on the trials where the rectangle is
+# loose, and it is the half of the answer a person can act on.
 REGION_SCHEMA = {
     "type": "object",
     "properties": {
-        "found": {"type": "boolean"},
-        # Asked for FIRST, and required. Measured on the diagram fixture, three
-        # trials per configuration: asking only for a box found the shaded area
-        # in 2 of 10 attempts at a median IoU of 0.01. Asking the model to say
-        # where it is in words and only then give the box found it in 11 of 12
-        # and raised the median IoU to 0.14 — and the sentence it writes is
-        # right even when the rectangle is loose, so it is also the best thing
-        # Diablo can say out loud about a region it has only roughly located.
         "where": {"type": "string"},
+        "found": {"type": "boolean"},
+        "bbox_2d": {"type": "array", "items": {"type": "number"}},
         "what": {"type": "string"},
-        "left": {"type": "number"},
-        "top": {"type": "number"},
-        "right": {"type": "number"},
-        "bottom": {"type": "number"},
         "confidence": {"type": "number"},
     },
-    "required": ["where", "found", "left", "top", "right", "bottom",
-                 "confidence"],
+    "required": ["where", "found", "bbox_2d", "confidence"],
 }
 
 
@@ -136,6 +141,64 @@ def _frame_for(window: Optional[Dict[str, Any]]) -> _Frame:
     and `VisionEvidence.stale_against` — applied to the pixels actually used.
     """
     return _Frame()
+
+
+def _sized_for_model(path: str) -> Tuple[str, int, int, bool]:
+    """
+    The image as the model will actually receive it, and its pixel size.
+
+    `read_image` already downscales anything over `VISION_MAX_EDGE` before it
+    sends it. Doing that here first makes the second call a no-op and — the
+    point — means the dimensions the model is answering in are known rather
+    than guessed. An absolute pixel coordinate is only readable if you know
+    which picture it is absolute to.
+    """
+    from skills import screen_context as _sc
+    sized, temporary = _sc._for_vision(path)
+    try:
+        from AppKit import NSBitmapImageRep
+        from Foundation import NSData
+        rep = NSBitmapImageRep.imageRepWithData_(
+            NSData.dataWithContentsOfFile_(sized))
+        if rep is not None:
+            return sized, int(rep.pixelsWide()), int(rep.pixelsHigh()), temporary
+    except Exception:
+        pass
+    return sized, 0, 0, temporary
+
+
+def _box_in_crop(values: Any, image: Tuple[int, int]
+                 ) -> Optional[Tuple[float, float, float, float]]:
+    """
+    Four numbers from a model, as fractions of the crop — or nothing.
+
+    Three spaces are tried because three are in use in the wild: fractions of
+    the image, absolute pixels of the image (what Qwen VL emits), and the
+    per-mille convention the older Qwen2-VL used. The image's own dimensions
+    decide which reading is even possible, and a set of numbers that is not a
+    sane rectangle in any of them is refused rather than rescued.
+    """
+    if not isinstance(values, (list, tuple)) or len(values) < 4:
+        return None
+    try:
+        x1, y1, x2, y2 = [float(v) for v in values[:4]]
+    except (TypeError, ValueError):
+        return None
+    if any(v != v for v in (x1, y1, x2, y2)):
+        return None
+    width, height = float(image[0] or 0), float(image[1] or 0)
+    spaces = [(1.0, 1.0)]
+    if width > 0 and height > 0:
+        spaces.append((width, height))
+    spaces.append((1000.0, 1000.0))
+    for sw, sh in spaces:
+        u1, v1, u2, v2 = x1 / sw, y1 / sh, x2 / sw, y2 / sh
+        if not all(-0.02 <= v <= 1.02 for v in (u1, v1, u2, v2)):
+            continue
+        if u2 - u1 <= 0.005 or v2 - v1 <= 0.005:
+            continue
+        return (max(u1, 0.0), max(v1, 0.0), min(u2, 1.0), min(v2, 1.0))
+    return None
 
 
 def _ask_region(path: str, question: str,
@@ -261,7 +324,8 @@ def _confidence_of(reply: dict) -> float:
     return max(0.0, min(value, 1.0))
 
 
-def _rect_from(reply: Any, crop: Tuple[float, float, float, float]
+def _rect_from(reply: Any, crop: Tuple[float, float, float, float],
+               image: Tuple[int, int] = (0, 0)
                ) -> Optional[Tuple[float, float, float, float, float, str, str]]:
     """
     A checked rectangle in Quartz points, or nothing.
@@ -274,21 +338,17 @@ def _rect_from(reply: Any, crop: Tuple[float, float, float, float]
         return None
     if not reply.get("found"):
         return None
-    try:
-        left = float(reply["left"])
-        top = float(reply["top"])
-        right = float(reply["right"])
-        bottom = float(reply["bottom"])
-    except (KeyError, TypeError, ValueError):
+    box = reply.get("bbox_2d")
+    if box is None and "left" in reply:
+        # A model that answered in the older fraction shape. Accepted so that
+        # changing the vision model cannot silently stop the path working.
+        box = [reply.get("left"), reply.get("top"),
+               reply.get("right"), reply.get("bottom")]
+    normalised = _box_in_crop(box, image)
+    if normalised is None:
         return None
+    left, top, right, bottom = normalised
     confidence = _confidence_of(reply)
-    for value in (left, top, right, bottom):
-        if value != value or value < -0.02 or value > 1.02:   # NaN, or off the crop
-            return None
-    left, top = max(left, 0.0), max(top, 0.0)
-    right, bottom = min(right, 1.0), min(bottom, 1.0)
-    if right - left <= 0.005 or bottom - top <= 0.005:
-        return None
     if confidence != confidence or confidence < perception.FLOOR:
         return None
 
@@ -316,20 +376,20 @@ def _prompt(wanted: target.Target, window: Optional[Dict[str, Any]],
         job = ("the single object in the middle of this crop, which is what the "
                "user is pointing at")
     else:
-        job = (f"the filled or marked area that IS “{what}” — the shaded shape, "
-               f"the coloured region, the part of the drawing itself. Text "
-               f"labels are never the answer.")
-    # Words first, box second. The order is the finding: a model asked
-    # straight for a rectangle on a diagram mostly says it cannot see one, and
-    # the same model asked to describe the place first finds it and then
-    # measures it. The sentence is also what Diablo says out loud.
+        job = (f"the filled or marked area that is the “{what}” region — the "
+               f"shaded shape, the coloured area, the part of the drawing "
+               f"itself. Text labels are never the region.")
+    # "Outline the position of X and output its coordinates as bbox_2d" is the
+    # phrasing these models were trained on, and asking in their own words is
+    # most of why this works at all. `where` comes first because the sentence
+    # is what Diablo says out loud and because thinking before measuring costs
+    # a second and loses nothing.
     return (
         f"This is a crop of {app}.{near}\n\n"
-        f"First, in `where`, say in plain words where to find {job} — for "
-        f"example “the grey triangle just left of where the two lines cross”.\n\n"
-        f"Then give that area's bounding box as fractions of THIS image: left "
-        f"and right from 0 at the left edge to 1 at the right edge, top and "
-        f"bottom from 0 at the top edge to 1 at the bottom edge.\n\n"
+        f"Outline the position of {job}\n\n"
+        f"First, in `where`, say in plain words where it is — for example "
+        f"“the grey triangle just left of where the two lines cross”. "
+        f"Then output its coordinates in this image as bbox_2d.\n\n"
         f"If it is not visible in this crop, set found to false — that is a "
         f"useful answer and a wrong box is not.")
 
@@ -429,6 +489,7 @@ def _by_looking(wanted: target.Target, window) -> Ground:
         if not path:
             continue
         looks += 1
+        sized, iw, ih, temporary = _sized_for_model(path)
         try:
             if not frame.fingerprint:
                 try:
@@ -436,14 +497,15 @@ def _by_looking(wanted: target.Target, window) -> Ground:
                     frame.fingerprint = _screen._fingerprint(path)
                 except Exception:
                     pass
-            reply = _ask_region(path, _prompt(wanted, window, anchor), crop)
+            reply = _ask_region(sized, _prompt(wanted, window, anchor), crop)
         finally:
-            try:
-                os.unlink(path)
-            except OSError:
-                pass
+            for leftover in ({path} | ({sized} if temporary else set())):
+                try:
+                    os.unlink(leftover)
+                except OSError:
+                    pass
 
-        rect = _rect_from(reply, crop)
+        rect = _rect_from(reply, crop, (iw, ih))
         if rect is None:
             # "I cannot see it here" is worth another, wider look. Anything
             # else — a malformed reply, a box off the edge of the crop — is a

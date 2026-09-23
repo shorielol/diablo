@@ -188,11 +188,35 @@ CONTROL_WORDS = {
 CURSOR_PHRASES = (
     "under my cursor", "under the cursor", "under my mouse", "under my pointer",
     "my cursor", "my pointer", "i'm hovering", "im hovering", "hovering over",
-    "what i'm pointing at", "where i'm pointing",
+    # Every way a person actually says it. "what am i pointing at" was missing
+    # and the live cursor validation caught it: the question classified as a
+    # CONTROL request, searched the screen for the words "what am i pointing
+    # at", found nothing, and said so.
+    "pointing at", "pointing to", "i'm pointing", "im pointing",
+    "am i pointing", "am i hovering", "i am pointing", "i am hovering",
 )
 
 # "this" with nothing else in the sentence to attach it to.
 DEICTIC = ("this", "that", "these", "those", "it", "here", "there")
+
+# Words that survive the question-stripping regex but still name nothing on
+# the screen. Without these, "what am i pointing at" looked like a request to
+# find something called "what am i pointing at", because the leading pattern
+# does not match "what am" and five words came out the other side.
+EMPTY_WORDS = {
+    "what", "whats", "where", "wheres", "which", "who", "how", "why",
+    "is", "are", "am", "was", "were", "be", "do", "does", "did", "can",
+    "i", "im", "me", "my", "mine", "you", "your",
+    "at", "to", "on", "in", "of", "for", "the", "a", "an",
+    "point", "pointing", "hover", "hovering", "cursor", "mouse", "pointer",
+    "look", "looking", "see", "seeing", "show", "tell", "explain", "thing",
+    "right", "now", "currently", "exactly", "sir", "please",
+}
+
+
+def _named(text: str) -> set:
+    """The words in a request that could actually be looked for on a screen."""
+    return _words(text) - set(DEICTIC) - EMPTY_WORDS
 
 # The whole screen, asked about as a whole.
 SCREEN_PHRASES = (
@@ -301,7 +325,7 @@ def read_question(text: str, stated: str = "") -> Target:
     # come. The cursor can answer "what is this", because the pointer is
     # already on the thing; it cannot answer "where is it", because the answer
     # to that would be "under your pointer" and that is not what was asked.
-    bare = _words(semantic) - set(DEICTIC)
+    bare = _named(semantic)
     asks_where = bool(re.search(r"\bwhere\b", lowered))
     if cursor_local or (not bare and not asks_where
                         and _words(lowered) & set(DEICTIC)):
@@ -354,10 +378,9 @@ def _is_vague(semantic: str, cursor_local: bool, kind: str) -> bool:
     """Whether the question named anything a screen could be searched for."""
     if cursor_local:
         return False
-    bare = _words(semantic) - set(DEICTIC)
     if kind == SCREEN:
         return False
-    return not bare
+    return not _named(semantic)
 
 
 # ─── Does this candidate have the shape that was asked for? ──────────────────

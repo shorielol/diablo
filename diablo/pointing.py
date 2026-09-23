@@ -417,6 +417,13 @@ def _by_grounding(description: str, target_window: str, seconds: float,
         wanted = target_kind.read_question(description, stated=kind)
     except Exception:
         return None
+    # A question that named nothing at all is answered here whatever kind it
+    # was guessed to be. Caught by the live cursor validation: "where is it"
+    # fell through to the text search and came back "I can't find anything
+    # matching 'where is it'", which is a confused failure where the honest
+    # answer is a question.
+    if not wanted.pointable:
+        return target_kind.abstain(wanted)
     if wanted.kind not in (target_kind.REGION, target_kind.FIGURE,
                            target_kind.OBJECT, target_kind.SCREEN):
         return None

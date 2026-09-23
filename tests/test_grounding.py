@@ -40,7 +40,7 @@ from harness import Results, guard  # noqa: E402
 DIABLO_HOME = os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo"))
 sys.path.insert(0, DIABLO_HOME)
 
-from skills import computer_use, grounding, perception, target  # noqa: E402
+from skills import computer_use, grounding, perception, pointing, target  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -80,13 +80,22 @@ def anchor(text="Welfare loss", box=None):
             "window_id": WINDOW["id"]}
 
 
+# The image the stubbed model is pretending to have been sent. 1000x1000 so a
+# fraction and a pixel coordinate are the same number, which keeps the
+# fixtures below readable; the normaliser is tested on real dimensions above.
+STUB_IMAGE = (1000, 1000)
+
+
 def region_reply(box=None, found=True, confidence=0.86, what="shaded triangle"):
-    """What the vision model says, in the crop's own normalised space."""
+    """What the vision model says: bbox_2d, in the image's own pixels."""
+    corners = ({"left": 0.0, "top": 0.0, "right": 1.0, "bottom": 1.0}
+               if box is None else box)
     return {"found": found, "what": what, "confidence": confidence,
-            "reason": "grey wedge between the two curves above the price line",
-            "left": 0.0, "top": 0.0, "right": 1.0, "bottom": 1.0} if box is None else \
-           dict(found=found, what=what, confidence=confidence,
-                reason="grey wedge between the two curves", **box)
+            "where": "grey wedge between the two curves above the price line",
+            "bbox_2d": [corners["left"] * STUB_IMAGE[0],
+                        corners["top"] * STUB_IMAGE[1],
+                        corners["right"] * STUB_IMAGE[0],
+                        corners["bottom"] * STUB_IMAGE[1]]}
 
 
 def grounded(question, hits=None, reply=None, crop_used=None, frame=None,
@@ -100,7 +109,8 @@ def grounded(question, hits=None, reply=None, crop_used=None, frame=None,
     from skills import display, pointing
     taken = {}
     originals = (pointing.locate, display.capture_region, display.cursor,
-                 grounding._ask_region, grounding._frame_for)
+                 grounding._ask_region, grounding._frame_for,
+                 grounding._sized_for_model)
     try:
         pointing.locate = lambda *a, **k: list(hits if hits is not None else [anchor()])
         def capture(x, y, w, h):
@@ -115,12 +125,14 @@ def grounded(question, hits=None, reply=None, crop_used=None, frame=None,
             return got
         grounding._ask_region = ask
         grounding._frame_for = lambda window: frame or Frame()
+        grounding._sized_for_model = lambda p: (p, STUB_IMAGE[0], STUB_IMAGE[1], False)
         got = grounding.ground(question, WINDOW, stated_kind=stated)
         got.taken = taken
         return got
     finally:
         (pointing.locate, display.capture_region, display.cursor,
-         grounding._ask_region, grounding._frame_for) = originals
+         grounding._ask_region, grounding._frame_for,
+         grounding._sized_for_model) = originals
 
 
 def run():
@@ -154,6 +166,19 @@ def run():
                 and "where is" not in got.semantic.lower(),
                 repr(got.semantic))
         r.check("but what kind it is survives too", got.kind == target.REGION)
+
+    with guard(r, "a question that points with words, not with a noun"):
+        for phrase in ("what am i pointing at", "what is this", "explain this",
+                       "what's under my cursor", "what am I hovering over"):
+            got = target.read_question(phrase)
+            if not got.cursor_local:
+                r.bad("the pointer is recognised as the subject", repr(phrase))
+                break
+        else:
+            r.ok("the pointer is recognised as the subject", "5 phrasings")
+        r.check("and such a question is an OBJECT, not a control",
+                target.read_question("what am i pointing at").kind == target.OBJECT,
+                target.read_question("what am i pointing at").kind)
 
     with guard(r, "J  ambiguous: a question with no thing in it"):
         got = target.read_question("where is it")
@@ -355,11 +380,14 @@ def run():
         r.check("`where` is a required field",
                 "where" in grounding.REGION_SCHEMA["required"],
                 "measured: box-only found it 2 of 10, words-then-box 11 of 12")
+        r.check("and the box is asked for as bbox_2d",
+                "bbox_2d" in grounding.REGION_SCHEMA["required"],
+                "the format these models were actually trained to emit")
         prompt = grounding._prompt(
             target.read_question("where is the welfare loss region"), WINDOW,
             anchor())
         r.check("and the prompt asks for it first",
-                prompt.index("`where`") < prompt.index("bounding box"))
+                prompt.index("`where`") < prompt.index("bbox_2d"))
         r.check("the caption is named as a caption, not as the answer",
                 "NOT the thing itself" in prompt)
         got = grounded("where is the welfare loss region", reply=region_reply())
@@ -407,6 +435,18 @@ def run():
         got = grounding.ground("where is it", WINDOW)
         r.check("nothing is pointed at", not got.found)
         r.check("and there is something to say back", bool(got.note), got.note)
+        r.check("the sentence asks which thing",
+                "which" in got.note.lower(), got.note)
+
+    with guard(r, "and the tool says that, rather than failing to search"):
+        from skills import pointing as _p
+        answer = _p._by_grounding("where is it", "", 3.0, None, "")
+        r.check("point_at answers a vague question without searching",
+                answer is not None and "which" in answer.lower(),
+                repr(answer))
+        r.check("a real request is still not intercepted",
+                _p._by_grounding("the Continue button", "", 3.0, None, "") is None,
+                "a control question must keep the path it has always had")
 
     with guard(r, "I  a whole-screen question has no single target"):
         got = grounding.ground("what's on my screen", WINDOW)
@@ -446,6 +486,131 @@ def run():
         r.check("with no cursor it still works from the window",
                 without.found or without.abstained, without.note)
 
+    # ── The space the model answers in ──────────────────────────────────────
+    #
+    # Phase B asked for fractions of the image and got boxes quantised to
+    # 0.05 — the model was guessing round numbers in a format it was never
+    # trained to emit. Qwen VL models are trained to return `bbox_2d` in
+    # absolute pixels of the image they were handed. Measured on the fixture,
+    # same model, same crop, same wording: median IoU went from 0.01 to 0.59
+    # on welfare loss and the median latency from 4.0s to 1.5s.
+    r.head("bbox_2d, in whichever space it arrives")
+    with guard(r, "the normaliser"):
+        image = (1280, 898)
+        px = grounding._box_in_crop([366, 354, 518, 510], image)
+        r.check("absolute pixels are divided by the image it was sent",
+                px is not None and abs(px[0] - 366 / 1280) < 1e-9
+                and abs(px[1] - 354 / 898) < 1e-9, str(px))
+        fr = grounding._box_in_crop([0.25, 0.5, 0.75, 1.0], image)
+        r.check("a model that answers in fractions still works",
+                fr is not None and abs(fr[0] - 0.25) < 1e-9, str(fr))
+        mille = grounding._box_in_crop([250, 500, 750, 1000], (400, 300))
+        r.check("and one that answers in per-mille is recognised",
+                mille is not None and abs(mille[0] - 0.25) < 1e-9, str(mille))
+        for bad, why in (([518, 354, 366, 510], "inverted"),
+                         ([0, 0, 0, 0], "no area"),
+                         ([-40, 10, 900, 400], "off the left edge"),
+                         ([1, 2, 3], "too few numbers"),
+                         (["a", "b", "c", "d"], "not numbers"),
+                         ([float("nan")] * 4, "NaN"),
+                         (None, "nothing at all")):
+            if grounding._box_in_crop(bad, image) is not None:
+                r.bad("an impossible box is refused in every space", why)
+                break
+        else:
+            r.ok("an impossible box is refused in every space", "7 shapes")
+
+    with guard(r, "the fixture's own numbers, through the real normaliser"):
+        # The model's measured answer for the grey triangle, and the
+        # rectangle the fixture chose. Both known, neither computed here.
+        crop = (420.0, 130.0, 900.0, 632.0)
+        rect = grounding._rect_from(
+            {"found": True, "confidence": 0.9, "where": "the grey triangle",
+             "bbox_2d": [366, 354, 518, 510]}, crop, (1280, 898))
+        r.check("it becomes a rectangle", rect is not None)
+        if rect:
+            r.check("whose origin is the fixture's region to within two points",
+                    abs(rect[0] - 676.0) < 2.0 and abs(rect[1] - 380.0) < 2.0,
+                    f"{rect[0]:.1f},{rect[1]:.1f} against the fixture's 676,380")
+
+    # ── The coordinate chain ────────────────────────────────────────────────
+    #
+    # The region rectangle is the only model-supplied geometry in Diablo, so
+    # before the model is blamed for a loose box the conversion under it has
+    # to be proved. Every number here was worked out by hand from the crop
+    # rather than by calling the thing under test.
+    r.head("Normalised box to guidance, end to end")
+    with guard(r, "one crop, one box, arithmetic done by hand"):
+        crop = (500.0, 300.0, 400.0, 200.0)      # Quartz points
+        box = {"left": 0.25, "top": 0.50, "right": 0.75, "bottom": 1.00}
+        # by hand: x = 500 + 0.25*400 = 600;  y = 300 + 0.50*200 = 400
+        #          w = (0.75-0.25)*400 = 200;  h = (1.00-0.50)*200 = 100
+        rect = grounding._rect_from(dict(found=True, confidence=0.9,
+                                         where="the lower middle", what="wedge",
+                                         **box), crop, (0, 0))
+        r.check("a checked rectangle came back", rect is not None)
+        if rect:
+            x, y, w, h = rect[0], rect[1], rect[2], rect[3]
+            r.check("x is the crop's left plus a quarter of its width",
+                    abs(x - 600.0) < 1e-9, f"{x}")
+            r.check("y is the crop's top plus half its height",
+                    abs(y - 400.0) < 1e-9, f"{y}")
+            r.check("width is half the crop", abs(w - 200.0) < 1e-9, f"{w}")
+            r.check("height is half the crop", abs(h - 100.0) < 1e-9, f"{h}")
+
+    with guard(r, "the corners come from the one mapper, not from arithmetic here"):
+        from skills import display
+        frame = {"x": 500.0, "y": 300.0, "width": 400.0, "height": 200.0}
+        r.check("image_to_quartz agrees at the top-left corner",
+                display.image_to_quartz(0.0, 0.0, frame) == (500.0, 300.0))
+        r.check("and at the bottom-right corner",
+                display.image_to_quartz(1.0, 1.0, frame) == (900.0, 500.0))
+        r.check("and in the middle",
+                display.image_to_quartz(0.5, 0.5, frame) == (700.0, 400.0))
+
+    with guard(r, "a crop on a display at negative x needs no special case"):
+        crop = (-1600.0, -200.0, 800.0, 600.0)
+        rect = grounding._rect_from(
+            dict(found=True, confidence=0.9, where="left", what="",
+                 left=0.5, top=0.5, right=1.0, bottom=1.0), crop, (0, 0))
+        r.check("the rectangle lands on the second display",
+                rect is not None and abs(rect[0] - -1200.0) < 1e-9
+                and abs(rect[1] - 100.0) < 1e-9,
+                str(rect[:4]) if rect else "none")
+
+    with guard(r, "the display's scale factor cancels out"):
+        # A normalised box is scale-free by construction: the same fractions
+        # on a 1x capture and on a 2x Retina capture of the same window must
+        # produce the same points, which is why this path never sees pixels.
+        crop = (420.0, 130.0, 900.0, 632.0)
+        same = dict(found=True, confidence=0.9, where="", what="",
+                    left=0.284, top=0.396, right=0.378, bottom=0.624)
+        once = grounding._rect_from(same, crop, (0, 0))
+        twice = grounding._rect_from(same, crop, (0, 0))
+        r.check("the conversion is a pure function of the crop",
+                once == twice, "no pixel dimension enters it")
+        if once:
+            r.check("and it reproduces the fixture's own region rectangle",
+                    abs(once[0] - 675.6) < 1.0 and abs(once[1] - 380.3) < 1.0
+                    and abs(once[2] - 84.6) < 1.0 and abs(once[3] - 144.1) < 1.0,
+                    f"{once[0]:.1f},{once[1]:.1f} {once[2]:.1f}x{once[3]:.1f} "
+                    f"against the fixture's 676,380 84x144")
+
+    with guard(r, "guidance is handed an extent, not a point"):
+        got = grounded("where is the welfare loss region", reply=region_reply())
+        r.check("the candidate carries a width and a height",
+                got.found and got.candidate.width > 0 and got.candidate.height > 0)
+        if got.found:
+            c = got.candidate
+            cx, cy = c.centre
+            r.check("its centre is the middle of its own box",
+                    abs(cx - (c.x + c.width / 2)) < 1e-9
+                    and abs(cy - (c.y + c.height / 2)) < 1e-9)
+            r.check("and show() can carry that extent to the overlay",
+                    "width" in pointing.show.__code__.co_varnames
+                    and "height" in pointing.show.__code__.co_varnames,
+                    "GUI-6 has outlined regions since it shipped")
+
     # ── Staleness ───────────────────────────────────────────────────────────
     r.head("A target belongs to the screen it was found on")
     with guard(r, "the existing fingerprint mechanism"):
@@ -476,6 +641,54 @@ def run():
             r.ok("no synthetic event anywhere in this build", "5 symbols, none present")
         r.check("and no do_engine execution path was added",
                 "do_engine" not in source)
+
+    # ── The corpus ──────────────────────────────────────────────────────────
+    #
+    # One diagram proves nothing about grounding; it proves something about
+    # that diagram. These are the cases, and the fixtures that hold them.
+    r.head("The corpus, and what each case is for")
+    CORPUS = [
+        ("A  welfare loss",        "where is the welfare loss region",       target.REGION),
+        ("B  consumer surplus",    "where is the consumer surplus region",   target.REGION),
+        ("C  producer surplus",    "where is the producer surplus region",   target.REGION),
+        ("D  equilibrium",         "where is the equilibrium region",        target.REGION),
+        ("E  unlabelled shading",  "where is the blue shaded area",          target.REGION),
+        ("F  label far away",      "where is the deadweight loss region",    target.REGION),
+        ("G  label nearby",        "where is the producer surplus shading",  target.REGION),
+        ("H  a curve",             "where is the demand curve",              target.REGION),
+        ("I  an intersection",     "where is the intersection of the lines", target.REGION),
+        ("J  an annotation",       "where is the arrow",                     target.REGION),
+        ("K  a chart segment",     "where is the third bar",                 target.REGION),
+        ("L  a highlighted area",  "where is the highlighted bar",           target.REGION),
+        ("M  cursor-local object", "what am i pointing at",                  target.OBJECT),
+        ("N  cursor-local region", "what is this",                           target.OBJECT),
+        ("O  ambiguous",           "where is it",                            target.CONTROL),
+    ]
+    with guard(r, "every case classifies as the kind it is"):
+        for name, question, expected in CORPUS:
+            got = target.read_question(question)
+            r.check(f"{name}: {question!r}", got.kind == expected,
+                    f"wanted {expected}, got {got.kind} — {got.reason}")
+        r.check("and the ambiguous one is the only unpointable case",
+                not target.read_question("where is it").pointable
+                and all(target.read_question(q).pointable
+                        for _, q, _ in CORPUS if q != "where is it"))
+
+    with guard(r, "three fixtures, not one"):
+        for name, regions in (("diagram_app.py", 2), ("market_app.py", 5),
+                              ("chart_app.py", 4)):
+            path = os.path.join(HERE, "fixtures", name)
+            r.check(f"{name} exists", os.path.exists(path), path)
+        r.check("and each one can place itself under the pointer",
+                all("FIXTURE_ORIGIN" in open(
+                    os.path.join(HERE, "fixtures", n)).read()
+                    for n in ("diagram_app.py", "market_app.py", "chart_app.py")),
+                "a cursor question is tested by moving the window, never the cursor")
+        r.check("no fixture moves the pointer",
+                not any(sym in open(os.path.join(HERE, "fixtures", n)).read()
+                        for n in ("diagram_app.py", "market_app.py", "chart_app.py")
+                        for sym in ("CGWarpMouseCursorPosition", "CGEventPost",
+                                    "setMouseLocation")))
 
     # ── The real diagram ────────────────────────────────────────────────────
     r.head("The fixture, for real")

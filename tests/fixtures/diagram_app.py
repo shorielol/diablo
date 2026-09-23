@@ -125,12 +125,33 @@ class Diagram(NSView):
             write(text, (LEGEND_X + 24.0, at_y - 1.0), size=14.0)
 
 
+def _origin(x: float, y: float):
+    """
+    Where to put the window, so a harness can place a known region under the
+    pointer without ever touching the pointer.
+
+    `FIXTURE_ORIGIN="x,y"` in AppKit screen points (bottom-left). Moving the
+    window is the only safe way to test a cursor-local question: moving the
+    cursor would mean posting a synthetic event, which this build is not
+    allowed to do and which Diablo must never do either.
+    """
+    import os as _os
+    raw = _os.getenv("FIXTURE_ORIGIN", "")
+    if raw:
+        try:
+            left, bottom = [float(v) for v in raw.split(",")[:2]]
+            return (left, bottom)
+        except ValueError:
+            pass
+    return (x, y)
+
+
 def main() -> int:
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
 
     window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-        NSMakeRect(420, 220, 900, 600), NSWindowStyleMaskTitled,
+        NSMakeRect(*_origin(420.0, 220.0), 900, 600), NSWindowStyleMaskTitled,
         NSBackingStoreBuffered, False)
     window.setTitle_(TITLE)
 
