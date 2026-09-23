@@ -894,7 +894,7 @@ def _observed(readings: List[Any]) -> None:
         pass
 
 
-def point_at(description: str, target: str = "") -> str:
+def point_at(description: str, target: str = "", kind: str = "") -> str:
     """Put a marker on screen over the thing the user is looking for."""
     try:
         module = _skill("pointing")
@@ -906,7 +906,8 @@ def point_at(description: str, target: str = "") -> str:
         # cannot carry — which control, how sure, which instrument, which
         # frame.
         readings: List[Any] = []
-        said = module.point_at(description, target, reading_out=readings)
+        said = module.point_at(description, target, reading_out=readings,
+                               kind=kind)
         _observed(readings)
         return _clip(said)
     except Exception as e:
@@ -1671,10 +1672,19 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
                       "description": "The app or window to look in, name only, "
                                      "such as 'Notes' or 'chrome'. Leave empty "
                                      "for whatever is in front. Never put the "
-                                     "thing you are looking for in here."}},
+                                     "thing you are looking for in here."},
+           "kind": {"type": "string",
+                    "description": "What sort of thing it is, when you can "
+                                   "tell: 'control' for a button, menu or "
+                                   "field; 'text' for a paragraph or heading; "
+                                   "'region' for an area of a picture such as "
+                                   "a shaded part of a graph; 'figure' for a "
+                                   "whole chart or image. Leave empty if "
+                                   "unsure."}},
           ["description"],
           "point show where find highlight mark locate look which button menu "
-          "screen click press tab option setting"),
+          "screen click press tab option setting region area shaded graph "
+          "diagram chart figure curve triangle"),
     _tool("find_on_screen", find_on_screen,
           "Find where something is on screen without drawing a marker. Returns the "
           "matches and roughly where each one sits in the window.",

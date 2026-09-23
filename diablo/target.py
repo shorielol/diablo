@@ -1,0 +1,475 @@
+"""
+What the user asked for, as a kind of thing rather than as a string.
+
+Everything in Diablo's perception stack was built around controls, and it is
+good at them. Accessibility publishes a rectangle and a name, OCR reads the
+printing on the glass, vision says which of several published rectangles is
+the gear. All three answer the same question — "which control?" — and all
+three return the geometry of their own evidence.
+
+That is exactly why "where is the welfare loss region?" failed. OCR found the
+words `Welfare loss` printed on a diagram and returned the rectangle of the
+words, because the rectangle of the words is the only thing OCR has. Nothing
+downstream could object, because the target had been a bare string since the
+tool call: `point_at("the welfare loss region")` carries no notion that the
+answer should be an AREA and that a caption is not one.
+
+So this module holds the missing distinction, and nothing else. It does not
+capture, does not call a model, does not touch AppKit, and does not know what
+a window is. It answers three questions about a request:
+
+    WHAT KIND of thing would answer this?
+    WHICH INSTRUMENTS could see that kind?
+    DOES THIS CANDIDATE actually have the shape of what was asked for?
+
+The third is the guard the bug needed. A label may help find a region. It may
+never be returned as one.
+
+Six kinds, not the eight that were sketched. Each one is here because some
+part of the runtime can already produce or consume it:
+
+    CONTROL   accessibility and OCR both find these; guidance rings them
+    TEXT      OCR's native output; the tutor already outlines regions of type
+    REGION    an area inside a picture — the kind that was missing
+    FIGURE    a whole chart, diagram or image, as one object
+    OBJECT    whatever is under the cursor, when the question says "this"
+    SCREEN    the whole screen; never a pointing target, and that matters
+
+DIAGRAM_COMPONENT and ICON were sketched and are not here. A diagram component
+is a REGION found inside a FIGURE and needs no separate handling; an icon is a
+CONTROL the vision source already identifies by shape. Adding either would be
+a name with no behaviour behind it.
+"""
+
+import re
+from dataclasses import dataclass, field
+from typing import Any, List, Optional, Tuple
+
+# ─── The kinds ───────────────────────────────────────────────────────────────
+
+CONTROL = "control"
+TEXT = "text"
+REGION = "region"
+FIGURE = "figure"
+OBJECT = "object"
+SCREEN = "screen"
+
+KINDS = (CONTROL, TEXT, REGION, FIGURE, OBJECT, SCREEN)
+
+# Kinds that can be pointed at. SCREEN is deliberately not one: "what's on my
+# screen" is a question about everything, and drawing a ring around everything
+# says nothing.
+POINTABLE = (CONTROL, TEXT, REGION, FIGURE, OBJECT)
+
+
+# ─── The instruments ─────────────────────────────────────────────────────────
+#
+# The same three names perception.py already tags its candidates with, plus
+# the one this build adds. They are strings for the same reason Candidate's
+# are: they end up in evidence a person reads.
+
+ACCESSIBILITY = "accessibility"
+OCR = "ocr"
+VISION = "vision"
+REGION_SOURCE = "region"
+
+# Which instruments are worth asking, in order, for each kind. The order is
+# the cost order that perception.locate already follows — accessibility at
+# 80ms, OCR at about a second, vision at six to thirteen.
+SOURCES = {
+    CONTROL: (ACCESSIBILITY, OCR, VISION),
+    TEXT:    (OCR, ACCESSIBILITY),
+    # No accessibility: a diagram inside a PDF or a canvas publishes no
+    # elements at all, so asking would cost 80ms to learn nothing. OCR is here
+    # for the labels, which anchor the look — not for the answer.
+    REGION:  (OCR, VISION),
+    FIGURE:  (VISION, OCR),
+    OBJECT:  (OCR, VISION),
+    SCREEN:  (OCR,),
+}
+
+
+def sources_for(kind: str) -> Tuple[str, ...]:
+    """Which instruments could answer a question of this kind, cheapest first."""
+    return SOURCES.get(kind, SOURCES[CONTROL])
+
+
+# ─── How far to look ─────────────────────────────────────────────────────────
+#
+# Full-screen analysis is the most expensive thing Diablo can do and the least
+# likely to be right, because a model asked about 3.5 million pixels answers
+# about whichever tenth of them is loudest. These are the scopes, narrowest
+# first. Nothing escalates unless the narrower look could not answer.
+
+CURSOR = "cursor"              # a small box around the pointer
+ANCHOR = "anchor"              # around the label that names the thing
+PANEL = "panel"                # the surrounding figure or column
+WINDOW = "window"              # the whole window
+SCREEN_SCOPE = "screen"        # every display; the last resort
+CONTROL_SCOPE = "control"      # no capture at all: accessibility answered
+
+LEVELS = (CURSOR, ANCHOR, PANEL, WINDOW, SCREEN_SCOPE)
+
+
+def scope_for(target: "Target") -> Tuple[str, ...]:
+    """
+    The scopes to try, in order, for this request.
+
+    A named region does NOT start at its own caption, and that is a measured
+    correction rather than a preference. On the diagram fixture the words
+    "Welfare loss" sit in a legend on the right-hand side and the shape they
+    name is 396 points away on the left. A 506x530 crop centred on the caption
+    captured in 132ms against 182ms for the window — faster, and it did not
+    contain the region at all, so the answer was "not in this crop" every
+    time. A smaller capture that cannot see the thing is not an optimisation.
+
+    The caption still decides WHERE the panel is centred and what the model is
+    told the thing is called. It is evidence. It is just not the middle of the
+    picture.
+    """
+    if target.kind == CONTROL:
+        return (CONTROL_SCOPE, WINDOW)
+    if target.cursor_local:
+        # The cursor is different: the pointer really is on the thing, so the
+        # narrowest look is the most likely to be right as well as the
+        # cheapest. This is the one case where narrowing helps twice.
+        return (CURSOR, PANEL, WINDOW, SCREEN_SCOPE)
+    if target.kind == SCREEN:
+        return (SCREEN_SCOPE,)
+    return (PANEL, WINDOW, SCREEN_SCOPE)
+
+
+# ─── Reading the question ────────────────────────────────────────────────────
+#
+# Vocabulary, not a model. A classifier that needs a model to decide which
+# model to call has bought nothing, and this runs in microseconds on the
+# phrasing the user actually used.
+
+# Words that name an AREA of a picture. The economics ones are here because
+# they are what the failure was about and because they are the clearest case
+# of the distinction: a surplus is a shaded shape, and the words "consumer
+# surplus" printed beside it are a caption.
+REGION_WORDS = {
+    "region", "area", "zone", "shaded", "shading", "wedge", "band", "patch",
+    "triangle", "rectangle", "square", "surplus", "loss", "deadweight",
+    "curve", "line", "slope", "intersection", "equilibrium", "segment",
+    "arrow", "highlighted", "highlight", "overlap", "gap", "portion",
+    "section", "quadrant", "axis", "bar", "slice", "wedge",
+}
+
+# Phrases that describe an area without naming one of the words above.
+REGION_PHRASES = (
+    "between the", "under the curve", "above the", "below the", "inside the",
+    "the bit where", "the part where", "the part of", "shaded in",
+)
+
+# A whole picture, asked about as one object.
+FIGURE_WORDS = {
+    "graph", "chart", "diagram", "figure", "plot", "image", "picture",
+    "photo", "illustration", "drawing", "screenshot", "map", "table",
+}
+
+# Things made of words.
+TEXT_WORDS = {
+    "paragraph", "sentence", "line", "word", "heading", "title", "caption",
+    "footnote", "quote", "quotation", "text", "passage", "clause", "bullet",
+    "list", "definition", "label",
+}
+
+# Things an application publishes and a person clicks.
+CONTROL_WORDS = {
+    "button", "menu", "tab", "field", "box", "checkbox", "toggle", "switch",
+    "slider", "link", "option", "setting", "settings", "dropdown", "control",
+    "icon", "toolbar", "sidebar", "panel", "item", "entry", "row", "cell",
+    "input", "search", "window",
+}
+
+# The cursor is the subject when the question points rather than names.
+CURSOR_PHRASES = (
+    "under my cursor", "under the cursor", "under my mouse", "under my pointer",
+    "my cursor", "my pointer", "i'm hovering", "im hovering", "hovering over",
+    "what i'm pointing at", "where i'm pointing",
+)
+
+# "this" with nothing else in the sentence to attach it to.
+DEICTIC = ("this", "that", "these", "those", "it", "here", "there")
+
+# The whole screen, asked about as a whole.
+SCREEN_PHRASES = (
+    "on my screen", "on the screen", "on screen", "my whole screen",
+    "everything on", "what am i looking at", "what's in front of me",
+    "whats in front of me", "my display", "my desktop",
+)
+
+# The scaffolding a question is wrapped in. Stripped so that what remains is
+# the thing itself, which is what gets matched against the screen.
+_LEAD = re.compile(
+    r"^\s*(?:(?:please|hey|ok|okay|so|and|um|er)\s+)*"
+    r"(?:(?:can|could|would|will)\s+you\s+)?"
+    r"(?:(?:please|just)\s+)?"
+    r"(?:show\s+me\s+(?:where\s+)?|point\s+(?:me\s+)?(?:to|at)\s+|point\s+out\s+|"
+    r"tell\s+me\s+(?:where|what)\s+(?:is\s+|are\s+)?|"
+    r"find\s+|locate\s+|highlight\s+|mark\s+|read\s+|explain\s+|describe\s+|"
+    r"what\s+(?:does|do|is|are|'s)\s+|whats\s+|where\s+(?:is|are|'s)\s+|wheres\s+|"
+    r"which\s+(?:is|one\s+is)\s+|how\s+do\s+i\s+find\s+)",
+    re.I)
+
+_TRAIL = re.compile(
+    r"\s*(?:\bshow(?:s|ing)?\b.*|\bmean(?:s|ing)?\b.*|\bsay(?:s|ing)?\b.*|"
+    r"\bon\s+(?:my|the)\s+screen\b.*|\bin\s+(?:this|that)\s+(?:window|app|tab)\b.*|"
+    r"\bfor\s+me\b.*)?\s*[?.!]*\s*$", re.I)
+
+_ARTICLE = re.compile(r"^\s*(?:the|a|an|my|this|that|these|those)\s+", re.I)
+
+
+def _strip(text: str) -> str:
+    """What is left of a question once the asking is taken off it."""
+    body = (text or "").strip()
+    previous = None
+    while body and body != previous:
+        previous = body
+        body = _LEAD.sub("", body, count=1).strip()
+    body = _TRAIL.sub("", body, count=1).strip()
+    # One article, not a loop: "the the" came out of a sentence built from
+    # this, and "a list of the things" must keep its second article.
+    body = _ARTICLE.sub("", body, count=1).strip()
+    return body.strip(" ,.?!")
+
+
+def _words(text: str) -> set:
+    return set(re.findall(r"[a-z']+", (text or "").lower()))
+
+
+@dataclass
+class Target:
+    """What is wanted, and how sure we are about what kind it is."""
+
+    semantic: str = ""            # the thing itself, in the user's words
+    kind: str = CONTROL
+    cursor_local: bool = False    # the question pointed rather than named
+    vague: bool = False           # it named nothing at all
+    reason: str = ""              # why this kind, for the trace
+
+    @property
+    def pointable(self) -> bool:
+        """Whether there is, in principle, one thing to put a ring around."""
+        if self.vague:
+            return False
+        if self.kind not in POINTABLE:
+            return False
+        # OBJECT is the cursor's own answer and needs no name; everything else
+        # has to have named something.
+        return bool(self.semantic) or self.cursor_local
+
+
+def read_question(text: str, stated: str = "") -> Target:
+    """
+    What kind of answer this question wants.
+
+    `stated` is the decision layer's own verdict, when it has one. The planner
+    knows what the user wants better than a regular expression does, so when
+    it says "region" that is taken. It is not required, because the phrasing
+    carries the same information most of the time and a tool call that omits
+    it must still work.
+    """
+    raw = (text or "").strip()
+    lowered = raw.lower()
+    semantic = _strip(raw)
+    words = _words(semantic) | _words(lowered)
+
+    cursor_local = any(phrase in lowered for phrase in CURSOR_PHRASES)
+
+    if stated:
+        wanted = str(stated).strip().lower()
+        if wanted in KINDS:
+            return Target(semantic=semantic, kind=wanted,
+                          cursor_local=cursor_local,
+                          vague=_is_vague(semantic, cursor_local, wanted),
+                          reason="stated by the decision layer")
+
+    # The whole screen, before anything else: "what's on my screen" contains
+    # "screen", which is also a control word.
+    if any(phrase in lowered for phrase in SCREEN_PHRASES) and not semantic:
+        return Target(semantic="", kind=SCREEN, reason="asked about the screen itself")
+    if any(phrase in lowered for phrase in SCREEN_PHRASES) and \
+            not (words & (REGION_WORDS | FIGURE_WORDS | CONTROL_WORDS | TEXT_WORDS)):
+        return Target(semantic="", kind=SCREEN, reason="asked about the screen itself")
+
+    # A question that points instead of naming.
+    #
+    # "where is it" is not one of these, even though it is as deictic as they
+    # come. The cursor can answer "what is this", because the pointer is
+    # already on the thing; it cannot answer "where is it", because the answer
+    # to that would be "under your pointer" and that is not what was asked.
+    bare = _words(semantic) - set(DEICTIC)
+    asks_where = bool(re.search(r"\bwhere\b", lowered))
+    if cursor_local or (not bare and not asks_where
+                        and _words(lowered) & set(DEICTIC)):
+        # "what does this graph show" points AND names; the noun wins.
+        if words & FIGURE_WORDS:
+            return Target(semantic=semantic, kind=FIGURE, cursor_local=True,
+                          reason="a picture, indicated rather than named")
+        if not bare:
+            return Target(semantic=semantic, kind=OBJECT, cursor_local=True,
+                          reason="named nothing; the cursor says which thing")
+
+    # A whole picture asked about as a whole: "what does this graph show".
+    if words & FIGURE_WORDS:
+        asking_about_it = any(v in lowered for v in
+                              ("show", "shows", "showing", "mean", "means",
+                               "about", "saying", "tell me about", "explain",
+                               "describe", "what is", "what's", "whats"))
+        naming_a_part = bool(words & REGION_WORDS) or \
+            any(p in lowered for p in REGION_PHRASES)
+        if asking_about_it and not naming_a_part:
+            return Target(semantic=semantic, kind=FIGURE,
+                          reason="asked what a whole figure shows")
+
+    # An area of a picture.
+    if (words & REGION_WORDS) or any(p in lowered for p in REGION_PHRASES):
+        # A control word wins only when it is the head noun: "the settings
+        # area" is a panel of controls, "the shaded area" is not.
+        if words & CONTROL_WORDS and not (words & {"shaded", "shading",
+                                                   "surplus", "deadweight",
+                                                   "triangle", "highlighted"}):
+            head = semantic.lower().split()[-1] if semantic.split() else ""
+            if head in CONTROL_WORDS:
+                return Target(semantic=semantic, kind=CONTROL,
+                              reason="an area of controls, not of a picture")
+        return Target(semantic=semantic, kind=REGION,
+                      vague=_is_vague(semantic, cursor_local, REGION),
+                      reason="named an area rather than a control")
+
+    if words & TEXT_WORDS:
+        return Target(semantic=semantic, kind=TEXT,
+                      reason="asked for something made of words")
+
+    return Target(semantic=semantic, kind=CONTROL,
+                  cursor_local=cursor_local,
+                  vague=_is_vague(semantic, cursor_local, CONTROL),
+                  reason="named a thing in the interface")
+
+
+def _is_vague(semantic: str, cursor_local: bool, kind: str) -> bool:
+    """Whether the question named anything a screen could be searched for."""
+    if cursor_local:
+        return False
+    bare = _words(semantic) - set(DEICTIC)
+    if kind == SCREEN:
+        return False
+    return not bare
+
+
+# ─── Does this candidate have the shape that was asked for? ──────────────────
+#
+# The guard the welfare-loss bug needed, and the whole reason this module
+# exists. Everything above decides what to look for; this decides whether what
+# came back is that thing.
+
+# A region has to be bigger than a line of type to be a region at all. A line
+# of body text on a Retina display is 14 to 22 points tall, and a caption
+# accepted as a "region" is exactly the bug.
+MIN_REGION_EDGE = 24.0
+
+# How much bigger than the caption a box has to be before it is plausibly the
+# thing rather than a box drawn round the caption. Three times the area of a
+# line of type is still a very small region, so this refuses only the case it
+# is aimed at.
+CAPTION_MULTIPLE = 3.0
+
+
+def boxed_the_caption(candidate: Any, anchor: Any) -> bool:
+    """
+    Whether a returned region is really just the caption with a border on it.
+
+    The failure this build exists to stop has a disguised form: instead of
+    returning the label's rectangle, the model returns a slightly larger
+    rectangle that contains the label. Same mistake, harder to see. A region
+    that swallows its own caption and is barely bigger than it is that.
+    """
+    if candidate is None or not anchor:
+        return False
+    try:
+        ax0 = float(anchor["left"]); ay0 = float(anchor["top"])
+        aw = float(anchor["width"]); ah = float(anchor["height"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    if aw <= 0 or ah <= 0:
+        return False
+    cx0, cy0 = float(candidate.x), float(candidate.y)
+    cx1, cy1 = cx0 + float(candidate.width), cy0 + float(candidate.height)
+    contains = (cx0 <= ax0 + 2 and cy0 <= ay0 + 2
+                and cx1 >= ax0 + aw - 2 and cy1 >= ay0 + ah - 2)
+    if not contains:
+        return False
+    return (float(candidate.width) * float(candidate.height)
+            <= aw * ah * CAPTION_MULTIPLE)
+
+
+def satisfies(kind: str, candidate: Any) -> bool:
+    """Whether a candidate's geometry is the kind of thing that was requested."""
+    if candidate is None:
+        return False
+    width = float(getattr(candidate, "width", 0.0) or 0.0)
+    height = float(getattr(candidate, "height", 0.0) or 0.0)
+    sources = set(getattr(candidate, "sources", []) or [])
+    role = str(getattr(candidate, "role", "") or "").lower()
+
+    if kind in (REGION, FIGURE):
+        # The rule. A candidate whose only evidence is that some words match
+        # is a label, and a label is not an area — however well it matched.
+        if REGION_SOURCE not in sources:
+            return False
+        if width < MIN_REGION_EDGE or height < MIN_REGION_EDGE:
+            return False
+        return True
+
+    if kind == OBJECT:
+        # Whatever is there, as long as it is somewhere. The cursor already
+        # said which thing; this only refuses an empty box.
+        return width > 0.0 and height > 0.0
+
+    if kind == TEXT:
+        return role in ("text", "region", "axstatictext", "axtextarea",
+                        "axtextfield") or OCR in sources or REGION_SOURCE in sources
+
+    if kind == CONTROL:
+        # Deliberately permissive. A button in an application with no
+        # accessibility tree is found by its printed label and nothing else,
+        # and that has worked for a long time. Refusing it here would trade a
+        # real bug for a regression.
+        return width > 0.0 and height > 0.0
+
+    return width > 0.0 and height > 0.0
+
+
+def why_not(kind: str, candidate: Any) -> str:
+    """One sentence saying why a candidate was refused, for the trace."""
+    if candidate is None:
+        return "there was no candidate"
+    if satisfies(kind, candidate):
+        return ""
+    sources = set(getattr(candidate, "sources", []) or [])
+    label = str(getattr(candidate, "label", "") or "")[:40]
+    if kind in (REGION, FIGURE) and REGION_SOURCE not in sources:
+        return (f"“{label}” is a label read off the screen, not the area it "
+                f"names — matching words is not the same as finding the thing")
+    if kind in (REGION, FIGURE):
+        return (f"“{label}” is {getattr(candidate, 'width', 0):.0f} by "
+                f"{getattr(candidate, 'height', 0):.0f} points, too small to "
+                f"be the area asked for")
+    return f"“{label}” is not the kind of thing the question asked for"
+
+
+def abstain(target: Target) -> str:
+    """What to say when the requested thing could not be grounded."""
+    if target.kind == SCREEN:
+        return ("That is a question about the whole screen rather than one "
+                "thing on it, so there is nothing for me to point at.")
+    if target.vague:
+        return "Which thing do you mean, Sir? I need something to look for."
+    what = target.semantic or "that"
+    if target.kind in (REGION, FIGURE):
+        return (f"I can see the words but I cannot make out the {what} itself, "
+                f"Sir. I would rather say so than ring the caption.")
+    return f"I cannot find {what} on screen, Sir."

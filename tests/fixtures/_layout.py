@@ -32,6 +32,25 @@ def _main_height() -> float:
     return display.main_height()
 
 
+def rect_in(window, view, rect=None) -> dict:
+    """
+    One rectangle of one view, in Quartz screen points.
+
+    `rect` is in the view's own coordinates (bottom-left, like AppKit); leave
+    it out for the whole view. Split out of `describe` so a fixture that draws
+    rather than lays out controls — a diagram, a chart — can report where it
+    put a shape without inventing a second conversion.
+    """
+    bounds = view.bounds() if rect is None else rect
+    screen = window.convertRectToScreen_(view.convertRect_toView_(bounds, None))
+    height = _main_height()
+    box_height = float(screen.size.height)
+    return {"x": round(float(screen.origin.x), 1),
+            "y": round(height - (float(screen.origin.y) + box_height), 1),
+            "width": round(float(screen.size.width), 1),
+            "height": round(box_height, 1)}
+
+
 def describe(window, controls) -> dict:
     """
     `controls` is a list of (id, kind, label, role, view, extra) tuples.
@@ -39,18 +58,11 @@ def describe(window, controls) -> dict:
     `extra` is a dict merged into the record — enabled, checked, whatever the
     fixture knows and the Accessibility API is supposed to agree with.
     """
-    height = _main_height()
     out = []
     for ident, kind, label, role, view, extra in controls:
-        rect = window.convertRectToScreen_(
-            view.convertRect_toView_(view.bounds(), None))
-        box_height = float(rect.size.height)
         out.append({
             "id": ident, "kind": kind, "label": label, "role": role,
-            "x": round(float(rect.origin.x), 1),
-            "y": round(height - (float(rect.origin.y) + box_height), 1),
-            "width": round(float(rect.size.width), 1),
-            "height": round(box_height, 1),
+            **rect_in(window, view),
             **(extra or {}),
         })
     return {"title": str(window.title()), "controls": out}

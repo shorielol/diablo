@@ -316,7 +316,7 @@ OVERLAY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "overlay.py")
 
 
 def show(x: float, y: float, label: str = "", seconds: float = 3.0,
-         marker: bool = True) -> bool:
+         marker: bool = True, width: float = 0.0, height: float = 0.0) -> bool:
     """
     Put a marker on the screen at an absolute point, and return immediately.
 
@@ -327,12 +327,19 @@ def show(x: float, y: float, label: str = "", seconds: float = 3.0,
     `marker=False` when the orb itself has gone to stand beside the target:
     the overlay then draws the ring, the line and the caption, and not a
     second Diablo next to the first.
+
+    `width` and `height` when the target is an area rather than a point — a
+    shaded region on a diagram, a paragraph. The overlay has outlined regions
+    since GUI-6; a ring at the centre of a triangle says less than the
+    triangle's own outline does.
     """
     try:
         subprocess.Popen(
             [sys.executable, OVERLAY, "--x", f"{x:.1f}", "--y", f"{y:.1f}",
              "--label", (label or "")[:48], "--seconds", f"{seconds:.1f}"]
-            + ([] if marker else ["--no-marker"]),
+            + ([] if marker else ["--no-marker"])
+            + (["--w", f"{width:.1f}", "--h", f"{height:.1f}"]
+               if width > 0.0 and height > 0.0 else []),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
         return True
@@ -393,17 +400,102 @@ def _record(intent: str, reading, window: Optional[Dict[str, Any]]) -> None:
         pass
 
 
+def _by_grounding(description: str, target_window: str, seconds: float,
+                  reading_out: Optional[List[Any]], kind: str) -> Optional[str]:
+    """
+    The question-directed path, for questions about areas rather than controls.
+
+    Returns None when this is not one of those questions, and the caller
+    carries on exactly as before. That is deliberate: a control question must
+    not change shape because a region question was added beside it.
+    """
+    try:
+        from skills import grounding, screen_context, target as target_kind
+    except Exception:
+        return None
+    try:
+        wanted = target_kind.read_question(description, stated=kind)
+    except Exception:
+        return None
+    if wanted.kind not in (target_kind.REGION, target_kind.FIGURE,
+                           target_kind.OBJECT, target_kind.SCREEN):
+        return None
+    try:
+        window = (screen_context.find_window(target_window) if target_window
+                  else screen_context.frontmost_window())
+        found = grounding.ground(description, window, stated_kind=kind)
+    except Exception:
+        # Grounding is an improvement on the old path, never a reason a
+        # question cannot be answered. Fall through to it.
+        return None
+
+    # The same structured hand-back and the same trace boundary the control
+    # path uses, so `diablo trace` does not grow a second shape.
+    reading = perception_reading(found)
+    if reading_out is not None:
+        reading_out.append(reading)
+    _record(description, reading, window)
+
+    if not found.found:
+        return found.note or "I could not make that out, Sir."
+
+    box = found.candidate
+    x, y = box.centre
+    show(x, y, box.label or wanted.semantic, seconds,
+         width=box.width, height=box.height)
+    place = describe_location({"x": x, "y": y, "text": box.label,
+                               "window_id": (window or {}).get("id", 0)}, window)
+    what = wanted.semantic or box.label or "it"
+    hedge = "" if box.confidence >= 0.8 else ", though I am not certain"
+    # The described location, when there is one, goes in front of the compass
+    # direction. Measured on the fixture: the sentence the model writes about
+    # where a shaded area is ("just left of where the two lines cross") is
+    # right far more often than the rectangle it draws, so it is the more
+    # useful half of the answer and belongs where it will be heard.
+    described = ""
+    for note in box.evidence:
+        if note and not note.startswith("the words") and not note.startswith("it looks like"):
+            described = note.strip().rstrip(".")
+            break
+    if described:
+        return f"{described.capitalize()}, Sir — {place}{hedge}."
+    return f"{place.capitalize()} — that is {what}{hedge}, Sir."
+
+
+def perception_reading(found):
+    """A Ground, in the shape the trace and the run already consume."""
+    from skills import perception
+    if not found.found:
+        return perception.Reading(candidates=[])
+    return perception.Reading(candidates=[found.candidate], margin=1.0)
+
+
 def point_at(description: str, target: str = "", seconds: float = 3.0,
-             reading_out: Optional[List[Any]] = None) -> str:
+             reading_out: Optional[List[Any]] = None, kind: str = "") -> str:
     """
     Find something on screen and mark it, then say where it is.
 
     The sentence matters as much as the marker. Diablo is spoken to, often while
     the user is looking somewhere else entirely, so "top right of the toolbar"
     has to stand on its own if the marker is missed.
+
+    `kind` is the decision layer saying what sort of thing this is — a control,
+    a region of a picture, a figure. It is optional because the phrasing
+    carries the same information most of the time, and a tool call that omits
+    it has to keep working.
     """
     if not description or not description.strip():
         return "I need to know what to point at, Sir."
+
+    # Is this a question about an AREA of a picture rather than about a
+    # control? If so, matching the user's words against the words printed on
+    # screen finds the caption, and the caption is not the thing — which is
+    # exactly what "where is the welfare loss region?" hit. Those questions go
+    # through grounding, which uses the caption to decide where to LOOK.
+    # Everything else keeps the path it has always had.
+    grounded = _by_grounding(description, target, seconds, reading_out, kind)
+    if grounded is not None:
+        return grounded
 
     # Through the shared perception layer, not through locate() directly.
     #
