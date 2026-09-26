@@ -368,6 +368,7 @@ def run() -> int:
 
         def explain(question, target=""):
             calls["explain"].append(question)
+            calls.setdefault("explained_window", []).append(target)
             return "The diagram shows a subsidy shifting supply down, Sir."
 
         patch(pointing, "point_at", point_at)
@@ -487,6 +488,13 @@ def run() -> int:
         answer = showing.present(showing.prepare(D, target.asked_to_show(D)), speak, [])
         r.check("no steps: the existing screen explanation, not an invented path",
                 calls["point_at"] == [] and calls["explain"] == [D], str(calls))
+        # Live, the fallback explained whatever was frontmost a minute later:
+        # "error messages, process logs, account details" — the editor, not
+        # the diagram the question was about.
+        r.check("  of the window the turn was about, not whatever is in front "
+                "by the time it runs",
+                calls.get("explained_window") == ["Subsidy and Welfare"],
+                str(calls.get("explained_window")))
         r.check("  and its answer is what is said", "subsidy" in answer.lower())
         patch.undo()
 

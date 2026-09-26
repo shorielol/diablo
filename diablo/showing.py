@@ -243,8 +243,13 @@ def _grounded_any(readings: List[Any]) -> bool:
 def _explain(prepared: Prepared, working: Optional[List[dict]]) -> str:
     """The existing screen explanation, for when there is nothing to show."""
     from skills import screen_context
+    # The window the turn was about, by name. Left empty, explain() reads
+    # whatever is in front when it runs, which can be a minute after the
+    # question: live, that explained the code editor instead of the diagram.
+    window = prepared.window or {}
+    pinned = window.get("title") or window.get("app") or ""
     try:
-        answer = screen_context.explain(prepared.question, "")
+        answer = screen_context.explain(prepared.question, pinned)
     except Exception as e:
         answer = (f"I couldn't make sense of the screen just now, Sir "
                   f"({type(e).__name__}).")
