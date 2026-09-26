@@ -160,7 +160,7 @@ def prepare(question: str, shown: Any) -> Optional[Prepared]:
         return Prepared(question, shown, window,
                         refused=(f"I won't read a {window.get('app', '')} window, "
                                  f"Sir. Password managers and banking stay private."))
-    if shown.intent == target.LOCATE or _pointed(question):
+    if shown.intent in (target.LOCATE, target.GUIDE) or _pointed(question):
         return Prepared(question, shown, window)
 
     text = _screen_text(window)
@@ -266,14 +266,18 @@ def present(prepared: Prepared, speak: Callable[..., Any],
     shown = prepared.shown
     wanted = shown.target
 
-    if shown.intent == target.LOCATE or _pointed(prepared.question):
+    if shown.intent in (target.LOCATE, target.GUIDE) or _pointed(prepared.question):
         # The thing under the pointer is found from the question, which is
-        # what says "the pointer"; anything named is found by its name.
+        # what says "the pointer"; anything named is found by its name. An
+        # action ("show me how to open a new note") is a control found by what
+        # it does, so its operation goes too (B.3).
         pointed = _pointed(prepared.question)
         description = prepared.question if pointed else wanted.semantic
         kind = target.OBJECT if pointed else wanted.kind
+        extra = {"operation": wanted.operation} if wanted.operation else {}
         readings: List[Any] = []
-        answer = pointing.point_at(description, "", reading_out=readings, kind=kind)
+        answer = pointing.point_at(description, "", reading_out=readings, kind=kind,
+                                   **extra)
         _record(working, "point_at", {"description": description, "kind": kind},
                 answer, readings)
         trace.event("show", phase="shown", intent=shown.intent, kind=kind,

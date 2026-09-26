@@ -209,8 +209,11 @@ def run() -> int:
                 ("Where is Paris?", "a place in the world, not on the screen"),
                 ("Show me my calendar", "opening an app, not pointing"),
                 ("find my econ ee draft", "a file"),
-                ("show me how to save this file", "a procedure: the tutor's job"),
-                ("how do i export this as a pdf", "a procedure"),
+                # A procedure with no operation a control performs is the
+                # tutor's. (B.3 moved "show me how to save this file" out of
+                # this list: saving IS a control, and it is shown as one.)
+                ("show me how to change my wallpaper", "a procedure: the tutor's job"),
+                ("how do i make the text bold", "a procedure"),
                 ("help me with this question", "the maths tutor's"),
                 ("explain this", "names nothing: the tutor's, as before"),
                 ("walk me through setting up git", "a procedure, no picture"),
@@ -581,7 +584,10 @@ def run() -> int:
                 calls["outcome"] == "chat" and calls["talk"] == [C]
                 and not calls["point_at"], str(calls["outcome"]))
 
-        calls = turn("show me how to save this file")
+        r.check("B.3: 'show me how to save this file' is the Save control, not a "
+                "walkthrough", (target.asked_to_show("show me how to save this file")
+                                or Found(None, "")).__dict__.get("intent") == target.GUIDE)
+        calls = turn("show me how to change my wallpaper")
         r.check("a procedure still goes to the tutor",
                 bool(calls["tutor"]) and not calls["point_at"], str(calls["outcome"]))
         calls = turn("Where is it?")

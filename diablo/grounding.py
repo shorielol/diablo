@@ -436,11 +436,18 @@ def _by_perception(wanted: target.Target, window) -> Ground:
     Today's path, unchanged, with one thing added: the answer has to be the
     kind of thing that was asked for before it is handed on.
     """
-    reading = perception.read(wanted.semantic, window)
+    # An action's operation goes with it (B.3): a step "the New Note button"
+    # must land on a control that creates, not on text that mentions a note.
+    reading = perception.read(wanted.semantic, window,
+                              **({"operation": wanted.operation}
+                                 if wanted.operation else {}))
     best = reading.best
     if best is None:
+        disabled = (reading.observation or {}).get("disabled") or []
+        note = (target.cannot_do(wanted, disabled=disabled[0] if disabled else "")
+                if wanted.operation else target.abstain(wanted))
         return Ground(target=wanted, scope=target.CONTROL_SCOPE, abstained=True,
-                      note=target.abstain(wanted))
+                      note=note)
     if reading.ambiguous and reading.question():
         return Ground(target=wanted, scope=target.CONTROL_SCOPE, abstained=True,
                       note=reading.question())

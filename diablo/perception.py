@@ -44,6 +44,7 @@ from skills import ax  # noqa: E402
 from skills import config  # noqa: E402
 from skills import pointing  # noqa: E402
 from skills import screen_context  # noqa: E402
+from skills import target as _target  # noqa: E402
 
 # Below this, a candidate is not worth offering at all. Tuned to the same
 # floor pointing.py already uses, because it is the same matcher underneath.
@@ -414,9 +415,65 @@ def _fuse(candidates: List[Candidate]) -> List[Candidate]:
     return sorted(merged, key=lambda c: -c.confidence)
 
 
+# ─── An action's answer ──────────────────────────────────────────────────────
+#
+# B.3. When the user asked for something to be DONE, the answer is a control
+# that does it — not the best text match for the words. "Show me how to open
+# a new note" on a Notes window scores the note's title against "note", and a
+# title is not a thing anyone can press to make a note.
+#
+# A control qualifies when its role is one a person operates and its own
+# words offer the operation. Text read off the glass qualifies only as a short
+# label that says the operation ("New Note"), never as a title or a sentence
+# that mentions it. Vision qualifies because it only ever picks among
+# controls accessibility published, and it was asked about this request.
+
+# A control's label is short; a sentence that mentions an action is not one.
+LABEL_WORDS = 3
+
+
+def _offers(candidate: Candidate, operation: str) -> bool:
+    """Whether this candidate is a control that performs the operation."""
+    sources = set(candidate.sources)
+    if sources & {"accessibility", "vision"}:
+        if candidate.role and candidate.role not in ax.ACTIONABLE_ROLES:
+            return False
+        if "vision" in sources:
+            return True
+        return _target.affords(operation, candidate.label)
+    words = re.findall(r"[a-z]+|\+", (candidate.label or "").lower())
+    return 0 < len(words) <= LABEL_WORDS and _target.affords(operation, candidate.label)
+
+
+def _for_operation(candidates: List[Candidate], operation: str,
+                   observation: Optional[Dict[str, Any]] = None) -> List[Candidate]:
+    """
+    Only what can carry out the operation, best first. Unchanged with none.
+
+    A disabled control that would otherwise qualify is dropped and said to be
+    there, so "it is greyed out" can be answered instead of "I found nothing".
+    """
+    if not operation:
+        return candidates
+    kept, disabled = [], []
+    for candidate in candidates:
+        if not _offers(candidate, operation):
+            continue
+        if candidate.enabled is False:
+            disabled.append(candidate.label or candidate.describe())
+            continue
+        kept.append(candidate)
+    if disabled and observation is not None:
+        observation.setdefault("disabled", []).extend(disabled)
+        observation.setdefault("refused", []).extend(
+            f"{label} is disabled" for label in disabled)
+    return kept
+
+
 def locate(intent: str, window: Optional[Dict[str, Any]] = None,
            limit: int = 5,
-           observation: Optional[Dict[str, Any]] = None) -> List[Candidate]:
+           observation: Optional[Dict[str, Any]] = None,
+           operation: str = "") -> List[Candidate]:
     """
     Everything that might be what the user meant, best first.
 
@@ -436,17 +493,19 @@ def locate(intent: str, window: Optional[Dict[str, Any]] = None,
     # the cheap answer is not already decisive — when nothing was found, when
     # the best is not confident, or when the top two are too close to
     # separate and a second opinion is exactly what is needed.
+    # An action's answer is filtered after every source, so a title that
+    # matched the words can never be what stops the next source being asked.
     found = _from_accessibility(intent, window)
-    fused = _fuse(found)
+    fused = _for_operation(_fuse(found), operation, observation)
     if _needs_a_second_opinion(fused):
         seen: Dict[str, Any] = {}
         found = found + _from_ocr(intent, window, observation=seen)
         if observation is not None and seen:
             observation["ocr"] = seen
-        fused = _fuse(found)
+        fused = _for_operation(_fuse(found), operation, observation)
     if _needs_vision(intent, fused):
         found = found + _from_vision(intent, window)
-        fused = _fuse(found)
+        fused = _for_operation(_fuse(found), operation, observation)
     return fused[:limit]
 
 
@@ -607,10 +666,11 @@ class Reading:
                 f"{first.describe()} and {second.describe()}. Which do you mean?")
 
 
-def read(intent: str, window: Optional[Dict[str, Any]] = None) -> Reading:
+def read(intent: str, window: Optional[Dict[str, Any]] = None,
+         operation: str = "") -> Reading:
     """locate(), plus whether the answer is decisive enough to act on."""
     seen: Dict[str, Any] = {}
-    candidates = locate(intent, window, observation=seen)
+    candidates = locate(intent, window, observation=seen, operation=operation)
     if not candidates:
         return Reading(observation=seen)
     margin = (candidates[0].confidence - candidates[1].confidence

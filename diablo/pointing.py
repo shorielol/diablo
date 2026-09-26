@@ -624,7 +624,8 @@ def perception_reading(found):
 
 def point_at(description: str, target: str = "", seconds: float = 3.0,
              reading_out: Optional[List[Any]] = None, kind: str = "",
-             steps: Optional[List[Any]] = None, speak: Optional[Any] = None) -> str:
+             steps: Optional[List[Any]] = None, speak: Optional[Any] = None,
+             operation: str = "") -> str:
     """
     Find something on screen and mark it, then say where it is.
 
@@ -660,6 +661,15 @@ def point_at(description: str, target: str = "", seconds: float = 3.0,
     if grounded is not None:
         return grounded
 
+    # An action: the answer is a control that does it. Stated by the caller,
+    # or read off the description when a planner named the control by what it
+    # does ("the new note button"). Either way it goes to perception with the
+    # request, and it never reaches the text fallback at the bottom of this
+    # function, which is where "open a new note" used to become the title.
+    from skills import target as _target
+    wanted = _target.read_question(description, stated=kind)
+    operation = operation or wanted.operation
+
     # Through the shared perception layer, not through locate() directly.
     #
     # This is the one place it matters most. If the marker came from OCR and
@@ -674,7 +684,8 @@ def point_at(description: str, target: str = "", seconds: float = 3.0,
         from skills import perception, screen_context
         window = (screen_context.find_window(target) if target
                   else screen_context.frontmost_window())
-        reading = perception.read(description, window)
+        reading = perception.read(description, window,
+                                  **({"operation": operation} if operation else {}))
         # Hand the structured reading back to whoever asked for it, before the
         # sentence is built. A list the caller owns, the same shape `locate`
         # uses for `observation` and `agent_core.run` uses for `working`; a
@@ -703,10 +714,15 @@ def point_at(description: str, target: str = "", seconds: float = 3.0,
             hedge = "" if best.confidence >= 0.9 else " I think"
             found = best.label or best.describe()
             return f"{place.capitalize()}, marked{hedge} — '{found[:40]}'."
+        if operation:
+            disabled = (reading.observation or {}).get("disabled") or []
+            return _target.cannot_do(wanted, disabled=disabled[0] if disabled else "")
     except Exception:
         # Perception is an improvement on the OCR path, not a replacement for
-        # it. If it cannot answer, the original path still can.
-        pass
+        # it. If it cannot answer, the original path still can — except for an
+        # action, where the original path's answer is the wrong kind of thing.
+        if operation:
+            return _target.cannot_do(wanted)
 
     hits = locate(description, target)
     if not hits:

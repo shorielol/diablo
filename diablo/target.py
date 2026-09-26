@@ -273,6 +273,11 @@ class Target:
     cursor_local: bool = False    # the question pointed rather than named
     vague: bool = False           # it named nothing at all
     reason: str = ""              # why this kind, for the trace
+    # What the user wants DONE, when they asked for an action rather than
+    # about a thing: CREATE for "open a new note". Empty for every question
+    # about something. It is a property of the request, not a kind: the kind
+    # of an action's answer is CONTROL, and this says which control will do.
+    operation: str = ""
 
     @property
     def pointable(self) -> bool:
@@ -287,6 +292,21 @@ class Target:
 
 
 def read_question(text: str, stated: str = "") -> Target:
+    """
+    What kind of answer this question wants, and what is to be done, if anything.
+
+    An action ("show me how to open a new note") is read first, because its
+    answer is a control whatever the nouns in it are: "note" would otherwise
+    be looked for, and a note is what was found.
+    """
+    action = _action_of(text)
+    wanted = str(stated or "").strip().lower()
+    if action is not None and wanted in ("", CONTROL):
+        return action
+    return _read_kind(text, stated)
+
+
+def _read_kind(text: str, stated: str = "") -> Target:
     """
     What kind of answer this question wants.
 
@@ -606,6 +626,15 @@ def asked_to_show(text: str) -> Optional[Shown]:
         return None
     pointed = any(phrase in lowered for phrase in CURSOR_PHRASES)
 
+    # How to do something the screen has a control for: the control. Only
+    # when the operation is one this module knows; any other procedure ("how
+    # to change my wallpaper") is still the tutor's.
+    if _GUIDE_ASK.search(raw):
+        t = read_question(raw)
+        if t.operation and not t.vague:
+            return Shown(GUIDE, t, True, f"asked how to {t.operation} something, "
+                                         f"which a control on screen does")
+
     if _TRACE_ASK.search(raw) and not _PROCEDURE.search(raw):
         # What follows the asking is the thing: "walk me through | this graph".
         body = _TRACE_ASK.sub("", raw, count=1).strip(" ,.?!")
@@ -661,3 +690,144 @@ def asked_to_show(text: str) -> Optional[Shown]:
         return None
 
     return None
+
+
+# ─── Actions: what is to be done, and which control does it ─────────────────
+#
+# B.3. "Show me how to open a new note" put the marker on the note's title.
+# The request had a subject (a note) and an operation (create), and only the
+# subject reached anything that looked at the screen, so the thing the note
+# is called was found instead of the button that makes one.
+#
+# So an operation is carried with the request, and the answer to it has to be
+# a control whose own words offer that operation. This is vocabulary about
+# ACTIONS, not about any application: nothing here knows where a button is,
+# what Notes looks like, or that a pencil means anything.
+
+GUIDE = "guide"      # a fourth intent beside LOCATE, EXPLAIN and TRACE
+
+CREATE = "create"
+OPEN = "open"
+SAVE = "save"
+EXPORT = "export"
+CLOSE = "close"
+SEARCH = "search"
+DELETE = "delete"
+PLAY = "play"
+PAUSE = "pause"
+PRINT = "print"
+SHARE = "share"
+SEND = "send"
+DOWNLOAD = "download"
+UPLOAD = "upload"
+UNDO = "undo"
+REDO = "redo"
+RENAME = "rename"
+REFRESH = "refresh"
+
+# The verbs a person uses for each operation. "find" is deliberately absent:
+# "find the Save button" is a request to be shown where, not to search.
+OPERATION_VERBS = {
+    CREATE: ("create", "compose", "add"),
+    OPEN: ("open",), SAVE: ("save",), EXPORT: ("export",), CLOSE: ("close",),
+    SEARCH: ("search",), DELETE: ("delete", "remove", "trash", "erase"),
+    PLAY: ("play", "resume"), PAUSE: ("pause",), PRINT: ("print",),
+    SHARE: ("share",), SEND: ("send",), DOWNLOAD: ("download",),
+    UPLOAD: ("upload",), UNDO: ("undo",), REDO: ("redo",),
+    RENAME: ("rename",), REFRESH: ("refresh", "reload"),
+}
+_VERB_TO_OPERATION = {verb: op for op, verbs in OPERATION_VERBS.items()
+                      for verb in verbs}
+
+# Verbs that make something only when the thing is new: "start a new note" is
+# CREATE, "start the timer" is not, and "make the text bold" is a procedure.
+_NEW_VERBS = {"start", "begin", "make", "write", "get"}
+
+# The words a control uses to say it performs an operation. Whole words only:
+# "Saved" is a status, "Closed tickets" is a list, "Playlist" is a name.
+AFFORDANCE_WORDS = {
+    CREATE: {"new", "create", "add", "compose", "plus", "write"},
+    OPEN: {"open", "browse"}, SAVE: {"save"}, EXPORT: {"export"},
+    CLOSE: {"close"}, SEARCH: {"search", "find"},
+    DELETE: {"delete", "remove", "trash", "bin"}, PLAY: {"play", "resume"},
+    PAUSE: {"pause"}, PRINT: {"print"}, SHARE: {"share"}, SEND: {"send"},
+    DOWNLOAD: {"download"}, UPLOAD: {"upload"}, UNDO: {"undo"},
+    REDO: {"redo"}, RENAME: {"rename"}, REFRESH: {"refresh", "reload"},
+}
+
+# How a person asks to be taught an action rather than to have it done.
+_GUIDE_ASK = re.compile(
+    _OPENING + r"(?:(?:show|tell|teach)\s+me\s+how\s+(?:to|do\s+i|i\s+can)|"
+               r"how\s+(?:do|can|would|should)\s+(?:i|you|we)|how\s+to|"
+               r"where\s+do\s+i)\b", re.I)
+
+# The same leads, plus a bare imperative: "Create a new note."
+_ACTION_LEAD = re.compile(
+    _OPENING + r"(?:(?:(?:show|tell|teach)\s+me\s+how\s+(?:to|do\s+i|i\s+can)|"
+               r"how\s+(?:do|can|would|should)\s+(?:i|you|we)|how\s+to|"
+               r"where\s+do\s+i(?:\s+(?:go|click))?(?:\s+to)?|help\s+me)\s+)?"
+               r"(?P<verb>[a-z]+)\b(?P<rest>[^?.!]*)", re.I)
+
+# Words in an action's object that name nothing to look for.
+_OBJECT_FILLER = set(DEICTIC) | {"a", "an", "the", "my", "your", "our", "some",
+                                 "one", "for", "me", "please", "now", "here", "up"}
+
+
+def affords(operation: str, text: str) -> bool:
+    """Whether a control's own words say it performs this operation."""
+    offered = AFFORDANCE_WORDS.get(operation or "")
+    if not offered or not text:
+        return False
+    if operation == CREATE and "+" in text:
+        return True
+    return bool(set(re.findall(r"[a-z]+", text.lower())) & offered)
+
+
+def _action_of(text: str) -> Optional["Target"]:
+    """
+    The action a request asks for, as a control target, or None.
+
+    Two shapes carry one. A verb that leads the request, taught or bare —
+    "show me how to save this", "create a new note". Or a control named by
+    what it does — "the export button". Anything else is a question about a
+    thing, and gets no operation at all: an action is never guessed.
+    """
+    raw = (text or "").replace("\u2019", "'").strip()
+    match = _ACTION_LEAD.match(raw)
+    if match:
+        verb = match.group("verb").lower()
+        thing = [w for w in re.findall(r"[a-z]+", match.group("rest").lower())
+                 if w not in _OBJECT_FILLER]
+        operation = _VERB_TO_OPERATION.get(verb) or \
+            (CREATE if verb in _NEW_VERBS and "new" in thing else "")
+        if operation:
+            if "new" in thing:
+                # "Open a new note", "start a new tab": whatever the verb, the
+                # control that answers it is the one that makes one.
+                operation = CREATE
+                thing = thing[thing.index("new"):]
+                semantic = " ".join(thing)
+            else:
+                semantic = " ".join([verb] + thing)
+            return Target(semantic=semantic, kind=CONTROL, operation=operation,
+                          reason=f"asked how to {operation} something; a control "
+                                 f"does that")
+    # "Where is the export button": a control, named by its operation.
+    words = re.findall(r"[a-z]+", raw.lower())
+    if words and words[-1] in CONTROL_WORDS:
+        for word in words[:-1]:
+            operation = _VERB_TO_OPERATION.get(word) or (CREATE if word == "new" else "")
+            if operation:
+                return Target(semantic=_strip(raw), kind=CONTROL, operation=operation,
+                              reason=f"named a control by what it does ({operation})")
+    return None
+
+
+def cannot_do(wanted: "Target", disabled: str = "") -> str:
+    """What to say when no control on screen offers the operation."""
+    if disabled:
+        return (f"The {disabled} control is there, Sir, but it is disabled right "
+                f"now, so it can't be used yet.")
+    what = wanted.semantic or wanted.operation or "that"
+    return (f"I can't see a control on screen for {what}, Sir, and I won't point "
+            f"at something that only mentions it.")
