@@ -111,6 +111,12 @@ def grounded(question, hits=None, reply=None, crop_used=None, frame=None,
     originals = (pointing.locate, display.capture_region, display.cursor,
                  grounding._ask_region, grounding._frame_for,
                  grounding._sized_for_model)
+    # The stub model answers in the pixels of the image it is handed (see
+    # region_reply), so it says so. Left to the default, grounding reads a
+    # qwen2.5vl answer in the model's resized canvas (B.4), and this double
+    # and the reader disagreed about where every box was.
+    saved_coords = os.environ.get("DIABLO_VISION_COORDS")
+    os.environ["DIABLO_VISION_COORDS"] = "pixels"
     try:
         pointing.locate = lambda *a, **k: list(hits if hits is not None else [anchor()])
         def capture(x, y, w, h):
@@ -133,6 +139,10 @@ def grounded(question, hits=None, reply=None, crop_used=None, frame=None,
         (pointing.locate, display.capture_region, display.cursor,
          grounding._ask_region, grounding._frame_for,
          grounding._sized_for_model) = originals
+        if saved_coords is None:
+            os.environ.pop("DIABLO_VISION_COORDS", None)
+        else:
+            os.environ["DIABLO_VISION_COORDS"] = saved_coords
 
 
 def run():
@@ -214,13 +224,40 @@ def run():
                 near[0] == target.CURSOR, str(near))
         r.check("and can widen if that is not enough", len(near) > 1, str(near))
         wide = target.scope_for(target.read_question("where is the welfare loss region"))
-        r.check("a named region starts at the panel around its caption",
-                wide[0] == target.PANEL, str(wide))
-        r.check("and not at the caption itself",
-                target.ANCHOR not in wide,
-                "measured on the fixture: the legend is 396pt from the shape "
-                "it names, so a crop centred on the caption is faster and "
-                "cannot contain the answer")
+        # Phase B took the caption out of the ladder. Phase B.2 found the same
+        # mistake still hiding one rung up: PANEL was a 620-point box centred
+        # on the caption, which on a 900-point fixture window covered
+        # everything and on a real 1476-point Preview window covered only the
+        # right-hand 60%. Measured there: the crop for "consumer surplus" ran
+        # x 594..1480 and the region it was looking for ran x 235..624. The
+        # model did not abstain; it confidently returned something else.
+        # B.4.1 made it the ladder: 0.34 -> 0.97 on the real rendered page.
+        r.check("a named region is not looked for in a box around its caption",
+                target.PANEL not in wide and target.ANCHOR not in wide, str(wide))
+        r.check("it starts from the whole window",
+                wide[0] == target.WINDOW, str(wide))
+        r.check("the full screen is still the last resort",
+                wide[-1] == target.SCREEN_SCOPE, str(wide))
+
+    with guard(r, "a caption on the far side does not shrink the search"):
+        # The real geometry, as Preview laid it out.
+        window = {"id": 1, "app": "Preview", "title": "econ_diagram.pdf",
+                  "x": 4.0, "y": 37.0, "width": 1476.0, "height": 905.0}
+        caption = {"text": "Consumer surplus", "left": 1214.0, "top": 358.0,
+                   "width": 150.0, "height": 18.0, "score": 0.98}
+        region = (235.0, 304.0, 389.0, 246.0)
+        wanted = target.read_question("where is the consumer surplus region")
+        covered = False
+        for scope in target.scope_for(wanted):
+            crop = grounding._crop_for(scope, window, caption, None)
+            if not crop:
+                continue
+            if (crop[0] <= region[0] and region[0] + region[2] <= crop[0] + crop[2]
+                    and crop[1] <= region[1] and region[1] + region[3] <= crop[1] + crop[3]):
+                covered = True
+            break
+        r.check("the first crop that is formed contains the region",
+                covered, "the caption is 979 points from the thing it names")
         r.check("the full screen is the last resort, never the first",
                 wide[-1] == target.SCREEN_SCOPE and wide[0] != target.SCREEN_SCOPE,
                 str(wide))
@@ -288,8 +325,17 @@ def run():
     with guard(r, "the label anchors the crop instead of becoming the answer"):
         got = grounded("where is the welfare loss region", reply=region_reply())
         crop = got.taken.get("crop")
-        r.check("something narrower than the window was captured",
-                crop is not None and crop[2] < WINDOW["width"],
+        # Not "narrower than the window" any more, and that assertion is gone
+        # on purpose: B.2 measured a narrower crop that did not contain the
+        # region, and a crop that cannot see the answer is not an improvement
+        # however small it is. What has to be true is that it contains the
+        # thing being looked for.
+        r.check("the crop contains the region being looked for",
+                crop is not None
+                and crop[0] <= REGION["x"]
+                and REGION["x"] + REGION["w"] <= crop[0] + crop[2]
+                and crop[1] <= REGION["y"]
+                and REGION["y"] + REGION["h"] <= crop[1] + crop[3],
                 str(crop))
         r.check("and the crop contains the label it anchored on",
                 crop is not None
@@ -463,7 +509,10 @@ def run():
                 f"{len(got.taken.get('asked', []))} looks")
 
     with guard(r, "a failed narrow look widens"):
-        got = grounded("where is the welfare loss region",
+        # Tested on the cursor ladder, because that is the one that still has
+        # more than one rung. A named region now starts at the window, which
+        # is as wide as a question about this window can sensibly go.
+        got = grounded("what is this", cursor=(700.0, 500.0),
                        reply=[region_reply(found=False), region_reply()])
         asked = got.taken.get("asked", [])
         r.check("it looks again", len(asked) >= 2, f"{len(asked)} looks")

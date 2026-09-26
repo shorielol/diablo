@@ -431,6 +431,95 @@ def run() -> int:
         r.check("guidance gets the area's extent, not a point",
                 bool(drawn) and drawn[-1][2] == 59.0 and drawn[-1][3] == 84.0, str(drawn))
 
+    # ── B.4.1. Where the first look is taken ───────────────────────────────
+    r.head("B.4.1  a named region is looked for in the whole window first")
+    with guard(r, "the ladder, by kind"):
+        for words in ("where is the welfare loss region", "where is the consumer surplus",
+                      "where is the producer surplus", "where is the blue shaded area"):
+            wanted = target.read_question(words)
+            ladder = target.scope_for(wanted)
+            r.check(f"{words!r}: {wanted.kind}, first look {ladder[0]}",
+                    wanted.kind == target.REGION and ladder[0] == target.WINDOW
+                    and target.PANEL not in ladder, str(ladder))
+        figure = target.read_question("what does this graph show")
+        r.check("a whole figure too", target.scope_for(figure)[0] == target.WINDOW,
+                str(target.scope_for(figure)))
+        for words in ("what is this", "what am i pointing at"):
+            ladder = target.scope_for(target.read_question(words))
+            r.check(f"{words!r}: still the cursor first", ladder[0] == target.CURSOR,
+                    str(ladder))
+        r.check("a control keeps its own first look",
+                target.scope_for(target.read_question("where is the Save button"))[0]
+                == target.CONTROL_SCOPE)
+        placed = target.read_question("the thing", stated="object")
+        r.check("an object not at the pointer keeps the ladder it had",
+                not placed.cursor_local
+                and target.scope_for(placed) == (target.PANEL, target.WINDOW,
+                                                 target.SCREEN_SCOPE),
+                str(target.scope_for(placed)))
+        r.check("the whole screen is still the last resort",
+                target.scope_for(target.read_question("where is the welfare loss region"))[-1]
+                == target.SCREEN_SCOPE)
+
+    with guard(r, "text and controls never take a look at all"):
+        routed = []
+        saved = (grounding._by_perception, grounding._by_looking)
+        grounding._by_perception = lambda wanted, window: routed.append(
+            ("perception", wanted.kind)) or grounding.Ground(target=wanted, abstained=True)
+        grounding._by_looking = lambda wanted, window: routed.append(
+            ("looking", wanted.kind)) or grounding.Ground(target=wanted, abstained=True)
+        try:
+            for words in ("where is the note title", "where is the Save button"):
+                grounding.ground(words, {"id": 1, "app": "X", "x": 0.0, "y": 0.0,
+                                         "width": 800.0, "height": 600.0,
+                                         "sensitive": False})
+        finally:
+            grounding._by_perception, grounding._by_looking = saved
+        r.check("text and a control go to perception, where no crop ladder exists",
+                routed == [("perception", target.TEXT), ("perception", target.CONTROL)],
+                str(routed))
+
+    with guard(r, "a caption far from its region does not decide the first crop"):
+        saved = (display.capture_region, screen_context._for_vision,
+                 screen_context.read_image, grounding._anchor_for)
+        looks = []
+        source = save_png(diagram(grain=8), "wholewindow.png")
+        whole = {"id": 9, "app": "Preview", "title": "Subsidy", "x": 100.0, "y": 200.0,
+                 "width": 852.0, "height": 632.0, "sensitive": False}
+
+        def capture(x, y, w, h):
+            looks.append((x, y, w, h))
+            fresh = os.path.join(TMP, f"look_{len(looks)}.png")
+            shutil.copy(source, fresh)
+            return fresh
+
+        display.capture_region = capture
+        screen_context._for_vision = lambda p: (p, False)
+        screen_context.read_image = lambda path, prompt, num_predict=0, schema=None: \
+            json.dumps({"choice": "C"})
+        # The legend entry, at the far right of the window: the shape it names
+        # is on the left, as on the real price-floor page.
+        grounding._anchor_for = lambda wanted, window: {
+            "text": "Welfare loss", "left": 880.0, "top": 470.0, "width": 60.0,
+            "height": 14.0, "x": 880.0, "y": 470.0}
+        try:
+            found = grounding._by_looking(
+                target.read_question("where is the welfare loss region"), whole)
+        finally:
+            (display.capture_region, screen_context._for_vision,
+             screen_context.read_image, grounding._anchor_for) = saved
+        first = looks[0] if looks else None
+        r.check("the first capture is the whole window, not a box round the caption",
+                first is not None and abs(first[0] - 100.0) < 1 and abs(first[1] - 200.0) < 1
+                and abs(first[2] - 852.0) < 1 and abs(first[3] - 632.0) < 1, str(looks))
+        r.check("  one look was enough", len(looks) == 1, str(looks))
+        c = found.candidate
+        r.check("and the region found is the welfare loss, not its caption",
+                c is not None and found.scope == target.WINDOW
+                and abs(c.x - (100.0 + TRUTH["welfare"][0])) <= 3
+                and abs(c.y - (200.0 + TRUTH["welfare"][1])) <= 3
+                and c.x + c.width < 880.0, f"{found.scope} {c}")
+
     # ── R, S. Actions keep their own path ───────────────────────────────────
     r.head("R-S  a control is not looked for in the pixels")
     with guard(r, "B.3's action targets are untouched"):

@@ -115,27 +115,38 @@ def scope_for(target: "Target") -> Tuple[str, ...]:
     """
     The scopes to try, in order, for this request.
 
-    A named region does NOT start at its own caption, and that is a measured
-    correction rather than a preference. On the diagram fixture the words
-    "Welfare loss" sit in a legend on the right-hand side and the shape they
-    name is 396 points away on the left. A 506x530 crop centred on the caption
-    captured in 132ms against 182ms for the window — faster, and it did not
-    contain the region at all, so the answer was "not in this crop" every
-    time. A smaller capture that cannot see the thing is not an optimisation.
+    A named region or figure is looked for in the whole window first, and that
+    is a measured correction, made twice.
 
-    The caption still decides WHERE the panel is centred and what the model is
-    told the thing is called. It is evidence. It is just not the middle of the
-    picture.
+    Phase B took the caption itself out of the ladder: on the fixture the
+    legend reading "Welfare loss" sat 396 points from the shape it named, so a
+    crop centred on the caption captured faster and could not contain it.
+
+    B.2 found the same mistake one rung up, and B.4 measured what it cost.
+    PANEL was a 620-point box centred on the caption. On a 900-point fixture
+    window that happened to cover everything; on a real 1476-point Preview
+    window it covered the right-hand 60%, and the region for "consumer
+    surplus" ran x 235..624 while the crop ran x 594..1480. On the real
+    rendered price-floor page it cut the same region in half: IoU 0.34,
+    against 0.97 when the first look was the whole window, 2 trials in 2.
+
+    The caption is still evidence: it says the concept is on this screen and
+    what the thing is called. It never decides where to look.
+
+    Only areas and figures changed. A control has its own first look, text is
+    read rather than looked at, and the cursor is the exception the whole
+    argument rests on: the pointer really is on the thing, so the narrowest
+    look there is also the most likely to be right. An object named without
+    the pointer keeps the ladder it had.
     """
     if target.kind == CONTROL:
         return (CONTROL_SCOPE, WINDOW)
     if target.cursor_local:
-        # The cursor is different: the pointer really is on the thing, so the
-        # narrowest look is the most likely to be right as well as the
-        # cheapest. This is the one case where narrowing helps twice.
         return (CURSOR, PANEL, WINDOW, SCREEN_SCOPE)
     if target.kind == SCREEN:
         return (SCREEN_SCOPE,)
+    if target.kind in (REGION, FIGURE):
+        return (WINDOW, SCREEN_SCOPE)
     return (PANEL, WINDOW, SCREEN_SCOPE)
 
 
