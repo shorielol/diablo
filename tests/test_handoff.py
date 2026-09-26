@@ -63,7 +63,11 @@ def main() -> int:
         reading = a_reading()
         real_point_at = pointing.point_at
 
-        def fake_point_at(description, target="", seconds=3.0, reading_out=None):
+        # The real signature, including `kind` (Phase B) and `steps`/`speak`
+        # (GUI-X). Without them the tool call raised TypeError inside the
+        # stand-in, and everything downstream of the handoff failed with it.
+        def fake_point_at(description, target="", seconds=3.0, reading_out=None,
+                          kind="", steps=None, speak=None):
             if reading_out is not None:
                 reading_out.append(reading)
             return "Top right, marked — 'Save'."
@@ -230,7 +234,8 @@ def main() -> int:
         import tempfile
         reading = a_reading()
         real_point_at = pointing.point_at
-        pointing.point_at = (lambda d, t="", seconds=3.0, reading_out=None:
+        pointing.point_at = (lambda d, t="", seconds=3.0, reading_out=None,
+                             kind="", steps=None, speak=None:
                              (reading_out.append(reading), "Marked.")[1]
                              if reading_out is not None else "Marked.")
         brain = sys.modules["skills.local_brain"]

@@ -126,7 +126,7 @@ def _bridge_presence(voice_bridge) -> None:
     """
     import app_shell
     from skills import (doing, lesson, pointing, reading, screen_context, server,
-                        tutor, voice)
+                        teaching, tutor, voice)
 
     def _generation():
         try:
@@ -338,19 +338,25 @@ def _bridge_presence(voice_bridge) -> None:
     # shell, the old overlay with its own marker is drawn as before.
     show = pointing.show
 
-    def point(x, y, label="", seconds=3.0, marker=True):
+    def point(x, y, label="", seconds=3.0, marker=True, width=0.0, height=0.0):
+        # `width` and `height` are an area's extent, and they have to reach the
+        # shell. Phase B added them to pointing.show, but this wrapper still
+        # had the old signature, so in the running app every region answer
+        # raised TypeError here and came back as a failure; the validation
+        # runs replaced pointing.show with a stub and never passed through it.
         try:
             generation = voice.current_interaction_generation()
         except Exception:
             generation = None
 
         def spawn(with_marker):
-            show(x, y, label, seconds, marker=with_marker)
+            show(x, y, label, seconds, marker=with_marker, width=width, height=height)
 
         if app_shell.notify("target", x=x, y=y, label=label, seconds=seconds,
-                            spawn=spawn, generation=generation):
+                            spawn=spawn, generation=generation,
+                            w=float(width or 0.0), h=float(height or 0.0)):
             return True
-        return show(x, y, label, seconds, marker=marker)
+        return show(x, y, label, seconds, marker=marker, width=width, height=height)
 
     pointing.show = point
 
@@ -454,6 +460,126 @@ def _bridge_presence(voice_bridge) -> None:
                 super().close()
 
     tutor.Marker = ShellMarker
+
+    # ── teaching with the cursor ─────────────────────────────────────────
+    #
+    # teaching.run_path's view of the shell. It numbers its events from the
+    # same counter as the walkthrough above, because they land in the same
+    # Lesson: two counters would let a teaching step look older than a
+    # walkthrough event it came after, and be dropped as stale.
+
+    class _Teaching:
+        """One lesson's worth of teaching, reported to the shell and surface."""
+
+        def __init__(self):
+            self.generation = _generation()
+            self.first = 0
+            self.sent = 0
+
+        def _next(self) -> int:
+            counted[0] += 1
+            self.sent = counted[0]
+            return self.sent
+
+        def _push(self, phase, index=None, total=None, line=""):
+            try:
+                server.push("lesson", phase=phase, seq=self.sent, index=index,
+                            total=total, line=line, fault=lesson.is_fault(phase))
+            except Exception:
+                pass
+
+        def begin(self, total):
+            self.first = self._next()
+            app_shell.notify("teach_begin", total=int(total), seq=self.first)
+
+        def step(self, place, index, total, hold=False):
+            arrived = threading.Event()
+            cx, cy = place.centre
+            sent = app_shell.notify(
+                "teach_step", x=cx, y=cy, w=place.w, h=place.h, label=place.label,
+                index=index, total=total, mode=place.mode, say=place.say,
+                seq=self._next(), generation=self.generation, arrived=arrived,
+                hold=bool(hold), act=bool(place.act))
+            if not sent:
+                # No shell yet: the old overlay, and nothing to wait for.
+                show(cx, cy, place.label, 3.0, width=place.w if place.is_region else 0.0,
+                     height=place.h if place.is_region else 0.0)
+                arrived.set()
+            elif not hold:
+                # A single thing is explained by the reply itself; the surface
+                # line is for a lesson with steps.
+                self._push(lesson.GUIDING, index, total,
+                           teaching.announce(place.label, index, total))
+            return arrived
+
+        def await_action(self, place, index, total):
+            """The existing closed loop: armed click, then the screen check."""
+            shell = getattr(app_shell, "_SHELL", None)
+            if shell is None:
+                return teaching.UNVERIFIED
+            from skills import screen
+            window = screen_context.frontmost_window()
+            before = screen.capture_this_window(window) if window else None
+            app_shell.notify("lesson_waiting", seq=self._next())
+            self._push(lesson.WAITING, index, total,
+                       lesson.line_for(lesson.WAITING, lesson.Step(index, total)))
+            cx, cy = place.centre
+            try:
+                shell.guide.arm(cx, cy)
+            except Exception:
+                pass
+            pressed = shell.guide.wait_for_click(cx, cy, tutor.CLICK_RADIUS,
+                                                 tutor.CLICK_TIMEOUT,
+                                                 should_stop=self.cancelled)
+            if not pressed:
+                if before is not None:
+                    before.release()
+                return teaching.UNVERIFIED
+            app_shell.notify("lesson_acted", seq=self._next())
+            changed = False
+            try:
+                after = screen.capture_this_window(window) if window else None
+                if before is not None and after is not None and before.ok and after.ok:
+                    changed = not screen.compare(before, after).same
+                if after is not None:
+                    after.release()
+            except Exception:
+                changed = False
+            finally:
+                if before is not None:
+                    before.release()
+            if changed:
+                app_shell.notify("lesson_verified", seq=self._next())
+                return teaching.VERIFIED
+            app_shell.notify("lesson_unverified", seq=self._next(),
+                             note="That didn't seem to change anything.")
+            return teaching.UNVERIFIED
+
+        def finish(self, why):
+            app_shell.notify("teach_finish", why=why, seq=self._next())
+            self._push(why, line=lesson.line_for(why))
+
+        def cancelled(self):
+            if self.generation is not None and _generation() != self.generation:
+                return True
+            shell = getattr(app_shell, "_SHELL", None)
+            if shell is None:
+                return False
+            # notify() reaches the shell on the main thread, later. Until the
+            # shell has seen this lesson begin, the closed lesson it still
+            # holds is the previous one's and says nothing about this.
+            seen = shell.lesson.seq
+            if seen > self.sent:
+                return True            # overtaken by something newer
+            if seen < self.first:
+                return False           # not caught up yet
+            return not shell.lesson.live
+
+        def wait(self, seconds):
+            threading.Event().wait(seconds)
+            return self.cancelled()
+
+    teaching.CHANNEL = _Teaching
 
     # ── doing something ──────────────────────────────────────────────────
     #

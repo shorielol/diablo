@@ -378,6 +378,11 @@ def main() -> int:
             marker = view_point(self, mx, my)
 
             draw_ring(self, target)
+            if getattr(self, "bare", False):
+                # The teaching cursor is the instrument: the orb stayed home,
+                # so a line to where he would have stood points at nothing,
+                # and the step is already said in words. Outline only.
+                return
             draw_connector(self, marker, target)
             if not args.no_marker:
                 draw_marker(self, marker)
@@ -475,7 +480,7 @@ def _run_session(args, app, window, view, primary_height, aim,
     """
     from Foundation import NSOperationQueue
 
-    def move(x, y, label, step, on_light, w=0.0, h=0.0, fresh=False):
+    def move(x, y, label, step, on_light, w=0.0, h=0.0, fresh=False, bare=False):
         # AppKit off the main thread is undefined behaviour that usually looks
         # like it works, right up until it draws nothing.
         #
@@ -484,6 +489,7 @@ def _run_session(args, app, window, view, primary_height, aim,
         # the operation queue, which kills the process — the guide simply
         # disappeared on the second step with nothing in the log.
         def apply():
+            view.bare = bool(bare)
             aim(x, y, label, step, on_light, animate=True, w=w, h=h, fresh=fresh)
         NSOperationQueue.mainQueue().addOperationWithBlock_(apply)
 
@@ -556,7 +562,8 @@ def _run_session(args, app, window, view, primary_height, aim,
                      str(message.get("step", ""))[:12],
                      bool(message.get("on_light", False)),
                      float(message.get("w", 0.0)), float(message.get("h", 0.0)),
-                     bool(message.get("fresh", False)))
+                     bool(message.get("fresh", False)),
+                     bool(message.get("bare", False)))
             except Exception:
                 continue
         # Asked to go, or the other end went away: fade out, then exit.

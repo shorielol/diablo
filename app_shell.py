@@ -82,6 +82,8 @@ from skills import make_icon  # noqa: E402
 from skills import doing  # noqa: E402
 from skills import lesson  # noqa: E402
 from skills import motion  # noqa: E402
+# How to show something: point, region, the teaching cursor, or a path.
+from skills import teaching  # noqa: E402
 # Where the conversation surface goes and how big it is at each level.
 from skills import surface  # noqa: E402
 
@@ -379,6 +381,175 @@ class Pill:
             _log("orb.hide()")
             self.panel.orderOut_(None)
             self.visible = False
+
+
+# ─── The teaching cursor ─────────────────────────────────────────────────────
+#
+# A picture of a pointer that Diablo draws and moves, so he can show where to
+# look without touching the real one. It lives in its own click-through panel:
+# the system pointer stays wherever the user left it, every click goes to the
+# application underneath, and nothing here posts an event of any kind.
+
+CURSOR_CANVAS = 52.0
+# Where the tip sits inside that canvas (view coordinates, origin bottom-left).
+# Room on every side for the one arrival ring to grow without being clipped.
+CURSOR_TIP = (16.0, 36.0)
+
+
+class CursorView(NSView):
+    """
+    A slim arrowhead in the label colour, keyed with the window background so
+    it reads on any wallpaper, light or dark. Small, still at rest, and drawn
+    only when the shell's clock asks.
+    """
+
+    def initWithFrame_(self, frame):
+        self = objc.super(CursorView, self).initWithFrame_(frame)
+        if self is None:
+            return None
+        self.cue = None
+        self.setAccessibilityRole_("AXImage")
+        self.setAccessibilityLabel_("Diablo is showing you where to look")
+        return self
+
+    def isOpaque(self):
+        return False
+
+    def viewDidChangeEffectiveAppearance(self):
+        self.setNeedsDisplay_(True)
+
+    def drawRect_(self, rect):
+        tx, ty = CURSOR_TIP
+        contrast = _increase_contrast()
+        # The pointer: a tip, a short body leaning right, and a notch. Its own
+        # proportions rather than any system cursor's, and a third the size.
+        shape = NSBezierPath.bezierPath()
+        shape.moveToPoint_(NSPoint(tx, ty))
+        shape.lineToPoint_(NSPoint(tx + 0.8, ty - 17.0))
+        shape.lineToPoint_(NSPoint(tx + 4.9, ty - 12.9))
+        shape.lineToPoint_(NSPoint(tx + 11.4, ty - 12.2))
+        shape.closePath()
+        # The keyline first, then the ink: the same order the overlay draws its
+        # ring in, and for the same reason — it survives any background.
+        NSColor.windowBackgroundColor().colorWithAlphaComponent_(0.96).set()
+        shape.setLineWidth_(3.4 if contrast else 3.0)
+        shape.setLineJoinStyle_(1)                       # round joins
+        shape.stroke()
+        NSColor.labelColor().set()
+        shape.fill()
+        if self.cue is not None:
+            # Arrived: one thin ring leaves the tip and is gone. Never a loop.
+            progress = max(0.0, min(1.0, float(self.cue)))
+            radius = 4.0 + 9.0 * progress
+            ring = NSBezierPath.bezierPathWithOvalInRect_(
+                NSMakeRect(tx - radius, ty - radius, radius * 2.0, radius * 2.0))
+            NSColor.labelColor().colorWithAlphaComponent_(0.55 * (1.0 - progress)).set()
+            ring.setLineWidth_(1.3)
+            ring.stroke()
+
+
+class TeachingCursor:
+    """
+    The panel the teaching cursor is drawn in, positioned from
+    teaching.CursorMotion every frame of the shell's one display link.
+
+    It never takes focus and never receives a click: setIgnoresMouseEvents_
+    is set once, here, and nothing ever unsets it.
+    """
+
+    def __init__(self, reduced: bool = False):
+        frame = NSMakeRect(0, 0, CURSOR_CANVAS, CURSOR_CANVAS)
+        self.panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            frame,
+            NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel,
+            NSBackingStoreBuffered, False)
+        self.panel.setFloatingPanel_(True)
+        self.panel.setBecomesKeyOnlyIfNeeded_(True)
+        self.panel.setHidesOnDeactivate_(False)
+        self.panel.setOpaque_(False)
+        self.panel.setBackgroundColor_(NSColor.clearColor())
+        self.panel.setHasShadow_(False)
+        self.panel.setLevel_(25)                       # with the orb, below alerts
+        self.panel.setIgnoresMouseEvents_(True)
+        self.panel.setCollectionBehavior_(
+            NSWindowCollectionBehaviorCanJoinAllSpaces
+            | NSWindowCollectionBehaviorStationary
+            | NSWindowCollectionBehaviorFullScreenAuxiliary)
+        self.view = CursorView.alloc().initWithFrame_(frame)
+        self.panel.setContentView_(self.view)
+        self.motion = teaching.CursorMotion(reduced=reduced)
+        self.shown = False
+
+    # The same surface as CursorMotion, so the shell's handlers cannot tell
+    # the drawn cursor from the pure one the tests use.
+    @property
+    def origin(self):
+        return self.motion.origin
+
+    @origin.setter
+    def origin(self, point):
+        self.motion.origin = point
+
+    @property
+    def visible(self) -> bool:
+        return self.motion.visible
+
+    def set_reduced(self, reduced: bool) -> None:
+        self.motion.set_reduced(reduced)
+
+    def look(self):
+        return self.motion.look()
+
+    def busy(self) -> bool:
+        return self.motion.busy()
+
+    def travel(self, point, on_arrive=None) -> None:
+        self.motion.travel(point, on_arrive)
+        self._place()
+
+    def hide(self) -> None:
+        self.motion.hide()
+        self._place()
+
+    def hold(self, seconds, quiet, then) -> None:
+        self.motion.hold(seconds, quiet, then)
+
+    def label(self, text: str) -> None:
+        self.view.setAccessibilityLabel_(text or "Diablo is showing you where to look")
+
+    def step(self, dt: float) -> None:
+        self.motion.step(dt)
+        self._place()
+
+    def _place(self) -> None:
+        if not self.motion.visible:
+            if self.shown:
+                self.panel.orderOut_(None)
+                self.shown = False
+            return
+        look = self.motion.look()
+        x, y = look.position
+        self.panel.setFrameOrigin_(NSPoint(x - CURSOR_TIP[0], y - CURSOR_TIP[1]))
+        self.panel.setAlphaValue_(look.alpha)
+        self.view.cue = look.cue
+        self.view.setNeedsDisplay_(True)
+        if not self.shown:
+            self.panel.orderFrontRegardless()
+            self.shown = True
+
+
+def _release(event, shown: bool) -> None:
+    """
+    Wake a thread waiting on a teaching step, saying whether it was shown.
+    Every step's wait ends through here, once, however the step ended.
+    """
+    if event is None:
+        return
+    try:
+        event.shown = bool(shown)
+        event.set()
+    except Exception:
+        pass
 
 
 def _contains(frame, point):
@@ -960,15 +1131,22 @@ class Guide:
 
     def show(self, x: float, y: float, label: str = "",
              w: float = 0.0, h: float = 0.0, step: str = "",
-             on_light: bool = False) -> None:
-        """Indicate the target: fades in where it belongs, no slide."""
+             on_light: bool = False, bare: bool = False) -> None:
+        """
+        Indicate the target: fades in where it belongs, no slide.
+
+        `bare` draws the ring or outline alone — no line to the orb, no
+        caption — for when the teaching cursor is doing the pointing and the
+        orb has stayed at home.
+        """
         self.prepare(x, y, label, w, h, step=step)
         # The ring is up, so this is the first instant the user can act on
         # it. Everything pressed from here belongs to this step.
         self.arm(x, y)
         self._send({"x": x, "y": y, "label": (label or "")[:80],
                     "w": w, "h": h, "fresh": True,
-                    "step": step[:12], "on_light": bool(on_light)})
+                    "step": step[:12], "on_light": bool(on_light),
+                    "bare": bool(bare)})
 
     def hide(self) -> None:
         self._send({"hide": True})
@@ -1094,6 +1272,10 @@ class Shell:
         self.guide = Guide()
         # Which step of a walkthrough is current, and the refusal to have two.
         self.lesson = lesson.Lesson()
+        # The teaching cursor, and the thread waiting for it to arrive.
+        self.cursor = TeachingCursor(reduced=self.presence.reduced)
+        self._arrival = None
+        self._escape_monitors = None
         # What a DO task is doing, read from the engine's own states.
         self.doing = doing.Doing()
         self.stats = FrameStats()
@@ -1238,6 +1420,12 @@ class Shell:
             self.guide_unverified(**data)
         elif event == "lesson_finish":
             self.guide_finish(**data)
+        elif event == "teach_begin":
+            self.teach_begin(**data)
+        elif event == "teach_step":
+            self.teach_step(**data)
+        elif event == "teach_finish":
+            self.teach_finish(**data)
         elif event == "no_target":
             self.no_target()
         elif event == "await_user":
@@ -1268,6 +1456,9 @@ class Shell:
         `spawn` is the old overlay path, kept for callers without a shell.
         """
         extent = (w / 2.0 + 6.0, h / 2.0 + 6.0) if w > 0 and h > 0 else None
+        # One instrument at a time: the orb is about to do the pointing.
+        self.cursor.hide()
+        self._release_arrival()
         stand = motion.stand_for(x, y, label, extent=extent)
         if stand is None:
             self.no_target()
@@ -1351,6 +1542,11 @@ class Shell:
         if not self.lesson.begin(total, app, seq):
             return
         self.guide.hide()
+        # A walkthrough walks the orb to each step; the teaching cursor from
+        # anything before it goes, so there is one instrument on screen.
+        self.cursor.hide()
+        self._release_arrival()
+        self._watch_escape(False)
         self.wake()
 
     def guide_step(self, x: float, y: float, label: str = "", index: int = 1,
@@ -1451,6 +1647,141 @@ class Shell:
         if not self.lesson.finish(why, seq):
             return
         self.clear_target()
+
+    # ── teaching with the cursor ─────────────────────────────────────────
+    #
+    # The same Lesson a walkthrough uses, so there is still one current step,
+    # the same sequence numbers decide what is stale, and every way out goes
+    # through clear_target. What differs is the instrument: the orb stays
+    # home and the teaching cursor goes to each place instead. A region is
+    # outlined by the existing overlay once the cursor has arrived; a point is
+    # the cursor's tip alone.
+
+    def teach_begin(self, total: int = 0, seq: Optional[int] = None) -> None:
+        if not self.lesson.begin(total, "", seq):
+            return
+        self.guide.hide()
+        self.cursor.hide()
+        self._release_arrival()
+        self._watch_escape(True)
+        self.wake()
+
+    def teach_step(self, x: float, y: float, w: float = 0.0, h: float = 0.0,
+                   label: str = "", index: int = 1, total: int = 1,
+                   mode: str = teaching.POINT, say: str = "",
+                   seq: Optional[int] = None, generation: Optional[int] = None,
+                   arrived=None, hold: bool = False, act: bool = False) -> None:
+        """
+        Send the cursor to one grounded place. Quartz; (x, y) is the centre.
+
+        `arrived` is released exactly once whatever happens — on arrival, or
+        with `shown` False if the step is stale, overtaken, cancelled or on no
+        display — so nothing waiting on it can wait forever or explain a
+        place that was never shown.
+        """
+        step = lesson.Step(index=index, total=total, label=label, say=say,
+                           x=x, y=y, w=w, h=h)
+        if not self.lesson.present(step, seq):
+            _release(arrived, shown=False)
+            return
+        if generation is not None and not _current_generation(generation):
+            _release(arrived, shown=False)
+            self.teach_finish(lesson.CANCELLED)
+            return
+        # One current target: whatever was drawn belongs to the step just
+        # replaced, and goes before anything moves.
+        self.guide.hide()
+        self._release_arrival()
+        point = _appkit(x, y)
+        if point is None:
+            # On no display: nowhere honest to go. Say it and stay.
+            self.cursor.hide()
+            _release(arrived, shown=False)
+            self.no_target()
+            return
+        self._arrival = arrived
+        self.cursor.origin = self.presence.look().position
+        self.cursor.set_reduced(self.presence.reduced)
+        if hasattr(self.cursor, "label"):
+            self.cursor.label(teaching.announce(label, index, total))
+        if act:
+            self.guide.prepare(x, y, label, w, h, watch=True, step=step.counter)
+
+        def arrive():
+            # Overtaken while travelling: this arrival draws nothing.
+            if self.lesson.current is not step:
+                return
+            if w > 0.0 and h > 0.0 and mode in (teaching.REGION, teaching.CURSOR):
+                self.guide.show(x, y, label, w, h, step=step.counter, bare=True)
+            self._release_arrival(shown=True)
+            if hold:
+                # A single thing, explained in the reply: stay while he says
+                # it, then go. The same rule the orb's hold follows.
+                self.cursor.hold(
+                    motion.Timing.GUIDE_HOLD, self.presence._quiet,
+                    lambda: (self.lesson.current is step
+                             and self.teach_finish(lesson.DONE)))
+            self.wake()
+
+        self.cursor.travel(point, arrive)
+        self.wake()
+
+    def teach_finish(self, why: str = lesson.DONE,
+                     seq: Optional[int] = None) -> None:
+        """Over. Everything temporary goes, and he is simply home."""
+        if not self.lesson.finish(why, seq):
+            return
+        self.clear_target()
+
+    def _release_arrival(self, shown: bool = False) -> None:
+        """Let go of whoever is waiting on the current step."""
+        event, self._arrival = self._arrival, None
+        _release(event, shown)
+
+    def _escape_pressed(self) -> None:
+        """Escape while being taught: stop, clear, home."""
+        self.clear_target()
+
+    def _watch_escape(self, on: bool) -> None:
+        """
+        Notice Escape, only while something is being taught.
+
+        Passive: the monitors see a key go down and never consume, alter or
+        post anything, so Escape still reaches the application in front. Off
+        the rest of the time, because there is no reason to be told about
+        anybody's keystrokes when nothing is being shown.
+        """
+        monitors = getattr(self, "_escape_monitors", None)
+        if not on:
+            for monitor in monitors or ():
+                try:
+                    NSEvent.removeMonitor_(monitor)
+                except Exception:
+                    pass
+            self._escape_monitors = None
+            return
+        if monitors:
+            return
+
+        def seen(event):
+            try:
+                if int(event.keyCode()) == 53:
+                    _on_main(self._escape_pressed)
+            except Exception:
+                pass
+
+        def local(event):
+            seen(event)
+            return event
+        try:
+            from AppKit import NSEventMaskKeyDown
+            self._escape_monitors = [m for m in (
+                NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
+                    NSEventMaskKeyDown, seen),
+                NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+                    NSEventMaskKeyDown, local)) if m is not None]
+        except Exception:
+            self._escape_monitors = None
 
     # ── doing something ──────────────────────────────────────────────────
     #
@@ -1637,6 +1968,11 @@ class Shell:
         if self.lesson.live:
             self.lesson.finish(lesson.CANCELLED)
         self.guide.close()
+        # The teaching cursor, anyone waiting on it, and the Escape watch all
+        # go with the indication. Nothing temporary outlives this.
+        self.cursor.hide()
+        self._release_arrival()
+        self._watch_escape(False)
         self.presence.return_home()
         self.wake()
 
@@ -1688,6 +2024,8 @@ class Shell:
         panel_moving = not (presence.panel.at_rest() and presence.surface.at_rest()
                             and presence.panel_w.at_rest() and presence.panel_h.at_rest())
         presence.step(interval)
+        # The teaching cursor on the same clock: one display link, one dt.
+        self.cursor.step(interval)
         look = presence.look()
         self.pill.place(look)
         if panel_moving and self.panel.window is not None and self.panel.window.isVisible():
@@ -1699,7 +2037,7 @@ class Shell:
         # ProMotion panel.
         fast = not (presence.position.at_rest() and presence.panel.at_rest()
                     and presence.scale.at_rest() and presence.panel_w.at_rest()
-                    and presence.panel_h.at_rest())
+                    and presence.panel_h.at_rest()) or self.cursor.busy()
         if fast != self._fast:
             self._fast = fast
             try:
@@ -1710,7 +2048,7 @@ class Shell:
                 pass
 
         self.stats.note(interval, time.perf_counter() - began)
-        if not presence.busy():
+        if not presence.busy() and not self.cursor.busy():
             link.setPaused_(True)
             self._last = None
             if DEBUG:
@@ -1720,6 +2058,7 @@ class Shell:
         """Follow the system setting while running, not just at launch."""
         def changed(_note):
             self.presence.set_reduced(_reduce_motion())
+            self.cursor.set_reduced(self.presence.reduced)
             self.wake()
         try:
             self._reduce_observer = (NSWorkspace.sharedWorkspace().notificationCenter()

@@ -448,8 +448,12 @@ def _by_grounding(description: str, target_window: str, seconds: float,
 
     box = found.candidate
     x, y = box.centre
-    show(x, y, box.label or wanted.semantic, seconds,
-         width=box.width, height=box.height)
+    # How to show it is a separate decision from what and where it is. The
+    # thing under the pointer gets the teaching cursor; an area keeps the
+    # existing outline, drawn by the orb's approach exactly as before.
+    if not _present_with_cursor(box, wanted, description):
+        show(x, y, box.label or wanted.semantic, seconds,
+             width=box.width, height=box.height)
     place = describe_location({"x": x, "y": y, "text": box.label,
                                "window_id": (window or {}).get("id", 0)}, window)
     what = wanted.semantic or box.label or "it"
@@ -469,6 +473,131 @@ def _by_grounding(description: str, target_window: str, seconds: float,
     return f"{place.capitalize()} — that is {what}{hedge}, Sir."
 
 
+# ─── Teaching presentations ─────────────────────────────────────────────────
+#
+# The cursor and the path are drawn by the shell; this only decides to use
+# them and hands over places that grounding has already validated. Without a
+# shell (a script, the tests) there is no channel and the old path is used.
+
+# More steps than this is a lecture, not a lesson, and every one costs a look.
+MAX_STEPS = 6
+
+
+def _channel():
+    """The runtime that shows teaching steps, if there is one."""
+    from skills import teaching
+    made = teaching.CHANNEL
+    if made is None:
+        return None
+    return made() if isinstance(made, type) else made
+
+
+def _present_with_cursor(box, wanted, question: str) -> bool:
+    """Show one grounded thing with the teaching cursor, if that is its mode."""
+    try:
+        from skills import teaching
+    except Exception:
+        return False
+    choice = teaching.choose(wanted.kind, (box.width, box.height), question)
+    if choice.mode != teaching.CURSOR:
+        return False
+    channel = _channel()
+    place = teaching.waypoint(box, wanted.kind, label=box.label or wanted.semantic)
+    if channel is None or place is None:
+        return False
+    try:
+        channel.begin(1)
+        # Held by the shell while the reply is spoken, then cleared by it.
+        channel.step(place, 1, 1, hold=True)
+        return True
+    except Exception:
+        return False
+
+
+def _by_path(description: str, target_window: str, steps: List[Any],
+             speak: Optional[Any], reading_out: Optional[List[Any]]) -> str:
+    """
+    Several places, shown one at a time and explained in order.
+
+    Each step names a thing; grounding finds it exactly as it would for a
+    single question, with the same validation and the same refusal to accept
+    a caption as a region. A step that cannot be found is dropped rather than
+    guessed at, and is said to have been missing. Nothing here produces a
+    coordinate of its own.
+    """
+    from skills import grounding, perception, screen_context, teaching
+    window = (screen_context.find_window(target_window) if target_window
+              else screen_context.frontmost_window())
+    if window and window.get("sensitive"):
+        return (f"I won't read a {window.get('app', '')} window, Sir. "
+                f"Password managers and banking stay private.")
+
+    places, missing, found_candidates = [], [], []
+    for item in list(steps or [])[:MAX_STEPS]:
+        if not isinstance(item, dict):
+            continue
+        what = str(item.get("what") or "").strip()
+        if not what:
+            continue
+        try:
+            found = grounding.ground(what, window,
+                                     stated_kind=str(item.get("kind") or ""))
+        except Exception:
+            found = None
+        if found is None or not found.found:
+            missing.append(what)
+            continue
+        place = teaching.waypoint(found.candidate, found.target.kind,
+                                  say=str(item.get("say") or "").strip(),
+                                  act=bool(item.get("act")))
+        if place is None:
+            missing.append(what)
+            continue
+        places.append(place)
+        found_candidates.append(found.candidate)
+
+    reading = perception.Reading(candidates=found_candidates,
+                                 margin=1.0 if found_candidates else 0.0)
+    if reading_out is not None:
+        reading_out.append(reading)
+    _record(description or "a walk through the screen", reading, window)
+
+    path = teaching.TeachingPath.of(places)
+    if path.total == 0:
+        return ("I couldn't find " + _listed(missing) + " on screen, Sir, "
+                "so there is nothing I can show you.")
+
+    channel = _channel()
+    if channel is not None:
+        outcome = teaching.run_path(path, channel, speak=speak)
+    else:
+        # No shell: the old overlay, one place at a time.
+        for place in path.steps:
+            cx, cy = place.centre
+            show(cx, cy, place.label, 3.0, width=place.w if place.is_region else 0.0,
+                 height=place.h if place.is_region else 0.0)
+            if place.say and speak is not None:
+                speak(place.say)
+        outcome = teaching.Outcome(True, path.total)
+
+    shown = [p.label for p in path.steps][:outcome.shown or path.total]
+    if not outcome.done:
+        return "Stopped there, Sir."
+    answer = "I've shown you " + _listed(shown) + " on screen, Sir."
+    if missing:
+        answer += " I couldn't find " + _listed(missing) + "."
+    return answer
+
+
+def _listed(things: List[str]) -> str:
+    things = [t for t in things if t]
+    if not things:
+        return "that"
+    if len(things) == 1:
+        return things[0]
+    return ", ".join(things[:-1]) + " and " + things[-1]
+
+
 def perception_reading(found):
     """A Ground, in the shape the trace and the run already consume."""
     from skills import perception
@@ -478,7 +607,8 @@ def perception_reading(found):
 
 
 def point_at(description: str, target: str = "", seconds: float = 3.0,
-             reading_out: Optional[List[Any]] = None, kind: str = "") -> str:
+             reading_out: Optional[List[Any]] = None, kind: str = "",
+             steps: Optional[List[Any]] = None, speak: Optional[Any] = None) -> str:
     """
     Find something on screen and mark it, then say where it is.
 
@@ -490,7 +620,17 @@ def point_at(description: str, target: str = "", seconds: float = 3.0,
     a region of a picture, a figure. It is optional because the phrasing
     carries the same information most of the time, and a tool call that omits
     it has to keep working.
+
+    `steps` is for explaining how something works or changes: each item is
+    {"what": the thing to show, "say": one sentence to say there}, optionally
+    with "kind" and "act". They are grounded one by one and shown in order.
+    `speak` says each sentence as its place is shown.
     """
+    # Several things, in order: shown one at a time and explained, rather
+    # than one ring asked to stand for a relationship it cannot show.
+    if steps:
+        return _by_path(description, target, steps, speak, reading_out)
+
     if not description or not description.strip():
         return "I need to know what to point at, Sir."
 

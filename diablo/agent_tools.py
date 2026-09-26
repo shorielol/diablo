@@ -894,7 +894,8 @@ def _observed(readings: List[Any]) -> None:
         pass
 
 
-def point_at(description: str, target: str = "", kind: str = "") -> str:
+def point_at(description: str, target: str = "", kind: str = "",
+             steps: Optional[List[Dict[str, Any]]] = None) -> str:
     """Put a marker on screen over the thing the user is looking for."""
     try:
         module = _skill("pointing")
@@ -907,7 +908,8 @@ def point_at(description: str, target: str = "", kind: str = "") -> str:
         # frame.
         readings: List[Any] = []
         said = module.point_at(description, target, reading_out=readings,
-                               kind=kind)
+                               kind=kind, steps=steps or None,
+                               speak=CONTEXT.get("speak") if steps else None)
         _observed(readings)
         return _clip(said)
     except Exception as e:
@@ -1680,11 +1682,31 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
                                    "'region' for an area of a picture such as "
                                    "a shaded part of a graph; 'figure' for a "
                                    "whole chart or image. Leave empty if "
-                                   "unsure."}},
+                                   "unsure."},
+           "steps": {"type": "array",
+                     "description": "Only when explaining how something works, "
+                                    "changes or connects — 'show me how the "
+                                    "subsidy creates welfare loss'. The things "
+                                    "to show, in order, two to six of them, each "
+                                    "with one short sentence to say while it is "
+                                    "shown. Leave out for a single thing.",
+                     "items": {"type": "object",
+                               "properties": {
+                                   "what": {"type": "string",
+                                            "description": "The thing to show, "
+                                                           "as it would be named "
+                                                           "on its own."},
+                                   "say": {"type": "string",
+                                           "description": "One sentence about "
+                                                          "it."},
+                                   "kind": {"type": "string",
+                                            "description": "As for kind above."}},
+                               "required": ["what", "say"]}}},
           ["description"],
           "point show where find highlight mark locate look which button menu "
           "screen click press tab option setting region area shaded graph "
-          "diagram chart figure curve triangle"),
+          "diagram chart figure curve triangle explain how walk through trace "
+          "relationship change"),
     _tool("find_on_screen", find_on_screen,
           "Find where something is on screen without drawing a marker. Returns the "
           "matches and roughly where each one sits in the window.",

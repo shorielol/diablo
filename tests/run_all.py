@@ -44,6 +44,7 @@ SUITES = [
     ("test_perception.py",   False, "finding a control, and deciding whether to touch it"),
     ("test_vision_targets.py", False, "vision as the third candidate source"),
     ("test_grounding.py",    False, "the thing asked about, not the word for it"),
+    ("test_teaching.py",     False, "how to show it: point, region, cursor, path"),
     ("test_do_engine.py",     False, "a goal, a closed loop, and honest completion"),
     ("test_planner_eval.py",  False, "the benchmark that measures the planner"),
     ("test_perception_eval.py", False, "the benchmark that measures perception"),

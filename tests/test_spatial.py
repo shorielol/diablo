@@ -60,6 +60,14 @@ def stand_in(home=(1461.0, 51.0), reduced=False):
     # The real Shell carries one of these, and clear_target now ends the
     # lesson along with the indication, so the double needs it too.
     shell.lesson = lesson.Lesson()
+    # The teaching cursor the real Shell carries (GUI-X). The pure motion
+    # stands in for the drawn one; the same methods, no AppKit.
+    from skills import teaching as _teaching
+    shell.cursor = _teaching.CursorMotion()
+    shell._arrival = None
+    shell._watch_escape = lambda on: None
+    shell._release_arrival = types.MethodType(
+        app_shell.Shell._release_arrival, shell)
     for name in ("approach", "approach_region", "clear_target", "no_target",
                  "_under_surface"):
         setattr(shell, name, types.MethodType(getattr(app_shell.Shell, name), shell))

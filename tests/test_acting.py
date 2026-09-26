@@ -79,6 +79,14 @@ def stand_in(reduced=False):
     shell.wake = lambda: None
     shell.guide = Drawn()
     shell.lesson = lesson.Lesson()
+    # The teaching cursor the real Shell carries (GUI-X). The pure motion
+    # stands in for the drawn one; the same methods, no AppKit.
+    from skills import teaching as _teaching
+    shell.cursor = _teaching.CursorMotion()
+    shell._arrival = None
+    shell._watch_escape = lambda on: None
+    shell._release_arrival = types.MethodType(
+        app_shell.Shell._release_arrival, shell)
     for name in ("guide_begin", "guide_step", "guide_waiting", "guide_acted",
                  "guide_verified", "guide_unverified", "guide_finish",
                  "clear_target", "no_target", "approach", "focus_content",
