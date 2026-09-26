@@ -442,6 +442,37 @@ def run() -> int:
          local_brain.available, conversation.session,
          screen_context.frontmost_window) = saved
 
+    with guard(r, "the reference request, through the real turn"):
+        shown = target.asked_to_show("Where is Diablo Notes?")
+        r.check("'Where is Diablo Notes?' is a LOCATE the screen settles",
+                shown is not None and shown.intent == target.LOCATE
+                and not shown.certain and shown.target.operation == "", repr(shown))
+        from skills import showing
+        saved_text = showing._screen_text
+        saved_front = screen_context.frontmost_window
+        screen_context.frontmost_window = lambda: WINDOW
+        try:
+            showing._screen_text = lambda window: "Notes\nDiablo Notes\nMeeting notes"
+            r.check("  taken when the name is on screen",
+                    showing.prepare("Where is Diablo Notes?", shown) is not None)
+            showing._screen_text = lambda window: "Inbox\nDrafts"
+            r.check("  declined when it is not",
+                    showing.prepare("Where is Diablo Notes?", shown) is None)
+        finally:
+            showing._screen_text, screen_context.frontmost_window = saved_text, saved_front
+        drawn = []
+        saved_show = pointing.show
+        pointing.show = lambda x, y, label="", seconds=3.0, marker=True, width=0.0, \
+            height=0.0: drawn.append((label, x, y)) or ""
+        try:
+            with Screen(NOTES):
+                showing.present(showing.Prepared("Where is Diablo Notes?", shown, WINDOW),
+                                lambda *a, **k: None, [])
+        finally:
+            pointing.show = saved_show
+        r.check("  and it rings the title, not a control that acts on notes",
+                bool(drawn) and drawn[-1][0] == "Diablo Notes", str(drawn))
+
     with guard(r, "the presentation it gets is GUI-X's own"):
         r.check("a single control is a POINT",
                 teaching.choose(target.CONTROL, (30.0, 26.0)).mode == teaching.POINT)

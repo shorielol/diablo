@@ -160,7 +160,8 @@ def prepare(question: str, shown: Any) -> Optional[Prepared]:
         return Prepared(question, shown, window,
                         refused=(f"I won't read a {window.get('app', '')} window, "
                                  f"Sir. Password managers and banking stay private."))
-    if shown.intent in (target.LOCATE, target.GUIDE) or _pointed(question):
+    if (shown.intent in (target.LOCATE, target.GUIDE) and shown.certain) or \
+            _pointed(question):
         return Prepared(question, shown, window)
 
     text = _screen_text(window)

@@ -687,6 +687,14 @@ def asked_to_show(text: str) -> Optional[Shown]:
             return Shown(LOCATE, t, True, "asked where something on screen is")
         if t.kind == TEXT and re.search(r"\bwhere\b", lowered):
             return Shown(LOCATE, t, True, "asked where some words are")
+        # "Where is Diablo Notes?" and "where is Paris?" have the same shape.
+        # Only the screen can tell them apart, so it is asked (B.3), exactly as
+        # "explain the subsidy" is: shown if the name is there, otherwise the
+        # turn goes on as it would have.
+        if re.search(r"\bwhere\b", lowered) and _named(t.semantic) and \
+                t.kind in (CONTROL, TEXT):
+            return Shown(LOCATE, t, False, "asked where something named is; the "
+                                           "screen decides whether it is there")
         return None
 
     return None

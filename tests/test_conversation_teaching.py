@@ -206,7 +206,6 @@ def run() -> int:
     with guard(r, "requests that are not, and stay where they were"):
         for text, why in (
                 ("Where is it?", "names nothing: still a question back"),
-                ("Where is Paris?", "a place in the world, not on the screen"),
                 ("Show me my calendar", "opening an app, not pointing"),
                 ("find my econ ee draft", "a file"),
                 # A procedure with no operation a control performs is the
@@ -587,6 +586,16 @@ def run() -> int:
         r.check("B.3: 'show me how to save this file' is the Save control, not a "
                 "walkthrough", (target.asked_to_show("show me how to save this file")
                                 or Found(None, "")).__dict__.get("intent") == target.GUIDE)
+        # "Where is <a name>" cannot be told from "where is Paris" by its
+        # words. B.3 lets the screen decide, as "explain the subsidy" does.
+        paris = target.asked_to_show("Where is Paris?")
+        r.check("'Where is Paris?' is a LOCATE the screen has to settle",
+                paris is not None and paris.intent == target.LOCATE and not paris.certain,
+                repr(paris))
+        calls = turn("Where is Paris?")
+        r.check("  and with no Paris on screen it is answered the ordinary way",
+                not calls["point_at"] and calls["outcome"] != "shown",
+                str(calls["outcome"]))
         calls = turn("show me how to change my wallpaper")
         r.check("a procedure still goes to the tutor",
                 bool(calls["tutor"]) and not calls["point_at"], str(calls["outcome"]))
