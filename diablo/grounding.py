@@ -526,6 +526,12 @@ def _by_perception(wanted: target.Target, window) -> Ground:
 # Kinds whose answer is an area of a picture, which is what the pixels find.
 AREA_KINDS = (target.REGION, target.FIGURE)
 
+# How a chosen area's provenance note begins. It is kept in the evidence, for
+# the trace and for "how do you know", and never read out as the answer:
+# spoken live, it came out as "it is one of 3 filled areas found in the
+# picture itself", which is how Diablo works rather than where the thing is.
+PICKED = "chosen from"
+
 # When the model says none of the areas found is the thing: say it could not be
 # found ("abstain"), or look the old way with the canvas corrected ("bbox").
 # Abstain, measured: falling back to the model's own box put a confident ring
@@ -698,8 +704,8 @@ def _pick_area_unguarded(path: str, image: Tuple[int, int], wanted: target.Targe
     frame = {"x": crop[0], "y": crop[1], "width": crop[2], "height": crop[3]}
     x0, y0 = _display.image_to_quartz(left, top, frame)
     x1, y1 = _display.image_to_quartz(right, bottom, frame)
-    why = (f"it is one of {len(found)} filled areas found in the picture itself, "
-           f"and the one that is the {wanted.semantic or 'thing asked about'}")
+    why = (f"{PICKED} {len(found)} filled areas found in the picture itself, as "
+           f"the {wanted.semantic or 'thing asked about'}")
     return _Pick(rect=(x0, y0, x1 - x0, y1 - y0, REGION_CEILING,
                        wanted.semantic, why),
                  offered=len(found), choice=choice)

@@ -471,7 +471,8 @@ def _by_grounding(description: str, target_window: str, seconds: float,
     # useful half of the answer and belongs where it will be heard.
     described = ""
     for note in box.evidence:
-        if note and not note.startswith("the words") and not note.startswith("it looks like"):
+        if note and not note.startswith("the words") and not note.startswith("it looks like") \
+                and not note.startswith(getattr(grounding, "PICKED", "\0")):
             described = note.strip().rstrip(".")
             break
     if described:

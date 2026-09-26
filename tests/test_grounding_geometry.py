@@ -400,6 +400,37 @@ def run() -> int:
          grounding._crop_for, grounding._anchor_for, target.scope_for) = saved
         grounding.NONE_POLICY = "bbox"
 
+    # ── V, W. What the user hears and what guidance gets ────────────────────
+    r.head("V-W  the answer, spoken and drawn")
+    with guard(r, "point_at on a chosen area"):
+        from skills import perception, pointing
+        picked = perception.Candidate(
+            label="welfare loss region", role="region", x=440.0, y=567.0,
+            width=59.0, height=84.0, confidence=0.85, sources=[target.REGION_SOURCE],
+            source_confidence={target.REGION_SOURCE: 0.85},
+            evidence=[grounding.PICKED + " 3 filled areas found in the picture itself",
+                      "it looks like welfare loss region"])
+        wanted = target.read_question("welfare loss region", stated="region")
+        drawn = []
+        saved = (grounding.ground, pointing.show, screen_context.frontmost_window)
+        grounding.ground = lambda q, window=None, stated_kind="": grounding.Ground(
+            target=wanted, candidate=picked, scope=target.WINDOW)
+        pointing.show = lambda x, y, label="", seconds=3.0, marker=True, width=0.0, \
+            height=0.0: drawn.append((x, y, width, height)) or ""
+        screen_context.frontmost_window = lambda: {"id": 1, "app": "Preview", "x": 0.0,
+                                                   "y": 0.0, "width": 1000.0,
+                                                   "height": 800.0, "sensitive": False}
+        try:
+            answer = pointing.point_at("welfare loss region", kind="region")
+        finally:
+            grounding.ground, pointing.show, screen_context.frontmost_window = saved
+        r.check("how it was found is not said to the user",
+                "filled areas" not in answer.lower() and "picture itself" not in answer.lower(),
+                answer)
+        r.check("  but it is still in the record", grounding.PICKED in picked.evidence[0])
+        r.check("guidance gets the area's extent, not a point",
+                bool(drawn) and drawn[-1][2] == 59.0 and drawn[-1][3] == 84.0, str(drawn))
+
     # ── R, S. Actions keep their own path ───────────────────────────────────
     r.head("R-S  a control is not looked for in the pixels")
     with guard(r, "B.3's action targets are untouched"):
