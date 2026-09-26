@@ -133,6 +133,9 @@ class Waypoint:
     mode: str
     sources: Tuple[str, ...]
     act: bool = False           # the user has to do something here
+    # The area's own edge, when it has a real one (B.5). Empty otherwise, and
+    # the box above is drawn as it always was.
+    shape: Tuple[Tuple[float, float], ...] = ()
 
     @property
     def centre(self) -> Point:
@@ -201,9 +204,58 @@ def waypoint(candidate: Any, kind: str, say: str = "", label: str = "",
     if not target.satisfies(kind, _as_checked(candidate, sources)):
         return None
     mode = choose(kind, (w, h)).mode or POINT
+    shape = (outline_for(kind, w, h, getattr(candidate, "outline", None))
+             if mode == REGION else ())
     return Waypoint(label=label or str(getattr(candidate, "label", "") or ""),
                     say=say or "", x=x, y=y, w=w, h=h, kind=kind, mode=mode,
-                    sources=sources, act=bool(act))
+                    sources=sources, act=bool(act), shape=shape)
+
+
+# ─── The area's own shape (B.5) ──────────────────────────────────────────────
+#
+# How an area is drawn is chosen from its geometry, never from its name. A
+# triangle drawn as the box around it says "somewhere in here", and half of
+# that box is empty background; its own edge says "this". But a bar's edge IS
+# its box, a place the size of a crossing is a point, and a control or a line
+# of text keeps the treatment it has always had.
+
+# At or above this share of its own box, an outline is a rectangle and the
+# existing rectangle says the same thing.
+RECTANGULAR = 0.9
+
+
+def _area(points: Sequence[Tuple[float, float]]) -> float:
+    total = 0.0
+    for i in range(len(points)):
+        x1, y1 = points[i]
+        x2, y2 = points[(i + 1) % len(points)]
+        total += x1 * y2 - x2 * y1
+    return abs(total) / 2.0
+
+
+def outline_for(kind: str, w: float, h: float,
+                outline: Any) -> Tuple[Tuple[float, float], ...]:
+    """
+    The outline to draw for a target, or () to draw what was drawn before.
+
+    Refused rather than repaired: fewer than three points, a point that is not
+    a number, or an outline that spills out of the box it is supposed to have
+    come from.
+    """
+    if kind not in (REGION, target.FIGURE) or _point_like((w, h)):
+        return ()
+    try:
+        points = tuple((float(x), float(y)) for x, y in (outline or ()))
+    except (TypeError, ValueError):
+        return ()
+    if len(points) < 3 or not _finite(*(v for p in points for v in p)):
+        return ()
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    if max(xs) - min(xs) > w + 2.0 or max(ys) - min(ys) > h + 2.0:
+        return ()
+    if w <= 0.0 or h <= 0.0 or _area(points) >= RECTANGULAR * w * h:
+        return ()
+    return points
 
 
 @dataclass

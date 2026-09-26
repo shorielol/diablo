@@ -37,6 +37,7 @@ will miss. macOS's accessibility API would cover those; that is a later job, and
 """
 
 import difflib
+import json
 import os
 
 from skills import config  # noqa: E402
@@ -316,7 +317,8 @@ OVERLAY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "overlay.py")
 
 
 def show(x: float, y: float, label: str = "", seconds: float = 3.0,
-         marker: bool = True, width: float = 0.0, height: float = 0.0) -> bool:
+         marker: bool = True, width: float = 0.0, height: float = 0.0,
+         shape: Optional[List[Any]] = None) -> bool:
     """
     Put a marker on the screen at an absolute point, and return immediately.
 
@@ -339,7 +341,9 @@ def show(x: float, y: float, label: str = "", seconds: float = 3.0,
              "--label", (label or "")[:48], "--seconds", f"{seconds:.1f}"]
             + ([] if marker else ["--no-marker"])
             + (["--w", f"{width:.1f}", "--h", f"{height:.1f}"]
-               if width > 0.0 and height > 0.0 else []),
+               if width > 0.0 and height > 0.0 else [])
+            + (["--shape", json.dumps([[float(px), float(py)] for px, py in shape])]
+               if shape else []),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             start_new_session=True)
         return True
@@ -458,8 +462,14 @@ def _by_grounding(description: str, target_window: str, seconds: float,
             # equilibrium" drew a 52-point box round a dot. The ring says here.
             show(x, y, box.label or wanted.semantic, seconds)
         else:
+            # The area's own edge when it has a real one (B.5); passed only
+            # then, so a box-only answer is sent exactly as it always was.
+            from skills import teaching
+            edge = teaching.outline_for(wanted.kind, box.width, box.height,
+                                        getattr(box, "outline", None))
+            extra = {"shape": [list(p) for p in edge]} if edge else {}
             show(x, y, box.label or wanted.semantic, seconds,
-                 width=box.width, height=box.height)
+                 width=box.width, height=box.height, **extra)
     place = describe_location({"x": x, "y": y, "text": box.label,
                                "window_id": (window or {}).get("id", 0)}, window)
     what = wanted.semantic or box.label or "it"
@@ -591,8 +601,9 @@ def _by_path(description: str, target_window: str, steps: List[Any],
         # No shell: the old overlay, one place at a time.
         for place in path.steps:
             cx, cy = place.centre
+            extra = {"shape": [list(p) for p in place.shape]} if place.shape else {}
             show(cx, cy, place.label, 3.0, width=place.w if place.is_region else 0.0,
-                 height=place.h if place.is_region else 0.0)
+                 height=place.h if place.is_region else 0.0, **extra)
             if place.say and speak is not None:
                 speak(place.say)
         outcome = teaching.Outcome(True, path.total)

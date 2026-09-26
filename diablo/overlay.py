@@ -67,6 +67,9 @@ from skills import guidance  # noqa: E402
 # contrasting content the keyline disappears into the surface either way.
 KEYLINE = 2.0          # how much wider the underlay is than the stroke it carries
 KEYLINE_ALPHA = 0.75   # of the stroke's own alpha
+# How far an area's own edge is drawn outside the shape (B.5): enough that the
+# line never covers the edge it is showing, not so much that it becomes a halo.
+SHAPE_PAD = 3.0
 
 
 def main() -> int:
@@ -91,6 +94,8 @@ def main() -> int:
     parser.add_argument("--w", type=float, default=0.0,
                         help="width of a content region being referred to; 0 = a control")
     parser.add_argument("--h", type=float, default=0.0, help="height of that region")
+    parser.add_argument("--shape", default="",
+                        help="the region's own edge: JSON [[x, y], ...] in Quartz")
     parser.add_argument("--hidden", action="store_true",
                         help="session only: start invisible and wait to be shown")
     args = parser.parse_args()
@@ -164,6 +169,22 @@ def main() -> int:
         if spot is not None and spot.is_region:
             # A region of content is outlined, not ringed: a table or a graph
             # is not something to press, and a pulse would say it was.
+            edge = getattr(view, "shape", None) or ()
+            if len(edge) >= 3:
+                # Its own edge when it has one (B.5): the triangle, not the box
+                # round it. The same line and keyline as the box, a small
+                # margin outside the shape so the edge itself stays visible.
+                path = NSBezierPath.bezierPath()
+                for index, (qx, qy) in enumerate(guidance.outline(edge, SHAPE_PAD)):
+                    point = NSPoint(*view_point(view, qx, qy))
+                    if index == 0:
+                        path.moveToPoint_(point)
+                    else:
+                        path.lineToPoint_(point)
+                path.closePath()
+                path.setLineJoinStyle_(1)            # round: no spiky corners
+                keyed_stroke(path, 1.8, 0.85 * view.opacity, view)
+                return
             box = NSMakeRect(cx - spot.ring_w, cy - spot.ring_h,
                              spot.ring_w * 2, spot.ring_h * 2)
             outline = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(box, 8, 8)
@@ -406,7 +427,8 @@ def main() -> int:
     view = GuideView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
     window.setContentView_(view)
 
-    def aim(x, y, label, step, on_light, animate=False, w=0.0, h=0.0, fresh=False):
+    def aim(x, y, label, step, on_light, animate=False, w=0.0, h=0.0, fresh=False,
+            shape=()):
         """
         Point at a new target: re-place, resize, and slide him over.
 
@@ -426,6 +448,7 @@ def main() -> int:
         view.setFrame_(NSMakeRect(0, 0, bw, bh))
         view.origin = (bx, by)
         view.place = spot
+        view.shape = [(float(px), float(py)) for px, py in (shape or ())]
         view.label = label
         view.step = step
         view.on_light = on_light
@@ -440,8 +463,12 @@ def main() -> int:
         view.setNeedsDisplay_(True)
         return True
 
+    try:
+        first_shape = json.loads(args.shape) if args.shape else ()
+    except ValueError:
+        first_shape = ()
     if not aim(args.x, args.y, args.label, args.step, args.on_light,
-               w=args.w, h=args.h):
+               w=args.w, h=args.h, shape=first_shape):
         return 1
     if args.session and args.hidden:
         view.opacity = view.target_opacity = 0.0
@@ -480,7 +507,8 @@ def _run_session(args, app, window, view, primary_height, aim,
     """
     from Foundation import NSOperationQueue
 
-    def move(x, y, label, step, on_light, w=0.0, h=0.0, fresh=False, bare=False):
+    def move(x, y, label, step, on_light, w=0.0, h=0.0, fresh=False, bare=False,
+             shape=()):
         # AppKit off the main thread is undefined behaviour that usually looks
         # like it works, right up until it draws nothing.
         #
@@ -490,7 +518,8 @@ def _run_session(args, app, window, view, primary_height, aim,
         # disappeared on the second step with nothing in the log.
         def apply():
             view.bare = bool(bare)
-            aim(x, y, label, step, on_light, animate=True, w=w, h=h, fresh=fresh)
+            aim(x, y, label, step, on_light, animate=True, w=w, h=h, fresh=fresh,
+                shape=shape)
         NSOperationQueue.mainQueue().addOperationWithBlock_(apply)
 
     def fade(to, then_quit=False):
@@ -563,7 +592,9 @@ def _run_session(args, app, window, view, primary_height, aim,
                      bool(message.get("on_light", False)),
                      float(message.get("w", 0.0)), float(message.get("h", 0.0)),
                      bool(message.get("fresh", False)),
-                     bool(message.get("bare", False)))
+                     bool(message.get("bare", False)),
+                     [(float(p[0]), float(p[1])) for p in message.get("shape", [])
+                      if isinstance(p, (list, tuple)) and len(p) == 2])
             except Exception:
                 continue
         # Asked to go, or the other end went away: fade out, then exit.

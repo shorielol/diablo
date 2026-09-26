@@ -338,7 +338,8 @@ def _bridge_presence(voice_bridge) -> None:
     # shell, the old overlay with its own marker is drawn as before.
     show = pointing.show
 
-    def point(x, y, label="", seconds=3.0, marker=True, width=0.0, height=0.0):
+    def point(x, y, label="", seconds=3.0, marker=True, width=0.0, height=0.0,
+              shape=None):
         # `width` and `height` are an area's extent, and they have to reach the
         # shell. Phase B added them to pointing.show, but this wrapper still
         # had the old signature, so in the running app every region answer
@@ -349,14 +350,20 @@ def _bridge_presence(voice_bridge) -> None:
         except Exception:
             generation = None
 
+        # An area's own edge, when it has one (B.5). Sent only then, so every
+        # other answer reaches the shell exactly as before.
+        edge = {"shape": [list(p) for p in shape]} if shape else {}
+
         def spawn(with_marker):
-            show(x, y, label, seconds, marker=with_marker, width=width, height=height)
+            show(x, y, label, seconds, marker=with_marker, width=width, height=height,
+                 **edge)
 
         if app_shell.notify("target", x=x, y=y, label=label, seconds=seconds,
                             spawn=spawn, generation=generation,
-                            w=float(width or 0.0), h=float(height or 0.0)):
+                            w=float(width or 0.0), h=float(height or 0.0), **edge):
             return True
-        return show(x, y, label, seconds, marker=marker, width=width, height=height)
+        return show(x, y, label, seconds, marker=marker, width=width, height=height,
+                    **edge)
 
     pointing.show = point
 
@@ -495,15 +502,17 @@ def _bridge_presence(voice_bridge) -> None:
         def step(self, place, index, total, hold=False):
             arrived = threading.Event()
             cx, cy = place.centre
+            edge = ({"shape": [list(p) for p in place.shape]}
+                    if getattr(place, "shape", ()) else {})
             sent = app_shell.notify(
                 "teach_step", x=cx, y=cy, w=place.w, h=place.h, label=place.label,
                 index=index, total=total, mode=place.mode, say=place.say,
                 seq=self._next(), generation=self.generation, arrived=arrived,
-                hold=bool(hold), act=bool(place.act))
+                hold=bool(hold), act=bool(place.act), **edge)
             if not sent:
                 # No shell yet: the old overlay, and nothing to wait for.
                 show(cx, cy, place.label, 3.0, width=place.w if place.is_region else 0.0,
-                     height=place.h if place.is_region else 0.0)
+                     height=place.h if place.is_region else 0.0, **edge)
                 arrived.set()
             elif not hold:
                 # A single thing is explained by the reply itself; the surface

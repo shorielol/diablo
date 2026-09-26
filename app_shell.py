@@ -1131,7 +1131,7 @@ class Guide:
 
     def show(self, x: float, y: float, label: str = "",
              w: float = 0.0, h: float = 0.0, step: str = "",
-             on_light: bool = False, bare: bool = False) -> None:
+             on_light: bool = False, bare: bool = False, shape: Any = ()) -> None:
         """
         Indicate the target: fades in where it belongs, no slide.
 
@@ -1143,10 +1143,15 @@ class Guide:
         # The ring is up, so this is the first instant the user can act on
         # it. Everything pressed from here belongs to this step.
         self.arm(x, y)
-        self._send({"x": x, "y": y, "label": (label or "")[:80],
-                    "w": w, "h": h, "fresh": True,
-                    "step": step[:12], "on_light": bool(on_light),
-                    "bare": bool(bare)})
+        message = {"x": x, "y": y, "label": (label or "")[:80],
+                   "w": w, "h": h, "fresh": True,
+                   "step": step[:12], "on_light": bool(on_light),
+                   "bare": bool(bare)}
+        if shape:
+            # The area's own edge (B.5), in Quartz points. Only when there is
+            # one: every other message is exactly what it was.
+            message["shape"] = [[float(px), float(py)] for px, py in shape]
+        self._send(message)
 
     def hide(self) -> None:
         self._send({"hide": True})
@@ -1439,7 +1444,8 @@ class Shell:
     # ── going somewhere ──────────────────────────────────────────────────
     def approach(self, x: float, y: float, label: str = "", seconds: float = 3.0,
                  spawn: Optional[Callable[[bool], None]] = None,
-                 generation: Optional[int] = None, w: float = 0.0, h: float = 0.0) -> None:
+                 generation: Optional[int] = None, w: float = 0.0, h: float = 0.0,
+                 shape: Any = ()) -> None:
         """
         Go and point at a target that has actually been found, in Quartz space.
 
@@ -1472,7 +1478,12 @@ class Shell:
             if generation is not None and not _current_generation(generation):
                 self.clear_target()
                 return
-            self.guide.show(x, y, label, w, h)
+            # An area's own edge, when it has one (B.5); otherwise exactly the
+            # call there always was.
+            if shape:
+                self.guide.show(x, y, label, w, h, shape=shape)
+            else:
+                self.guide.show(x, y, label, w, h)
             presence.hold_target(max(seconds, motion.Timing.GUIDE_HOLD),
                                  then=self.clear_target, until_quiet=True)
             self.wake()
@@ -1670,7 +1681,8 @@ class Shell:
                    label: str = "", index: int = 1, total: int = 1,
                    mode: str = teaching.POINT, say: str = "",
                    seq: Optional[int] = None, generation: Optional[int] = None,
-                   arrived=None, hold: bool = False, act: bool = False) -> None:
+                   arrived=None, hold: bool = False, act: bool = False,
+                   shape: Any = ()) -> None:
         """
         Send the cursor to one grounded place. Quartz; (x, y) is the centre.
 
@@ -1712,7 +1724,9 @@ class Shell:
             if self.lesson.current is not step:
                 return
             if w > 0.0 and h > 0.0 and mode in (teaching.REGION, teaching.CURSOR):
-                self.guide.show(x, y, label, w, h, step=step.counter, bare=True)
+                # The area's own edge instead of its box, when it has one.
+                extra = {"shape": shape} if shape else {}
+                self.guide.show(x, y, label, w, h, step=step.counter, bare=True, **extra)
             self._release_arrival(shown=True)
             if hold:
                 # A single thing, explained in the reply: stay while he says

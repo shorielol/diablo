@@ -22,7 +22,7 @@ is on the screen. Boxes are in the picture's own pixels; turning them into
 screen points is the existing mapper's job.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -57,6 +57,10 @@ class Region:
     bottom: int
     pixels: int
     colour: Tuple[int, int, int]
+    # The area's own edge, as a closed polygon in the same pixels (B.5). Its
+    # box above is derived from the mask this came from; this is the mask,
+    # kept. Empty when it could not be traced, and the box is then all there is.
+    outline: Tuple[Tuple[float, float], ...] = ()
 
     @property
     def width(self) -> int:
@@ -169,6 +173,7 @@ def candidates(rgb: np.ndarray, min_edge: float = 24.0,
     height, width = rgb.shape[:2]
     smooth = _smooth(rgb)
     found: List[Region] = []
+    masks = {}
     for colour in _fill_colours(smooth):
         near = np.linalg.norm(smooth - colour, axis=2) < TOLERANCE
         near = ndimage.binary_closing(near, iterations=2)
@@ -185,6 +190,7 @@ def candidates(rgb: np.ndarray, min_edge: float = 24.0,
             left, right = box[1].start, box[1].stop
             region = Region(left, top, right, bottom, int(sizes[index]),
                             tuple(int(c) for c in colour))
+            masks[region] = labels[box] == index + 1
             if region.width < min_edge or region.height < min_edge:
                 continue
             if region.fill < MIN_FILL:
@@ -195,7 +201,108 @@ def candidates(rgb: np.ndarray, min_edge: float = 24.0,
             if region.width * region.height > MAX_SHARE_OF_PICTURE * width * height:
                 continue
             found.append(region)
-    return _distinct(sorted(found, key=lambda r: -r.pixels))[:limit]
+    kept = _distinct(sorted(found, key=lambda r: -r.pixels))[:limit]
+    # Traced only for what is kept: at most ten areas, each from the mask it
+    # was found in. Nothing is looked at again to draw it.
+    return [replace(region, outline=_outline(masks[region], region.left, region.top))
+            for region in kept]
+
+
+# ─── An area's edge (B.5) ────────────────────────────────────────────────────
+#
+# B.4 found the welfare-loss triangle from its mask and then kept only the
+# mask's bounding box, so the triangle was shown as a rectangle half of which
+# was empty. The mask is traced instead: its outer boundary, followed pixel by
+# pixel, then reduced to the few corners that matter.
+
+# How far the simplified edge may stray from the traced one, in pixels. Small
+# enough to keep a triangle's corners, large enough to drop the staircase.
+SIMPLIFY = 2.0
+
+_AROUND = ((0, -1), (-1, -1), (-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1))
+
+
+def _trace(mask: np.ndarray) -> List[Tuple[int, int]]:
+    """The outer boundary of one connected mask, clockwise, as (row, col)."""
+    padded = np.pad(mask, 1)
+    rows, cols = np.nonzero(padded)
+    if not len(rows):
+        return []
+    start = (int(rows[0]), int(cols[0]))       # topmost, then leftmost
+    boundary = [start]
+    current, came_from = start, 0              # entered from the west
+    limit = 4 * int(mask.sum()) + 16
+    for _ in range(limit):
+        for turn in range(8):
+            d = (came_from + 1 + turn) % 8
+            nr, nc = current[0] + _AROUND[d][0], current[1] + _AROUND[d][1]
+            if padded[nr, nc]:
+                # Look next from the neighbour just before this one.
+                came_from = (d + 4) % 8
+                current = (nr, nc)
+                break
+        else:
+            break                              # a single isolated pixel
+        if current == start:
+            break
+        boundary.append(current)
+    return [(r - 1, c - 1) for r, c in boundary]
+
+
+def _simplify(points: List[Tuple[float, float]], tolerance: float) -> List[Tuple[float, float]]:
+    """Douglas-Peucker on an open run of points."""
+    if len(points) < 3:
+        return list(points)
+    stack, keep = [(0, len(points) - 1)], {0, len(points) - 1}
+    arr = np.asarray(points, dtype=float)
+    while stack:
+        first, last = stack.pop()
+        if last - first < 2:
+            continue
+        a, b = arr[first], arr[last]
+        seg = b - a
+        run = arr[first + 1:last]
+        length = float(np.hypot(*seg))
+        if length == 0.0:
+            dist = np.hypot(*(run - a).T)
+        else:
+            dist = np.abs(seg[0] * (run[:, 1] - a[1]) - seg[1] * (run[:, 0] - a[0])) / length
+        worst = int(np.argmax(dist))
+        if dist[worst] > tolerance:
+            middle = first + 1 + worst
+            keep.add(middle)
+            stack += [(first, middle), (middle, last)]
+    return [points[i] for i in sorted(keep)]
+
+
+def _outline(mask: np.ndarray, left: int, top: int) -> Tuple[Tuple[float, float], ...]:
+    """
+    A closed polygon for one mask, in the picture's pixels.
+
+    Closed curves are split at the two points furthest apart and each half
+    simplified, which keeps both ends of a triangle's longest side. Each point
+    is moved half a pixel out from the centre, because boundary pixels' centres
+    sit half a pixel inside the edge they belong to.
+    """
+    ring = _trace(mask)
+    if len(ring) < 3:
+        return ()
+    points = [(c + 0.5, r + 0.5) for r, c in ring]
+    arr = np.asarray(points)
+    far = int(np.argmax(np.hypot(*(arr - arr[0]).T)))
+    first = _simplify(points[: far + 1], SIMPLIFY)
+    second = _simplify(points[far:] + [points[0]], SIMPLIFY)
+    polygon = first[:-1] + second[:-1]
+    if len(polygon) < 3:
+        return ()
+    cx = sum(p[0] for p in polygon) / len(polygon)
+    cy = sum(p[1] for p in polygon) / len(polygon)
+    out = []
+    for x, y in polygon:
+        dx, dy = x - cx, y - cy
+        norm = (dx * dx + dy * dy) ** 0.5 or 1.0
+        out.append((round(left + x + 0.5 * dx / norm, 2), round(top + y + 0.5 * dy / norm, 2)))
+    return tuple(out)
 
 
 def _overlap(a: Region, b: Region) -> float:

@@ -547,6 +547,7 @@ class _Pick:
     rect: Optional[Tuple[float, float, float, float, float, str, str]] = None
     offered: int = 0          # how many areas the model was shown
     choice: str = ""          # the letter, or NONE
+    outline: Tuple[Tuple[float, float], ...] = ()   # its edge, in Quartz (B.5)
 
 
 # ─── Does the chosen area agree with the words? ─────────────────────────────
@@ -704,11 +705,14 @@ def _pick_area_unguarded(path: str, image: Tuple[int, int], wanted: target.Targe
     frame = {"x": crop[0], "y": crop[1], "width": crop[2], "height": crop[3]}
     x0, y0 = _display.image_to_quartz(left, top, frame)
     x1, y1 = _display.image_to_quartz(right, bottom, frame)
+    # The area's edge, through the same mapper as its box (B.5).
+    edge = tuple(_display.image_to_quartz(px / width, py / height, frame)
+                 for px, py in region.outline)
     why = (f"{PICKED} {len(found)} filled areas found in the picture itself, as "
            f"the {wanted.semantic or 'thing asked about'}")
     return _Pick(rect=(x0, y0, x1 - x0, y1 - y0, REGION_CEILING,
                        wanted.semantic, why),
-                 offered=len(found), choice=choice)
+                 offered=len(found), choice=choice, outline=edge)
 
 
 def _by_looking(wanted: target.Target, window) -> Ground:
@@ -800,6 +804,8 @@ def _by_looking(wanted: target.Target, window) -> Ground:
                 label=what, confidence=confidence, reason=why,
                 frame_fingerprint=list(frame.fingerprint), crop=crop,
                 at=time.time()))
+        if picked is not None and picked.rect is not None and picked.outline:
+            candidate.outline = [tuple(p) for p in picked.outline]
 
         if not target.satisfies(wanted.kind, candidate):
             evidence.append(target.why_not(wanted.kind, candidate))

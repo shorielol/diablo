@@ -137,6 +137,29 @@ class Placement:
         return _SPOKEN.get(self.side, "next to it")
 
 
+def outline(points, pad: float) -> List[Tuple[float, float]]:
+    """
+    An area's own outline, moved out by `pad` points (B.5).
+
+    Each corner moves away from the middle, so the line sits just outside
+    the shape instead of on it and never hides the edge it is showing.
+    """
+    points = [(float(x), float(y)) for x, y in (points or [])]
+    if not points:
+        return []
+    cx = sum(p[0] for p in points) / len(points)
+    cy = sum(p[1] for p in points) / len(points)
+    out = []
+    for x, y in points:
+        dx, dy = x - cx, y - cy
+        norm = (dx * dx + dy * dy) ** 0.5
+        if norm == 0.0:
+            out.append((x, y))
+        else:
+            out.append((x + pad * dx / norm, y + pad * dy / norm))
+    return out
+
+
 def label_size(text: str, font_size: float = 13.0) -> Tuple[float, float]:
     """
     Roughly how big a caption will be, without asking AppKit.

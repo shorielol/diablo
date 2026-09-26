@@ -218,6 +218,11 @@ class Candidate:
     # actually claimed. Keeping both means "accessibility was 0.62 and OCR was
     # 0.58, together 0.84" is answerable; before, only the 0.84 survived.
     source_confidence: Dict[str, float] = field(default_factory=dict)
+    # The thing's own edge, when a source found one (B.5): a closed polygon in
+    # Quartz points. x, y, width and height above are its box. None for every
+    # source that only ever had a box, which is all of them except areas found
+    # in a picture's pixels.
+    outline: Optional[List[Tuple[float, float]]] = None
 
     @property
     def centre(self) -> Tuple[float, float]:
