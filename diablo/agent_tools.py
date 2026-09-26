@@ -28,6 +28,17 @@ import subprocess
 import time
 from typing import Any, Callable, Dict, List, Optional
 
+# What one step of a shown explanation may carry. Defined by the teaching
+# module and used as-is by point_at's schema, so the tool the planner sees and
+# the step generation behind a spoken "show me how" are one contract.
+try:
+    from skills.teaching import STEP_ITEM as _STEP_ITEM
+except Exception:  # teaching is pure, but a tool list must never fail to load
+    _STEP_ITEM = {"type": "object",
+                  "properties": {"what": {"type": "string"}, "say": {"type": "string"},
+                                 "kind": {"type": "string"}},
+                  "required": ["what", "say"]}
+
 # ─── Where the agent is allowed to operate ───────────────────────────────────
 
 HOME = os.path.expanduser("~")
@@ -1670,11 +1681,14 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
                            "description": "The thing to point at, as the user "
                                           "named it. For example 'the search box' "
                                           "or 'the Continue button'."},
+           # No example app names in here. The last version offered two, and
+           # the 4B put one of them in 6 of 6 calls whatever was on screen.
            "target": {"type": "string",
-                      "description": "The app or window to look in, name only, "
-                                     "such as 'Notes' or 'chrome'. Leave empty "
-                                     "for whatever is in front. Never put the "
-                                     "thing you are looking for in here."},
+                      "description": "The app or window to look in, only if the "
+                                     "user named one. Otherwise leave it empty: "
+                                     "whatever is in front is used. Never guess "
+                                     "an app, and never put the thing you are "
+                                     "looking for in here."},
            "kind": {"type": "string",
                     "description": "What sort of thing it is, when you can "
                                    "tell: 'control' for a button, menu or "
@@ -1690,18 +1704,7 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
                                     "to show, in order, two to six of them, each "
                                     "with one short sentence to say while it is "
                                     "shown. Leave out for a single thing.",
-                     "items": {"type": "object",
-                               "properties": {
-                                   "what": {"type": "string",
-                                            "description": "The thing to show, "
-                                                           "as it would be named "
-                                                           "on its own."},
-                                   "say": {"type": "string",
-                                           "description": "One sentence about "
-                                                          "it."},
-                                   "kind": {"type": "string",
-                                            "description": "As for kind above."}},
-                               "required": ["what", "say"]}}},
+                     "items": _STEP_ITEM}},
           ["description"],
           "point show where find highlight mark locate look which button menu "
           "screen click press tab option setting region area shaded graph "

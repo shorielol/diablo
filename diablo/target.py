@@ -368,6 +368,18 @@ def read_question(text: str, stated: str = "") -> Target:
         return Target(semantic=semantic, kind=TEXT,
                       reason="asked for something made of words")
 
+    # Asked to have something explained, and it is not a control. "Explain
+    # the subsidy" came out as CONTROL, the fallback below, and a control is a
+    # thing to press: grounding went looking for a button called "subsidy" and
+    # found the word. An explanation is answered from the picture the thing is
+    # part of, which is what FIGURE means. A control word still wins, so
+    # "explain the Save button" is the button.
+    if _EXPLAINING.search(lowered) and _named(semantic) and \
+            not (words & CONTROL_WORDS):
+        return Target(semantic=semantic, kind=FIGURE,
+                      reason="asked to explain something, which the picture "
+                             "it is part of shows")
+
     return Target(semantic=semantic, kind=CONTROL,
                   cursor_local=cursor_local,
                   vague=_is_vague(semantic, cursor_local, CONTROL),
@@ -496,3 +508,156 @@ def abstain(target: Target) -> str:
         return (f"I can see the words but I cannot make out the {what} itself, "
                 f"Sir. I would rather say so than ring the caption.")
     return f"I cannot find {what} on screen, Sir."
+
+
+# ─── Is this a request to be shown something? ────────────────────────────────
+#
+# The conversational half of the teaching system. GUI-X could point, outline,
+# lead a cursor and walk a path, and a real turn reached none of it: the
+# router sent "where is the welfare loss region?" to a clarifying question,
+# the 4B answered "show me the equilibrium" by asking whether that meant
+# chemical equilibrium, and "show me how the subsidy causes welfare loss" went
+# to the tutor, which anchors every step on printed words. The phrasing
+# already said what was wanted. It is read here, in code, for the same reason
+# the kinds above are: it has to be right far more often than it has to be
+# clever, and the model was the thing getting it wrong.
+#
+# Three intents, by what the answer has to do:
+#
+#     LOCATE    show where one thing is             "where is the welfare loss"
+#     EXPLAIN   show one thing and say what it is   "what does this triangle mean"
+#     TRACE     show several, in order              "show me how X causes Y"
+#
+# "Certain" means the phrasing alone says the thing is on the screen: it named
+# an area, a figure, a control, or the pointer. "Explain the subsidy" is not
+# certain. It could be about the diagram in front of him or a question for a
+# spoken answer, and only the screen can say which.
+
+LOCATE = "locate"
+EXPLAIN = "explain"
+TRACE = "trace"
+
+_OPENING = (r"^\s*(?:(?:please|hey|ok|okay|so|and|um|er|diablo|sir)[\s,]+)*"
+            r"(?:(?:can|could|would|will)\s+you\s+)?(?:please\s+|just\s+)?")
+
+# How to DO something is a procedure, and procedures are the tutor's: "show me
+# how to save this", "how do I export". How one thing LEADS to another is not.
+_PROCEDURE = re.compile(
+    r"\bhow\s+(?:to\b|(?:do|can|could|would|should|might)\s+(?:i|you|we)\b)", re.I)
+
+_TRACE_ASK = re.compile(
+    _OPENING + r"(?:(?:show|tell)\s+me\s+how|explain\s+how|"
+               r"(?:walk|take|talk)\s+me\s+through|trace|"
+               r"show\s+(?:me\s+)?what\s+happens)\b", re.I)
+# The two of those that say "show it to me" even when nothing visual is named.
+_TRACE_SHOWN = re.compile(_OPENING + r"(?:show\s+me\s+how|explain\s+how)\b", re.I)
+
+_LOCATE_ASK = re.compile(
+    _OPENING + r"(?:where\s+(?:is|are)|where's|wheres|show\s+me\s+where|"
+               r"show\s+me|point\s+(?:me\s+)?(?:to|at)|point\s+out|highlight)\b", re.I)
+# Verbs that only ever mean the screen.
+_POINTING = re.compile(r"\bpoint\s+(?:me\s+)?(?:to|at|out)\b|\bhighlight\b", re.I)
+
+_EXPLAINING = re.compile(_OPENING + r"(?:explain|describe)\b", re.I)
+_EXPLAIN_ASK = re.compile(
+    _OPENING + r"(?:explain|describe)\b|"
+    r"\bwhat\s+(?:does|do)\b.+\b(?:mean|means|represent|represents|show|shows|"
+    r"stand\s+for)\b|"
+    r"\bwhat\s+(?:is|are|'s)\s+(?:this|that|these|those)\s+[a-z]", re.I)
+
+
+@dataclass(frozen=True)
+class Shown:
+    """A request to be shown something, as the decision layer carries it."""
+
+    intent: str                   # LOCATE, EXPLAIN or TRACE
+    target: Target                # what was named, and what kind of thing it is
+    certain: bool                 # the phrasing alone puts it on the screen
+    reason: str = ""
+
+
+def _visual(t: Target, lowered: str) -> bool:
+    """Whether what was named is, by its own words, something on the screen."""
+    if any(phrase in lowered for phrase in CURSOR_PHRASES):
+        return True
+    # OBJECT only counts when the pointer was named. read_question infers it
+    # from a bare "this", and "explain this" is the tutor's maths request.
+    if t.kind == REGION:
+        return True
+    if t.kind == FIGURE:
+        return bool(_words(lowered) & FIGURE_WORDS)
+    if t.kind == CONTROL:
+        return bool(_words(t.semantic) & CONTROL_WORDS)
+    return False
+
+
+def asked_to_show(text: str) -> Optional[Shown]:
+    """
+    Whether this is a request to be shown something on screen, and which kind.
+
+    Returns None for everything else, including requests that name nothing
+    ("where is it" is still a question back), procedures (the tutor's), and
+    places and things that are not on a screen at all ("where is Paris",
+    "show me my calendar").
+    """
+    raw = (text or "").replace("’", "'").strip()
+    lowered = raw.lower()
+    if not lowered:
+        return None
+    pointed = any(phrase in lowered for phrase in CURSOR_PHRASES)
+
+    if _TRACE_ASK.search(raw) and not _PROCEDURE.search(raw):
+        # What follows the asking is the thing: "walk me through | this graph".
+        body = _TRACE_ASK.sub("", raw, count=1).strip(" ,.?!")
+        t = read_question(body or raw)
+        if t.vague and not pointed:
+            return None
+        # A trace is through a picture. A control named here is a procedure
+        # ("walk me through the settings") and the tutor's, not a path.
+        words = _words(lowered)
+        pictured = bool(words & (REGION_WORDS | FIGURE_WORDS)) or \
+            any(p in lowered for p in REGION_PHRASES)
+        if pointed or pictured:
+            if t.kind not in (REGION, FIGURE):
+                t = Target(semantic=t.semantic,
+                           kind=FIGURE if words & FIGURE_WORDS else REGION,
+                           reason="traced through a picture")
+            return Shown(TRACE, t, True, "asked how one thing leads to another, "
+                                         "in a picture on screen")
+        if _TRACE_SHOWN.search(raw) and _named(t.semantic):
+            return Shown(TRACE, t, False, "asked to be shown how something works; "
+                                          "the screen decides whether it is there")
+        return None
+
+    if _EXPLAIN_ASK.search(raw) or pointed:
+        t = read_question(raw)
+        if pointed:
+            return Shown(EXPLAIN, t, True, "asked about the thing under the pointer")
+        if t.vague or t.kind in (TEXT, SCREEN):
+            # Words are read, not shown; a bare "explain this" is the tutor's.
+            return None
+        if _visual(t, lowered):
+            return Shown(EXPLAIN, t, True, "asked what something on screen is")
+        if t.kind == FIGURE and t.semantic:
+            return Shown(EXPLAIN, t, False, "asked to explain something that may "
+                                            "be on screen")
+        return None
+
+    if _LOCATE_ASK.search(raw) and not _PROCEDURE.search(raw):
+        t = read_question(raw)
+        if t.vague or t.kind == SCREEN:
+            return None
+        # A bare "show me" is only about the screen when what follows is part
+        # of a picture. "Show me the settings" and "show me the map" most
+        # likely mean open them, and the planner is still the one for that.
+        asked_where = bool(re.search(r"\bwhere\b", lowered) or _POINTING.search(raw))
+        if t.kind == REGION or any(p in lowered for p in CURSOR_PHRASES):
+            return Shown(LOCATE, t, True, "asked where part of a picture is")
+        if asked_where and (_visual(t, lowered) or
+                            (_POINTING.search(raw) and t.semantic)):
+            return Shown(LOCATE, t, True, "asked where something on screen is")
+        if t.kind == TEXT and re.search(r"\bwhere\b", lowered):
+            return Shown(LOCATE, t, True, "asked where some words are")
+        return None
+
+    return None

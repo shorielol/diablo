@@ -101,6 +101,10 @@ class Decision:
     question: str = ""
     reason: str = ""
     entities: List[str] = field(default_factory=list)
+    # A request to be shown something on screen (target.Shown), when the
+    # phrasing is one. Carried rather than re-read, so the turn that shows it
+    # acts on the same reading the router gated on.
+    show: Any = None
 
     @property
     def should_confirm(self) -> bool:
@@ -231,6 +235,19 @@ def classify_kind(text: str, verdict: Dict[str, Any], needs_screen: bool) -> str
 
 # ─── The decision ────────────────────────────────────────────────────────────
 
+def _asked_to_show(text: str):
+    """target.asked_to_show, or None if the question reader is unavailable."""
+    try:
+        from skills import target
+        return target.asked_to_show(text)
+    except Exception as e:
+        # A router that cannot read this still routes; it just routes the way
+        # it did before this existed. Said in the trace, not swallowed.
+        trace.event("decide", stage_error="asked_to_show",
+                    reason=f"{type(e).__name__}: {e}"[:120])
+        return None
+
+
 def classify(text: str, in_conversation: bool = False) -> Decision:
     """
     One request in, one Decision out.
@@ -246,6 +263,29 @@ def classify(text: str, in_conversation: bool = False) -> Decision:
     needs_screen = screen_context.wants_screen(text)
     entities = extract_entities(text)
     risk = assess_risk(text)
+
+    # A request to be shown something on screen, read off the phrasing.
+    #
+    # Before this, "where is the welfare loss region?" went to the model, which
+    # called it unclear 3 times in 3 and sent it to a clarifying question, and
+    # "show me the equilibrium" matched the regex path as an action the 4B then
+    # answered by asking whether chemical equilibrium was meant. When the words
+    # themselves put the thing on the screen, that is the decision, and no
+    # model is asked to second-guess it. When they do not ("explain the
+    # subsidy"), the model still decides as it always has and the request to
+    # be shown travels with its answer, for the screen to settle.
+    shown = _asked_to_show(text)
+    if shown is not None and shown.certain:
+        decision = Decision(
+            text=text, goal=text, kind=Kind.SCREEN, route="act",
+            confidence=0.9, risk=risk, needs_screen=True, needs_tools=True,
+            reason=f"asked to be shown something on screen ({shown.intent})",
+            entities=entities, show=shown)
+        trace.event("decide", route=decision.route, kind=decision.kind,
+                    confidence=decision.confidence, risk=decision.risk,
+                    needs_screen=True, reason=decision.reason, via="phrasing",
+                    intent=shown.intent, target_kind=shown.target.kind)
+        return decision
 
     # Nearly free — 3.4 microseconds, and it settles about half of all requests.
     quick = agent_core.fast_understand(text)
@@ -285,6 +325,7 @@ def classify(text: str, in_conversation: bool = False) -> Decision:
         question=verdict.get("question", ""),
         reason=reason,
         entities=entities,
+        show=shown,
     )
 
     trace.event("decide", route=decision.route, kind=decision.kind,

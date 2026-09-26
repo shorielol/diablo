@@ -452,8 +452,14 @@ def _by_grounding(description: str, target_window: str, seconds: float,
     # thing under the pointer gets the teaching cursor; an area keeps the
     # existing outline, drawn by the orb's approach exactly as before.
     if not _present_with_cursor(box, wanted, description):
-        show(x, y, box.label or wanted.semantic, seconds,
-             width=box.width, height=box.height)
+        if _shown_as_point(box, wanted, description):
+            # A crossing is a place, not an area. GUI-X decided this for the
+            # steps of a path and never for a single answer, so "show me the
+            # equilibrium" drew a 52-point box round a dot. The ring says here.
+            show(x, y, box.label or wanted.semantic, seconds)
+        else:
+            show(x, y, box.label or wanted.semantic, seconds,
+                 width=box.width, height=box.height)
     place = describe_location({"x": x, "y": y, "text": box.label,
                                "window_id": (window or {}).get("id", 0)}, window)
     what = wanted.semantic or box.label or "it"
@@ -510,6 +516,16 @@ def _present_with_cursor(box, wanted, question: str) -> bool:
         # Held by the shell while the reply is spoken, then cleared by it.
         channel.step(place, 1, 1, hold=True)
         return True
+    except Exception:
+        return False
+
+
+def _shown_as_point(box, wanted, question: str) -> bool:
+    """Whether one grounded thing is a place to ring rather than an area."""
+    try:
+        from skills import teaching
+        return teaching.choose(wanted.kind, (box.width, box.height),
+                               question).mode == teaching.POINT
     except Exception:
         return False
 

@@ -44,6 +44,12 @@ except Exception:  # pragma: no cover
     # The router keeps working on the old path if this fails to
     # import. A classifier is an improvement, not a dependency.
     route = None
+try:
+    from skills import showing  # noqa: E402
+except Exception:  # pragma: no cover
+    # Without it a request to be shown something goes the way it went before
+    # GUI-X.1: through the planner. Worse, and still a working assistant.
+    showing = None
 from skills import conversation  # noqa: E402
 from skills import local_brain  # noqa: E402
 from skills import roster  # noqa: E402
@@ -446,6 +452,18 @@ def handle(
         trace.event("understand", route=verdict["action"], via="model",
                     question=(verdict.get("question") or "")[:100])
 
+    # Being asked to be shown something ON SCREEN: where it is, what it is, or
+    # how one part of a picture leads to another.
+    #
+    # Ahead of the tutor, because "show me how the subsidy causes welfare
+    # loss" contains "show me how" and the tutor would take it — and the tutor
+    # anchors every step on printed words, which on a diagram is the legend.
+    # A procedure ("show me how to save this") is never read as one of these,
+    # so it still reaches the tutor below.
+    shown = _show(text, decision, speak, generation)
+    if shown is not None:
+        return shown
+
     # Being asked to be shown, rather than told.
     #
     # Routed before anything else because the two are easy to confuse and the
@@ -614,6 +632,47 @@ def handle(
     submit(task, background_speak, ask=ask, confirm=confirm, pieces=pieces,
            generation=generation)
     return "queued"
+
+
+def _show(text: str, decision, speak, generation: Optional[int]) -> Optional[str]:
+    """
+    Show what was asked to be shown, through the existing point_at.
+
+    None when this turn is not one, or the screen says it is not about what
+    is in front: the caller carries on exactly as it would have. Otherwise
+    the turn is recorded like any inline action and "shown" is returned.
+    """
+    request = getattr(decision, "show", None) if decision is not None else None
+    if showing is None or request is None:
+        return None
+    try:
+        prepared = showing.prepare(text, request)
+    except Exception as e:
+        trace.event("route", route="show_failed", reason=f"{type(e).__name__}: {e}"[:120])
+        return None
+    if prepared is None:
+        return None
+
+    trace.event("route", route="show", intent=request.intent,
+                kind=request.target.kind, task=text[:120])
+    speak(persona.working())
+    working: list = []
+    try:
+        summary = showing.present(prepared, speak, working)
+    except Exception as e:
+        trace.event("route", route="show_failed", reason=f"{type(e).__name__}: {e}"[:120])
+        summary = "I couldn't show you that just now, Sir."
+    conversation.session.commit_turn(generation, text, summary)
+    if working:
+        conversation.session.record_task(
+            "diablo", text, working, summary,
+            task_id=f"turn:{trace.current_turn()}:show",
+            generation=generation)
+    _speak_with_metadata(
+        speak, summary, speech_id=f"turn:{trace.current_turn()}:show",
+        speech_kind="USER_RESPONSE")
+    trace.event("done", route="show", summary=summary[:120])
+    return "shown"
 
 
 def _run_inline(task: str, text: str, speak, ask, confirm,

@@ -241,6 +241,97 @@ def announce(label: str, index: int, total: int) -> str:
     return f"Step {index} of {total}: {what}"
 
 
+# ─── What a step may say ─────────────────────────────────────────────────────
+#
+# The contract between whatever writes a lesson and the code that shows it.
+# `point_at`'s tool schema uses this object and so does the step generation
+# for a spoken explanation, so the two cannot drift apart. There is no field
+# for a position, on purpose: a step names what to find, grounding finds it,
+# and a coordinate from a model has nowhere to go.
+
+STEP_ITEM = {
+    "type": "object",
+    "properties": {
+        "what": {"type": "string",
+                 "description": "The thing to show, as it would be named on its "
+                                "own: a shaded area, a point where two lines "
+                                "cross, a curve, a button. Not its caption, and "
+                                "never where it is."},
+        "say": {"type": "string",
+                "description": "One short spoken sentence about it."},
+        "kind": {"type": "string",
+                 "description": "'region' for an area of a picture, 'figure' "
+                                "for a whole chart, 'control' for a button or "
+                                "menu, 'text' for words. Empty if unsure."},
+    },
+    "required": ["what", "say"],
+}
+
+# The most a single lesson shows. More than this is a lecture, and every step
+# costs a look at the screen.
+MAX_STEPS = 6
+
+
+def step_kind(value: Any) -> str:
+    """
+    A step's kind as a target kind, or "" to let the phrasing decide.
+
+    Writers of steps say "POINT" and "REGION", which are ways of showing, not
+    kinds of thing. "region" is both and passes; "cursor" means the thing the
+    cursor shows, an object; "point" says nothing about what the thing is, so
+    it is dropped rather than guessed into a kind.
+    """
+    wanted = str(value or "").strip().lower()
+    if wanted in target.KINDS:
+        return wanted
+    if wanted == CURSOR:
+        return target.OBJECT
+    return ""
+
+
+# Words that say what KIND of thing a step is and not which one. Told to name
+# parts of a picture, the 4B wrote "region", "region", "curve": grammatical,
+# schema-valid, and nothing grounding could look for.
+KIND_WORDS = {"region", "regions", "area", "areas", "part", "parts", "place",
+              "places", "point", "points", "thing", "things", "shape", "shapes",
+              "spot", "item", "figure", "curve", "curves", "line", "lines",
+              "section", "portion", "element"}
+
+
+def _names_something(what: str) -> bool:
+    return bool(target._named(what) - KIND_WORDS)
+
+
+def clean_steps(raw: Any, limit: int = MAX_STEPS) -> List[dict]:
+    """
+    Steps as `point_at` accepts them, from whatever a writer produced.
+
+    Only what, say, kind and act survive. Anything else a model adds — an x,
+    a box, a guess at where the thing is — is dropped here, before it can
+    reach a tool that draws. So is a step that names only a kind of thing.
+    """
+    steps: List[dict] = []
+    for item in list(raw) if isinstance(raw, (list, tuple)) else []:
+        if not isinstance(item, dict):
+            continue
+        what, say = item.get("what"), item.get("say")
+        if not isinstance(what, str) or not isinstance(say, str):
+            continue
+        what, say = what.strip(), say.strip()
+        if not what or not say or not _names_something(what):
+            continue
+        step = {"what": what, "say": say}
+        kind = step_kind(item.get("kind"))
+        if kind:
+            step["kind"] = kind
+        if item.get("act") is True:
+            step["act"] = True
+        steps.append(step)
+        if len(steps) >= limit:
+            break
+    return steps
+
+
 # ─── The path, driven ────────────────────────────────────────────────────────
 #
 # The runtime that shows each step is supplied, not imported. In the app it is
