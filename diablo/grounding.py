@@ -37,6 +37,7 @@ Nothing here clicks, types, or moves anything. It looks and it reports.
 
 import json
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass, field
@@ -167,6 +168,56 @@ def _sized_for_model(path: str) -> Tuple[str, int, int, bool]:
     return sized, 0, 0, temporary
 
 
+# ─── The model's own canvas (B.4) ───────────────────────────────────────────
+#
+# Measured, not assumed. A red dot was placed at known positions in blank
+# images of eight sizes and qwen2.5vl was asked, through Ollama, where it was.
+# Its answers were an exact, aspect-preserving, zero-offset scaling of the
+# truth — residuals of 0.2 to 5.5 pixels — by a factor that depended only on
+# the image's size: 2.54 for 426x316, 1.24 for 852x632, 1.00 for 1278x948.
+# That is Qwen2.5-VL's own smart_resize: the picture is resized to multiples
+# of 28, scaled UP until it has at least 1024 x 28 x 28 pixels, and the model
+# answers in the resized picture, which Ollama never reports.
+#
+# Reading those numbers as pixels of the image that was sent put the
+# welfare-loss box 170 points right of the triangle on an 852-pixel crop.
+# The mapper from crop to screen was right all along; this was the step
+# before it.
+VISION_PATCH = config.env_int("DIABLO_VISION_PATCH", 28, low=1, high=64)
+VISION_MIN_PIXELS = config.env_int("DIABLO_VISION_MIN_PIXELS", 1024 * 28 * 28,
+                                   low=0, high=64_000_000)
+VISION_MAX_PIXELS = config.env_int("DIABLO_VISION_MAX_PIXELS", 16384 * 28 * 28,
+                                   low=1, high=512_000_000)
+
+
+def _canvas_applies() -> bool:
+    """Whether the vision model in use answers in a smart-resized canvas."""
+    override = os.getenv("DIABLO_VISION_COORDS", "").strip().lower()
+    if override:
+        return override == "canvas"
+    model = os.getenv("DIABLO_VISION_MODEL", "qwen2.5vl").lower()
+    return "qwen2.5vl" in model or "qwen2.5-vl" in model
+
+
+def model_canvas(width: int, height: int) -> Tuple[int, int]:
+    """The size of the picture the model actually answered about."""
+    import math
+    factor = max(1, VISION_PATCH)
+    if width <= 0 or height <= 0:
+        return (0, 0)
+    w_bar = max(factor, round(width / factor) * factor)
+    h_bar = max(factor, round(height / factor) * factor)
+    if w_bar * h_bar > VISION_MAX_PIXELS:
+        beta = math.sqrt((width * height) / VISION_MAX_PIXELS)
+        w_bar = max(factor, math.floor(width / beta / factor) * factor)
+        h_bar = max(factor, math.floor(height / beta / factor) * factor)
+    elif w_bar * h_bar < VISION_MIN_PIXELS:
+        beta = math.sqrt(VISION_MIN_PIXELS / (width * height))
+        w_bar = math.ceil(width * beta / factor) * factor
+        h_bar = math.ceil(height * beta / factor) * factor
+    return (int(w_bar), int(h_bar))
+
+
 def _box_in_crop(values: Any, image: Tuple[int, int]
                  ) -> Optional[Tuple[float, float, float, float]]:
     """
@@ -188,6 +239,11 @@ def _box_in_crop(values: Any, image: Tuple[int, int]
         return None
     width, height = float(image[0] or 0), float(image[1] or 0)
     spaces = [(1.0, 1.0)]
+    if width > 0 and height > 0 and _canvas_applies():
+        # The model's canvas first: for any image under a megapixel it is
+        # larger than the image, and its numbers read as the image's own
+        # pixels land in the wrong place (B.4).
+        spaces.append(tuple(float(v) for v in model_canvas(int(width), int(height))))
     if width > 0 and height > 0:
         spaces.append((width, height))
     spaces.append((1000.0, 1000.0))
@@ -459,6 +515,193 @@ def _by_perception(wanted: target.Target, window) -> Ground:
                   evidence=list(best.evidence))
 
 
+# ─── Choosing among areas the pixels found (B.4) ─────────────────────────────
+#
+# Geometry from the picture, identity from the model. regions.candidates finds
+# the filled areas exactly; the model is shown them lettered and asked which
+# one is meant, as a letter or NONE. It is never asked where anything is, and
+# a letter cannot be an invented coordinate. The box that comes back is still
+# checked by everything a model's box is checked by.
+
+# Kinds whose answer is an area of a picture, which is what the pixels find.
+AREA_KINDS = (target.REGION, target.FIGURE)
+
+# When the model says none of the areas found is the thing: look the old way,
+# with the canvas corrected ("bbox"), or say it could not be found ("abstain").
+NONE_POLICY = os.getenv("DIABLO_REGION_NONE", "bbox").strip().lower()
+
+
+@dataclass
+class _Pick:
+    """What choosing among found areas came to."""
+
+    rect: Optional[Tuple[float, float, float, float, float, str, str]] = None
+    offered: int = 0          # how many areas the model was shown
+    choice: str = ""          # the letter, or NONE
+
+
+# ─── Does the chosen area agree with the words? ─────────────────────────────
+#
+# The judge chooses; it is not believed on its own. Measured: asked for "the
+# purple circle" on a picture with no purple and no circle, it chose the grey
+# triangle, and asked for "the arrow" it chose the area the arrow points at.
+# When the words name a colour or a shape, the area chosen has to have it, and
+# that is checked against the pixels, not asked of the model again.
+
+# Hue in degrees, for colours with one. Pale, semi-transparent fills keep
+# their hue and lose their saturation, so hue is what is compared.
+_HUES = {"red": 0, "orange": 30, "yellow": 55, "green": 130, "teal": 175,
+         "cyan": 185, "blue": 215, "purple": 270, "violet": 265, "lilac": 270,
+         "magenta": 300, "pink": 330}
+_GREYS = {"grey", "gray", "black", "white", "silver"}
+_SHAPES = {
+    "circle": (0.68, 0.86), "circular": (0.68, 0.86), "round": (0.68, 0.86),
+    "oval": (0.68, 0.86), "disc": (0.68, 0.86), "dot": (0.68, 0.86),
+    "triangle": (0.3, 0.7), "triangular": (0.3, 0.7), "wedge": (0.3, 0.7),
+    "rectangle": (0.8, 1.01), "square": (0.8, 1.01), "bar": (0.8, 1.01),
+    "column": (0.8, 1.01), "box": (0.8, 1.01), "block": (0.8, 1.01),
+}
+
+# Things that are not areas: an area step handed one of these chooses the
+# nearest filled shape instead, which is a confident wrong answer.
+_THIN = {"curve", "curves", "line", "lines", "arrow", "arrows", "axis", "axes",
+         "point", "points", "dot", "dots", "intersection", "crossing", "cross",
+         "segment", "tick", "ticks", "slope", "trend", "edge", "border", "boundary"}
+# ...unless the words also say it is an area: "the area under the curve".
+_AREA = {"area", "region", "shaded", "shading", "zone", "band", "patch", "triangle",
+         "rectangle", "square", "bar", "slice", "wedge", "portion", "section",
+         "quadrant", "fill", "filled", "surplus"}
+
+
+def _hue_of(colour: Tuple[int, int, int]) -> Tuple[float, float, float]:
+    import colorsys
+    h, s, v = colorsys.rgb_to_hsv(*(c / 255.0 for c in colour))
+    return h * 360.0, s, v
+
+
+def _words_of(text: str) -> set:
+    return set(re.findall(r"[a-z]+", (text or "").lower()))
+
+
+def _not_an_area(semantic: str) -> bool:
+    words = _words_of(semantic)
+    return bool(words & _THIN) and not (words & _AREA)
+
+
+def _agrees(semantic: str, region: Any) -> bool:
+    """Whether an area's measured colour and shape fit the words asked with."""
+    words = _words_of(semantic)
+    hue, saturation, value = _hue_of(region.colour)
+    named = [w for w in words if w in _HUES]
+    if named:
+        if saturation < 0.08:
+            return False
+        if not any(min(abs(hue - _HUES[w]), 360 - abs(hue - _HUES[w])) <= 30 for w in named):
+            return False
+    if words & _GREYS and not named:
+        if saturation > 0.15:
+            return False
+        if "black" in words and value > 0.35:
+            return False
+    for word in words:
+        if word in _SHAPES:
+            low, high = _SHAPES[word]
+            if not low <= region.fill <= high:
+                return False
+            if _SHAPES[word][0] > 0.6 and word in ("circle", "circular", "round", "disc") \
+                    and max(region.width, region.height) > 1.6 * min(region.width, region.height):
+                return False
+    return True
+
+
+def _judge_prompt(wanted: target.Target, letters: str,
+                  anchor: Optional[Dict[str, Any]]) -> str:
+    what = wanted.semantic or "the thing asked about"
+    caption = ""
+    if anchor and anchor.get("text"):
+        caption = (f" The words “{str(anchor['text'])[:40]}” are printed somewhere in "
+                   f"the picture; they are a label, not the thing.")
+    return (f"This picture has boxes drawn on it, each with a letter "
+            f"({', '.join(letters)}). Which box outlines the {what}?{caption} "
+            f"Judge by what is inside each box. Each box holds a filled area. If the "
+            f"{what} is a line, a curve, an arrow or a single point rather than a "
+            f"filled area, or no box holds it, answer NONE. Otherwise answer with "
+            f"one letter.")
+
+
+def _pick_area(path: str, image: Tuple[int, int], wanted: target.Target,
+               anchor: Optional[Dict[str, Any]],
+               crop: Tuple[float, float, float, float]) -> Optional[_Pick]:
+    """
+    The area the model picks from those the pixels found, or None if there
+    were none to offer — in which case the caller asks the old question.
+
+    Never raises: a picture the pixel step cannot read is a reason to ask the
+    old way, not a reason the question goes unanswered.
+    """
+    try:
+        return _pick_area_unguarded(path, image, wanted, anchor, crop)
+    except Exception:
+        return None
+
+
+def _pick_area_unguarded(path: str, image: Tuple[int, int], wanted: target.Target,
+                         anchor: Optional[Dict[str, Any]],
+                         crop: Tuple[float, float, float, float]) -> Optional[_Pick]:
+    if wanted.kind not in AREA_KINDS or _not_an_area(wanted.semantic):
+        return None
+    from skills import regions
+    width, height = int(image[0] or 0), int(image[1] or 0)
+    rgb = regions.load_rgb(path)
+    if rgb is None or not width or not height:
+        return None
+    # The same floor target.satisfies holds a region to, in this picture's
+    # pixels rather than in screen points.
+    scale = width / max(1.0, float(crop[2]))
+    found = regions.candidates(rgb, min_edge=target.MIN_REGION_EDGE * scale)
+    if not found:
+        return None
+    letters = regions.LETTERS[: len(found)]
+    sheet = regions.sheet(path, found, path + ".sheet.png")
+    if not sheet:
+        return None
+    try:
+        from skills import screen_context as _sc
+        schema = {"type": "object",
+                  "properties": {"choice": {"type": "string",
+                                            "enum": list(letters) + ["NONE"]},
+                                 "reason": {"type": "string"}},
+                  "required": ["choice"]}
+        raw = _sc.read_image(sheet, _judge_prompt(wanted, letters, anchor),
+                             num_predict=80, schema=schema)
+        reply = json.loads(raw) if raw and not raw.startswith("Error:") else {}
+    except Exception:
+        reply = {}
+    finally:
+        try:
+            os.unlink(sheet)
+        except OSError:
+            pass
+    choice = str((reply or {}).get("choice", "")).strip().upper()
+    if choice not in letters:
+        return _Pick(offered=len(found), choice=choice or "NONE")
+    region = found[letters.index(choice)]
+    if not _agrees(wanted.semantic, region):
+        # Chosen, and contradicted by the pixels: a colour or a shape the
+        # words named that this area does not have. Refused, not rescued.
+        return _Pick(offered=len(found), choice="NONE")
+    from skills import display as _display
+    left, top, right, bottom = region.fractions(width, height)
+    frame = {"x": crop[0], "y": crop[1], "width": crop[2], "height": crop[3]}
+    x0, y0 = _display.image_to_quartz(left, top, frame)
+    x1, y1 = _display.image_to_quartz(right, bottom, frame)
+    why = (f"it is one of {len(found)} filled areas found in the picture itself, "
+           f"and the one that is the {wanted.semantic or 'thing asked about'}")
+    return _Pick(rect=(x0, y0, x1 - x0, y1 - y0, REGION_CEILING,
+                       wanted.semantic, why),
+                 offered=len(found), choice=choice)
+
+
 def _by_looking(wanted: target.Target, window) -> Ground:
     """
     The new path: an area of a picture, found by looking at a small part of it.
@@ -504,7 +747,10 @@ def _by_looking(wanted: target.Target, window) -> Ground:
                     frame.fingerprint = _screen._fingerprint(path)
                 except Exception:
                     pass
-            reply = _ask_region(sized, _prompt(wanted, window, anchor), crop)
+            picked = _pick_area(sized, (iw, ih), wanted, anchor, crop)
+            reply = None
+            if picked is None or (picked.rect is None and NONE_POLICY == "bbox"):
+                reply = _ask_region(sized, _prompt(wanted, window, anchor), crop)
         finally:
             for leftover in ({path} | ({sized} if temporary else set())):
                 try:
@@ -512,7 +758,15 @@ def _by_looking(wanted: target.Target, window) -> Ground:
                 except OSError:
                     pass
 
-        rect = _rect_from(reply, crop, (iw, ih))
+        if picked is not None and picked.rect is not None:
+            rect = picked.rect
+        else:
+            if picked is not None:
+                evidence.append(f"none of the {picked.offered} areas in the picture "
+                                f"was it, looking at them one by one")
+                if NONE_POLICY != "bbox":
+                    break
+            rect = _rect_from(reply, crop, (iw, ih))
         if rect is None:
             # "I cannot see it here" is worth another, wider look. Anything
             # else — a malformed reply, a box off the edge of the crop — is a

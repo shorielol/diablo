@@ -497,10 +497,29 @@ def run():
     r.head("bbox_2d, in whichever space it arrives")
     with guard(r, "the normaliser"):
         image = (1280, 898)
-        px = grounding._box_in_crop([366, 354, 518, 510], image)
-        r.check("absolute pixels are divided by the image it was sent",
-                px is not None and abs(px[0] - 366 / 1280) < 1e-9
-                and abs(px[1] - 354 / 898) < 1e-9, str(px))
+        # B.4 measured where qwen2.5vl's pixels are: in the picture as the
+        # model resized it (multiples of 28, scaled up below 1024 x 28 x 28),
+        # not the one it was sent. For this size that is 1288 x 896.
+        saved_coords = os.environ.get("DIABLO_VISION_COORDS")
+        try:
+            os.environ["DIABLO_VISION_COORDS"] = "pixels"
+            px = grounding._box_in_crop([366, 354, 518, 510], image)
+            r.check("absolute pixels are divided by the image it was sent, when "
+                    "the model answers in the image's pixels",
+                    px is not None and abs(px[0] - 366 / 1280) < 1e-9
+                    and abs(px[1] - 354 / 898) < 1e-9, str(px))
+            os.environ["DIABLO_VISION_COORDS"] = "canvas"
+            cw, ch = grounding.model_canvas(*image)
+            px = grounding._box_in_crop([366, 354, 518, 510], image)
+            r.check("and by the model's own canvas, when it answers in that",
+                    px is not None and (cw, ch) == (1288, 896)
+                    and abs(px[0] - 366 / cw) < 1e-9 and abs(px[1] - 354 / ch) < 1e-9,
+                    str(px))
+        finally:
+            if saved_coords is None:
+                os.environ.pop("DIABLO_VISION_COORDS", None)
+            else:
+                os.environ["DIABLO_VISION_COORDS"] = saved_coords
         fr = grounding._box_in_crop([0.25, 0.5, 0.75, 1.0], image)
         r.check("a model that answers in fractions still works",
                 fr is not None and abs(fr[0] - 0.25) < 1e-9, str(fr))
