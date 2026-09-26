@@ -41,6 +41,8 @@ sys.path.insert(0, DIABLO_HOME)
 from skills import (computer_use, display, grounding, regions,  # noqa: E402
                     screen_context, target, teaching)
 
+DEFAULT_NONE_POLICY = grounding.NONE_POLICY
+
 TMP = tempfile.mkdtemp(prefix="diablo_b4_")
 
 
@@ -344,6 +346,14 @@ def run() -> int:
                     not any(a["schema"] and "bbox_2d" in json.dumps(a["schema"]) for a in asked))
             r.check("GUI-X accepts it as a place to show",
                     c is not None and teaching.waypoint(c, target.REGION, say="x") is not None)
+
+        with guard(r, "the default is to abstain"):
+            # Measured: with NONE falling back to the model's own box, a picture
+            # with no purple circle got a confident ring on a grey triangle, 2
+            # trials in 2. Abstaining was right 2 in 2 and cost no accuracy.
+            r.check("NONE abstains unless told otherwise",
+                    os.getenv("DIABLO_REGION_NONE") is not None or
+                    DEFAULT_NONE_POLICY == "abstain", DEFAULT_NONE_POLICY)
 
         with guard(r, "NONE"):
             del asked[:]

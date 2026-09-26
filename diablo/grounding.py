@@ -526,9 +526,12 @@ def _by_perception(wanted: target.Target, window) -> Ground:
 # Kinds whose answer is an area of a picture, which is what the pixels find.
 AREA_KINDS = (target.REGION, target.FIGURE)
 
-# When the model says none of the areas found is the thing: look the old way,
-# with the canvas corrected ("bbox"), or say it could not be found ("abstain").
-NONE_POLICY = os.getenv("DIABLO_REGION_NONE", "bbox").strip().lower()
+# When the model says none of the areas found is the thing: say it could not be
+# found ("abstain"), or look the old way with the canvas corrected ("bbox").
+# Abstain, measured: falling back to the model's own box put a confident ring
+# on a grey triangle for "the purple circle" 2 trials in 2, and abstaining
+# cost nothing on the 18 area cases (16 right either way).
+NONE_POLICY = os.getenv("DIABLO_REGION_NONE", "abstain").strip().lower()
 
 
 @dataclass
