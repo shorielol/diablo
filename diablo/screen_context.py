@@ -35,7 +35,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # The package parent, so `from skills import x` resolves whether this module
 # is imported as part of the package or run directly as a script. Importing
@@ -145,6 +145,10 @@ def list_windows(min_width: int = 200, min_height: int = 120) -> List[Dict[str, 
     ) or []
 
     windows = []
+    # When this list was true. A window carrying it is a live one, and whoever
+    # holds it later can ask whether it is still there, still where it was,
+    # and still uncovered (B.5.1) before trusting a look at it.
+    seen_at = time.time()
     for entry in raw:
         if entry.get("kCGWindowLayer") != 0:
             continue
@@ -171,6 +175,7 @@ def list_windows(min_width: int = 200, min_height: int = 120) -> List[Dict[str, 
             "width": width,
             "height": height,
             "sensitive": owner.lower() in SENSITIVE_APPS,
+            "seen_at": seen_at,
         })
 
     # Which screen each window is on. Attached here rather than looked up by
@@ -231,6 +236,73 @@ def frontmost_window() -> Optional[Dict[str, Any]]:
     return windows[0] if windows else None
 
 
+def window_at(x: float, y: float,
+              windows: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+    """
+    The window a point on the screen belongs to: the frontmost one containing it.
+
+    For "what am I pointing at". The front window is the wrong answer to that
+    whenever the pointer is resting on another one, which is most of the time
+    someone has a video beside the page they are reading.
+    """
+    for window in (list_windows() if windows is None else windows):
+        if (window["x"] <= x < window["x"] + window["width"]
+                and window["y"] <= y < window["y"] + window["height"]):
+            return window
+    return None
+
+
+def _union_area(rects: List[Tuple[float, float, float, float]]) -> float:
+    """The area several rectangles cover together, overlaps counted once."""
+    if not rects:
+        return 0.0
+    xs = sorted({r[0] for r in rects} | {r[0] + r[2] for r in rects})
+    ys = sorted({r[1] for r in rects} | {r[1] + r[3] for r in rects})
+    area = 0.0
+    for x0, x1 in zip(xs, xs[1:]):
+        for y0, y1 in zip(ys, ys[1:]):
+            if any(r[0] <= x0 and x1 <= r[0] + r[2] and r[1] <= y0 and y1 <= r[1] + r[3]
+                   for r in rects):
+                area += (x1 - x0) * (y1 - y0)
+    return area
+
+
+def covering(window: Dict[str, Any],
+             rect: Optional[Tuple[float, float, float, float]] = None,
+             windows: Optional[List[Dict[str, Any]]] = None
+             ) -> Tuple[float, List[Tuple[float, float, float, float]]]:
+    """
+    How much of a window other windows are in front of, and where.
+
+    Returns the covered fraction of `rect` (the whole window if not given) and
+    the covered parts, in screen points. A rectangle capture of a window takes
+    whatever is on top at those coordinates, so these are the parts of it that
+    are some other window's pixels. A window not in the list cannot be judged
+    here and is reported uncovered.
+    """
+    listed = list_windows() if windows is None else windows
+    ahead = []
+    for other in listed:
+        if other.get("id") == window.get("id"):
+            break
+        ahead.append(other)
+    else:
+        return 0.0, []
+    rx, ry, rw, rh = rect or (float(window.get("x", 0.0)), float(window.get("y", 0.0)),
+                              float(window.get("width", 0.0)),
+                              float(window.get("height", 0.0)))
+    if rw <= 0 or rh <= 0:
+        return 0.0, []
+    parts = []
+    for other in ahead:
+        x0, y0 = max(rx, other["x"]), max(ry, other["y"])
+        x1 = min(rx + rw, other["x"] + other["width"])
+        y1 = min(ry + rh, other["y"] + other["height"])
+        if x1 > x0 and y1 > y0:
+            parts.append((x0, y0, x1 - x0, y1 - y0))
+    return _union_area(parts) / (rw * rh), parts
+
+
 # Words too common to identify a window on their own. Not a spelling list —
 # each one of these was a real substring of a real application name.
 _WEAK_WORDS = {
@@ -241,6 +313,60 @@ _WEAK_WORDS = {
     "here", "what", "which", "where", "when", "definitely", "really", "just",
     "some", "thing", "stuff", "screen", "display", "please",
 }
+
+
+# The names people say for applications they do not call by name.
+_ALIASES = {
+    "browser": ["zen", "chrome", "safari", "firefox", "arc", "edge"],
+    "chrome": ["chrome", "zen", "arc"],
+    "code": ["code", "visual studio code", "cursor", "xcode"],
+    "editor": ["code", "visual studio code", "cursor", "obsidian", "notes"],
+    "terminal": ["terminal", "iterm", "iterm2", "warp", "ghostty"],
+    "spreadsheet": ["excel", "numbers"],
+    "doc": ["word", "pages", "docs"],
+    "email": ["mail", "spark", "outlook"],
+    "chat": ["messages", "whatsapp", "discord", "slack"],
+}
+
+
+def matching_windows(name: str, windows: Optional[List[Dict[str, Any]]] = None,
+                     apps_only: bool = False) -> List[Dict[str, Any]]:
+    """
+    EVERY window a spoken name could mean, frontmost first.
+
+    find_window returns the first, which is right for "open my browser" and
+    wrong for "the diagram in Preview" when two Preview documents are open:
+    the first one is whichever happens to be in front, and that is a guess.
+    This says how many there are, so the caller can ask which. Same tiers as
+    find_window — the whole name, then what people call things, then every
+    distinctive word at a word boundary — and the first tier that matches
+    anything decides. `apps_only` matches application names alone, for a name
+    that was not clearly meant as one: a lowercase phrase could as easily be
+    the thing itself, and a document title is no evidence either way.
+    """
+    listed = list_windows() if windows is None else windows
+    needle = " ".join((name or "").lower().split())
+    if not needle or not listed:
+        return []
+
+    def text(window):
+        if apps_only:
+            return window["app"].lower()
+        return f"{window['app']} {window['title']}".lower()
+
+    found = [w for w in listed if needle in text(w)]
+    if found:
+        return found
+    for key, candidates in _ALIASES.items():
+        if key in needle.split():
+            found = [w for w in listed if any(c in text(w) for c in candidates)]
+            if found:
+                return found
+    words = [w for w in needle.split() if len(w) >= 3 and w not in _WEAK_WORDS]
+    if not words:
+        return []
+    patterns = [re.compile(r"\b" + re.escape(w), re.IGNORECASE) for w in words]
+    return [w for w in listed if all(p.search(text(w)) for p in patterns)]
 
 
 def find_window(query: str) -> Optional[Dict[str, Any]]:
@@ -262,18 +388,7 @@ def find_window(query: str) -> Optional[Dict[str, Any]]:
     for filler in ["my ", "the ", "that ", "this ", " window", " tab", " app"]:
         needle = needle.replace(filler, " ")
     needle = " ".join(needle.split())
-
-    aliases = {
-        "browser": ["zen", "chrome", "safari", "firefox", "arc", "edge"],
-        "chrome": ["chrome", "zen", "arc"],
-        "code": ["code", "visual studio code", "cursor", "xcode"],
-        "editor": ["code", "visual studio code", "cursor", "obsidian", "notes"],
-        "terminal": ["terminal", "iterm", "iterm2", "warp", "ghostty"],
-        "spreadsheet": ["excel", "numbers"],
-        "doc": ["word", "pages", "docs"],
-        "email": ["mail", "spark", "outlook"],
-        "chat": ["messages", "whatsapp", "discord", "slack"],
-    }
+    aliases = _ALIASES
 
     def hit(window, term):
         return term in window["app"].lower() or term in window["title"].lower()

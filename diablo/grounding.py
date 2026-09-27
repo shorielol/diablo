@@ -66,6 +66,11 @@ CURSOR_PAD = config.env_float("DIABLO_CURSOR_PAD", 140.0, low=30.0, high=800.0)
 # looking. It can never out-rank an accessibility element.
 REGION_CEILING = 0.85
 
+# How much of the window may be behind other windows before a look at it is
+# not worth taking (B.5.1). Past this, most of what a capture holds is some
+# other window's pixels: the answer is to say so, not to look.
+HIDDEN_LIMIT = config.env_float("DIABLO_HIDDEN_LIMIT", 0.5, low=0.05, high=1.0)
+
 # The reply, in a shape Ollama enforces.
 #
 # `bbox_2d`, and the name is not cosmetic. Phase B asked for left/top/right/
@@ -350,7 +355,8 @@ def _anchor_for(wanted: target.Target, window: Optional[Dict[str, Any]]
         return None
     try:
         from skills import pointing
-        hits = pointing.locate(wanted.semantic, (window or {}).get("app", ""), limit=3)
+        hits = pointing.locate(wanted.semantic, (window or {}).get("app", ""), limit=3,
+                               window=window)
     except Exception:
         return None
     for hit in hits or []:
@@ -470,6 +476,20 @@ def ground(question: str, window: Optional[Dict[str, Any]] = None,
             window = _sc.frontmost_window()
         except Exception:
             window = None
+    if window and window.get("seen_at"):
+        # A live window is looked at where it is now, or not at all. One that
+        # was never listed (a test, a script) is taken as given.
+        try:
+            from skills import screen_context as _sc
+            now = _sc.window_by_id(window.get("id", 0))
+        except Exception:
+            now = window
+        if now is None:
+            return Ground(target=wanted, abstained=True,
+                          note=(f"The {window.get('app') or 'that'} window has closed, "
+                                f"Sir, so there is nothing there to look at."),
+                          took_ms=(time.time() - started) * 1000)
+        window = now
     if window and window.get("sensitive"):
         return Ground(target=wanted, abstained=True,
                       note=f"I won't read a {window.get('app', '')} window, Sir.",
@@ -715,6 +735,58 @@ def _pick_area_unguarded(path: str, image: Tuple[int, int], wanted: target.Targe
                  offered=len(found), choice=choice, outline=edge)
 
 
+def _hidden(window: Optional[Dict[str, Any]]
+            ) -> Tuple[float, List[Tuple[float, float, float, float]]]:
+    """
+    How much of a live window other windows cover, and which parts.
+
+    A rectangle capture takes whatever is on top, so these parts of it are
+    not this window at all. (0.0, []) for a window that was never listed, or
+    when the list cannot be read: nothing is known to be in front of it.
+    """
+    if not window or not window.get("seen_at"):
+        return 0.0, []
+    try:
+        from skills import screen_context as _sc
+        return _sc.covering(window)
+    except Exception:
+        return 0.0, []
+
+
+def _blank(path: str, crop: Tuple[float, float, float, float],
+           covered: List[Tuple[float, float, float, float]]) -> None:
+    """
+    Paint the parts of a capture that belong to other windows as blank page.
+
+    Blank rather than cut away, so the picture keeps its size and every
+    coordinate mapping after this is unchanged; paper, because paper is what
+    the area finder already skips. What another window shows can then be
+    neither offered as an answer nor chosen as one.
+    """
+    if not covered:
+        return
+    try:
+        from skills import regions
+        rgb = regions.load_rgb(path)
+        if rgb is None:
+            return
+        cx, cy, cw, ch = crop
+        sx, sy = rgb.shape[1] / max(cw, 1e-6), rgb.shape[0] / max(ch, 1e-6)
+        painted = False
+        for x, y, w, h in covered:
+            left, top = max(x, cx), max(y, cy)
+            right, bottom = min(x + w, cx + cw), min(y + h, cy + ch)
+            if right <= left or bottom <= top:
+                continue
+            rgb[int((top - cy) * sy):int(round((bottom - cy) * sy)),
+                int((left - cx) * sx):int(round((right - cx) * sx))] = 255
+            painted = True
+        if painted:
+            regions.save_rgb(rgb, path)
+    except Exception:
+        pass
+
+
 def _by_looking(wanted: target.Target, window) -> Ground:
     """
     The new path: an area of a picture, found by looking at a small part of it.
@@ -734,6 +806,15 @@ def _by_looking(wanted: target.Target, window) -> Ground:
         except Exception:
             cursor = None
 
+    hidden, covered = _hidden(window)
+    if hidden > HIDDEN_LIMIT:
+        # Checked before the anchor, the capture and the model, all of which
+        # would be spent on another window's pixels (B.5.1).
+        return Ground(target=wanted, scope=target.WINDOW, abstained=True,
+                      note=(f"Most of the {window.get('app') or 'that'} window is "
+                            f"behind another window, Sir. Bring it to the front "
+                            f"and ask me again."))
+
     anchor = _anchor_for(wanted, window)
     frame = _frame_for(window)
     evidence: List[str] = []
@@ -752,6 +833,7 @@ def _by_looking(wanted: target.Target, window) -> Ground:
         if not path:
             continue
         looks += 1
+        _blank(path, crop, covered)
         sized, iw, ih, temporary = _sized_for_model(path)
         try:
             if not frame.fingerprint:
@@ -800,6 +882,7 @@ def _by_looking(wanted: target.Target, window) -> Ground:
             evidence=evidence + ([why] if why else []) +
                      ([f"it looks like {what}"] if what else []),
             app=(window or {}).get("app", ""),
+            window_id=int((window or {}).get("id") or 0),
             vision=perception.VisionEvidence(
                 label=what, confidence=confidence, reason=why,
                 frame_fingerprint=list(frame.fingerprint), crop=crop,

@@ -351,7 +351,7 @@ def run() -> int:
         calls = {"point_at": [], "plan": [], "explain": []}
 
         def point_at(description, target="", seconds=3.0, reading_out=None,
-                     kind="", steps=None, speak=None):
+                     kind="", steps=None, speak=None, window=None):
             calls["point_at"].append({"description": description, "target": target,
                                       "kind": kind, "steps": steps, "speak": speak})
             if reading_out is not None:

@@ -223,6 +223,9 @@ class Candidate:
     # source that only ever had a box, which is all of them except areas found
     # in a picture's pixels.
     outline: Optional[List[Tuple[float, float]]] = None
+    # Which window this was seen in (B.5.1). 0 when the source did not say,
+    # which is every candidate made before windows were told apart.
+    window_id: int = 0
 
     @property
     def centre(self) -> Tuple[float, float]:
@@ -289,7 +292,8 @@ def _from_accessibility(intent: str, window: Dict[str, Any]) -> List[Candidate]:
             x=element.x, y=element.y, width=element.width, height=element.height,
             confidence=score, sources=["accessibility"], evidence=evidence,
             source_confidence={"accessibility": score},
-            enabled=element.enabled, app=element.app))
+            enabled=element.enabled, app=element.app,
+            window_id=int(window.get("id") or 0)))
     return out
 
 
@@ -305,8 +309,11 @@ def _from_ocr(intent: str, window: Dict[str, Any],
     """
     out = []
     try:
+        # The window itself, not its application's name. By name, the first
+        # window of that app was read, or the front one when none matched, so
+        # another window's words could answer for this one (B.5.1).
         hits = pointing.locate(intent, window.get("app", ""), limit=8,
-                               observation=observation)
+                               observation=observation, window=window)
     except Exception as e:
         if observation is not None:
             observation["ok"] = False
@@ -322,7 +329,7 @@ def _from_ocr(intent: str, window: Dict[str, Any],
             confidence=float(hit.get("score", 0.0)),
             sources=["ocr"], source_confidence={"ocr": float(hit.get("score", 0.0))},
             evidence=[f"the words “{hit.get('text','')[:40]}” are on screen there"],
-            app=window.get("app", "")))
+            app=window.get("app", ""), window_id=int(window.get("id") or 0)))
     return out
 
 
@@ -336,7 +343,12 @@ def _same_control(a: Candidate, b: Candidate) -> bool:
     57 points apart, which no sane distance threshold would merge, and yet
     plainly the same link. One box containing the other's centre settles it
     where a radius cannot.
+
+    Never across windows. Two windows' matches in the same place on the
+    screen are one in front of the other, not one control seen twice.
     """
+    if a.window_id and b.window_id and a.window_id != b.window_id:
+        return False
     for outer, inner in ((a, b), (b, a)):
         cx, cy = inner.centre
         if (outer.width > 0 and outer.height > 0
@@ -1027,7 +1039,8 @@ def _from_vision(intent: str, window: Dict[str, Any],
             source_confidence={"vision": min(confidence, 0.88)},
             evidence=[f"it looks like {icon}" + (f" — {evidence.reason}"
                                                  if evidence.reason else "")],
-            enabled=element.enabled, app=element.app, vision=evidence))
+            enabled=element.enabled, app=element.app, vision=evidence,
+            window_id=int(window.get("id") or 0)))
     return out
 
 

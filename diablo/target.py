@@ -711,6 +711,80 @@ def asked_to_show(text: str) -> Optional[Shown]:
     return None
 
 
+# ─── Which content: "in Preview", "in the Subsidy and Welfare document" ─────
+#
+# B.5.1. A question can name where to look as well as what to look for, and
+# the window it names outranks whichever one happens to be in front. It is
+# read off the END of the question and nowhere else, and only when what
+# follows the preposition could be a window: "the gain in consumer surplus" is
+# one thing, "the welfare loss in Preview" is a thing and a place, and "the dot
+# in the top left corner of the graph" is a thing and where in the picture.
+
+# The last word of a phrase that says what sort of content it is, not which.
+CONTAINER_WORDS = {
+    "pdf", "diagram", "chart", "document", "doc", "page", "graph", "figure",
+    "window", "tab", "screen", "app", "application", "picture", "image",
+    "slide", "slides", "video", "file", "deck", "presentation", "sheet",
+}
+
+# Words that make a trailing phrase a place in the picture, not a window.
+_PLACE_WORDS = {
+    "of", "at", "near", "between", "under", "above", "below", "beside", "top",
+    "bottom", "left", "right", "corner", "middle", "centre", "center", "side",
+    "edge", "half", "part", "area", "region",
+}
+
+_SCOPE_TAIL = re.compile(
+    r"^(?P<body>.*\S)\s+(?P<prep>in|on|from|inside|within)\s+"
+    r"(?P<article>(?:the|this|that|my|these|those)\s+)?"
+    r"(?P<name>[^?.!,]+?)\s*[?.!]*\s*$", re.I | re.S)
+
+
+@dataclass(frozen=True)
+class Scope:
+    """The content a question named, and the question without it."""
+
+    body: str                 # the question with the phrase taken off
+    name: str                 # what names the window: "Preview", "Subsidy and Welfare"
+    said: str                 # the phrase as it was said, for an answer
+    generic: bool = False     # "this diagram": the content in front, by kind
+    explicit: bool = False    # a proper name or "... document": said on purpose
+
+
+def scope_of(text: str) -> Optional[Scope]:
+    """
+    The content a question names at its end, if it names one. None otherwise.
+
+    Explicit means the phrase could only have been meant as a window: a
+    capitalised name ("in Preview") or a kind of content with a name in front
+    of it ("in the lecture video"). A lowercase phrase with neither ("in
+    preview", as speech-to-text sometimes writes it) is only a scope if an
+    application is actually called that, which the caller checks.
+    """
+    raw = (text or "").replace("’", "'").strip()
+    found = _SCOPE_TAIL.match(raw)
+    if not found:
+        return None
+    said = found.group("name").strip()
+    words = said.split()
+    if not words or len(words) > 6:
+        return None
+    head = words[-1].lower()
+    named = words[:-1] if head in CONTAINER_WORDS else words
+    if {w.lower() for w in named} & _PLACE_WORDS:
+        return None
+    article = (found.group("article") or "").strip()
+    phrase = f"{article} {said}".strip()
+    body = found.group("body").strip()
+    if not named:
+        # "in this diagram", "on the page": what is in front, by its kind.
+        return Scope(body=body, name="", said=phrase, generic=True)
+    if found.group("prep").lower() == "on" and head not in CONTAINER_WORDS:
+        return None               # "the dot on the demand curve"
+    explicit = head in CONTAINER_WORDS or any(w[:1].isupper() for w in named)
+    return Scope(body=body, name=" ".join(named), said=phrase, explicit=explicit)
+
+
 # ─── Actions: what is to be done, and which control does it ─────────────────
 #
 # B.3. "Show me how to open a new note" put the marker on the note's title.

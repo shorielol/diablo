@@ -105,6 +105,22 @@ def load_rgb(path: str) -> Optional[np.ndarray]:
         return None
 
 
+def save_rgb(rgb: np.ndarray, path: str) -> bool:
+    """An H x W x 3 uint8 array to a PNG at `path`. False if it could not be written."""
+    try:
+        from AppKit import NSBitmapImageRep, NSPNGFileType
+        height, width = int(rgb.shape[0]), int(rgb.shape[1])
+        rep = NSBitmapImageRep.alloc().initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel_(
+            None, width, height, 8, 3, False, False, "NSDeviceRGBColorSpace",
+            width * 3, 24)
+        rep.bitmapData()[: width * height * 3] = np.ascontiguousarray(
+            rgb[:, :, :3], dtype=np.uint8).tobytes()
+        data = rep.representationUsingType_properties_(NSPNGFileType, {})
+        return bool(data is not None and data.writeToFile_atomically_(path, True))
+    except Exception:
+        return False
+
+
 def _is_paper(colour) -> bool:
     """
     Very light and almost colourless: the page, a card, a margin.

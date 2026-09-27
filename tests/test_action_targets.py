@@ -109,7 +109,7 @@ class Screen:
             e for e in self.screen.get("ax", [])
             if not actionable_only or e.role in ax.ACTIONABLE_ROLES]
 
-        def ocr(intent, app="", limit=5, observation=None):
+        def ocr(intent, app="", limit=5, observation=None, window=None):
             self.asked_ocr.append(intent)
             if observation is not None:
                 observation["ok"] = True
@@ -400,7 +400,7 @@ def run() -> int:
              screen_context.frontmost_window)
 
     def fake_point_at(description, target="", seconds=3.0, reading_out=None, kind="",
-                      steps=None, speak=None, operation=""):
+                      steps=None, speak=None, operation="", window=None):
         calls["point_at"].append({"description": description, "kind": kind,
                                   "operation": operation, "steps": steps})
         return "Top right, marked — 'New Note'."

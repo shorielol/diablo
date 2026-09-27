@@ -176,12 +176,16 @@ def _observed(sink: Optional[Dict[str, Any]], ok: bool, problem: str = "",
 
 
 def locate(description: str, target: str = "", limit: int = 5,
-           observation: Optional[Dict[str, Any]] = None) -> List[Hit]:
+           observation: Optional[Dict[str, Any]] = None,
+           window: Optional[Dict[str, Any]] = None) -> List[Hit]:
     """
     Find where something is, in absolute screen points.
 
     `target` picks the window the way the rest of Diablo does — "" is whatever
     is in front, "chrome" or "my browser" resolve through find_window.
+    `window`, when given, is the window: no name is resolved and nothing
+    falls back to the front one, because a caller that already knows which
+    window it means must not be handed another's words (B.5.1).
 
     Returns hits sorted best first. An empty list means it was not found, which
     is a real answer and better than pointing somewhere plausible.
@@ -189,9 +193,10 @@ def locate(description: str, target: str = "", limit: int = 5,
     # A small model puts all sorts of things in `target` — sometimes the whole
     # request. If it does not resolve to a window, look at the front one rather
     # than reporting nothing found, which reads as a failure of sight.
-    window = screen_context.find_window(target) if target else None
     if window is None:
-        window = screen_context.frontmost_window()
+        window = screen_context.find_window(target) if target else None
+        if window is None:
+            window = screen_context.frontmost_window()
     if not window:
         _observed(observation, False, "I cannot see any windows to read")
         return []
@@ -404,8 +409,42 @@ def _record(intent: str, reading, window: Optional[Dict[str, Any]]) -> None:
         pass
 
 
+def _window_for(target_window: str,
+                window: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """The window a turn already resolved, or the one its words name, or the front."""
+    if window is not None:
+        return window
+    return (screen_context.find_window(target_window) if target_window
+            else screen_context.frontmost_window())
+
+
+def _changed(window: Optional[Dict[str, Any]]) -> str:
+    """
+    What happened to a window since it was looked at, in words. "" if nothing.
+
+    Checked before anything grounded in it is drawn. Geometry is only true of
+    the window it was measured in, where it was: a ring drawn after the window
+    moved or closed is drawn round whatever is there now. Only a window that
+    carries `seen_at` is checked, since only a live one can be looked up again.
+    """
+    if not window or not window.get("seen_at"):
+        return ""
+    try:
+        now = screen_context.window_by_id(window.get("id", 0))
+    except Exception:
+        return ""
+    name = window.get("app") or "that"
+    if now is None:
+        return f"The {name} window closed before I could show you, Sir."
+    if screen_context.has_moved(window) is not None:
+        return (f"The {name} window moved while I was looking, Sir. "
+                f"Ask me again and I'll look where it is now.")
+    return ""
+
+
 def _by_grounding(description: str, target_window: str, seconds: float,
-                  reading_out: Optional[List[Any]], kind: str) -> Optional[str]:
+                  reading_out: Optional[List[Any]], kind: str,
+                  window: Optional[Dict[str, Any]] = None) -> Optional[str]:
     """
     The question-directed path, for questions about areas rather than controls.
 
@@ -432,8 +471,11 @@ def _by_grounding(description: str, target_window: str, seconds: float,
                            target_kind.OBJECT, target_kind.SCREEN):
         return None
     try:
-        window = (screen_context.find_window(target_window) if target_window
-                  else screen_context.frontmost_window())
+        window = _window_for(target_window, window)
+        # Where it is now, so what grounding measures and what is checked
+        # before drawing are the same window in the same place.
+        if window and window.get("seen_at"):
+            window = screen_context.window_by_id(window.get("id", 0)) or window
         found = grounding.ground(description, window, stated_kind=kind)
     except Exception:
         # Grounding is an improvement on the old path, never a reason a
@@ -449,6 +491,9 @@ def _by_grounding(description: str, target_window: str, seconds: float,
 
     if not found.found:
         return found.note or "I could not make that out, Sir."
+    moved = _changed(window)
+    if moved:
+        return moved
 
     box = found.candidate
     x, y = box.centre
@@ -542,7 +587,8 @@ def _shown_as_point(box, wanted, question: str) -> bool:
 
 
 def _by_path(description: str, target_window: str, steps: List[Any],
-             speak: Optional[Any], reading_out: Optional[List[Any]]) -> str:
+             speak: Optional[Any], reading_out: Optional[List[Any]],
+             window: Optional[Dict[str, Any]] = None) -> str:
     """
     Several places, shown one at a time and explained in order.
 
@@ -552,9 +598,10 @@ def _by_path(description: str, target_window: str, steps: List[Any],
     guessed at, and is said to have been missing. Nothing here produces a
     coordinate of its own.
     """
-    from skills import grounding, perception, screen_context, teaching
-    window = (screen_context.find_window(target_window) if target_window
-              else screen_context.frontmost_window())
+    from skills import grounding, perception, teaching
+    window = _window_for(target_window, window)
+    if window and window.get("seen_at"):
+        window = screen_context.window_by_id(window.get("id", 0)) or window
     if window and window.get("sensitive"):
         return (f"I won't read a {window.get('app', '')} window, Sir. "
                 f"Password managers and banking stay private.")
@@ -594,9 +641,15 @@ def _by_path(description: str, target_window: str, steps: List[Any],
         return ("I couldn't find " + _listed(missing) + " on screen, Sir, "
                 "so there is nothing I can show you.")
 
+    moved = _changed(window)
+    if moved:
+        return moved
     channel = _channel()
     if channel is not None:
-        outcome = teaching.run_path(path, channel, speak=speak)
+        # A walk takes a minute. If the window moves or closes during it, the
+        # places left are places in the old window, so it stops there.
+        outcome = teaching.run_path(path, channel, speak=speak,
+                                    should_stop=lambda: bool(_changed(window)))
     else:
         # No shell: the old overlay, one place at a time.
         for place in path.steps:
@@ -610,7 +663,7 @@ def _by_path(description: str, target_window: str, steps: List[Any],
 
     shown = [p.label for p in path.steps][:outcome.shown or path.total]
     if not outcome.done:
-        return "Stopped there, Sir."
+        return _changed(window) or "Stopped there, Sir."
     answer = "I've shown you " + _listed(shown) + " on screen, Sir."
     if missing:
         answer += " I couldn't find " + _listed(missing) + "."
@@ -637,7 +690,7 @@ def perception_reading(found):
 def point_at(description: str, target: str = "", seconds: float = 3.0,
              reading_out: Optional[List[Any]] = None, kind: str = "",
              steps: Optional[List[Any]] = None, speak: Optional[Any] = None,
-             operation: str = "") -> str:
+             operation: str = "", window: Optional[Dict[str, Any]] = None) -> str:
     """
     Find something on screen and mark it, then say where it is.
 
@@ -654,11 +707,15 @@ def point_at(description: str, target: str = "", seconds: float = 3.0,
     {"what": the thing to show, "say": one sentence to say there}, optionally
     with "kind" and "act". They are grounded one by one and shown in order.
     `speak` says each sentence as its place is shown.
+
+    `window` is the content the turn is about, when the caller has already
+    decided it (B.5.1): a window named in the question, or the one under the
+    pointer. Everything here is then found in that window and no other.
     """
     # Several things, in order: shown one at a time and explained, rather
     # than one ring asked to stand for a relationship it cannot show.
     if steps:
-        return _by_path(description, target, steps, speak, reading_out)
+        return _by_path(description, target, steps, speak, reading_out, window)
 
     if not description or not description.strip():
         return "I need to know what to point at, Sir."
@@ -669,7 +726,7 @@ def point_at(description: str, target: str = "", seconds: float = 3.0,
     # exactly what "where is the welfare loss region?" hit. Those questions go
     # through grounding, which uses the caption to decide where to LOOK.
     # Everything else keeps the path it has always had.
-    grounded = _by_grounding(description, target, seconds, reading_out, kind)
+    grounded = _by_grounding(description, target, seconds, reading_out, kind, window)
     if grounded is not None:
         return grounded
 
@@ -693,9 +750,8 @@ def point_at(description: str, target: str = "", seconds: float = 3.0,
     # module for its scorer, and a cycle at import time would take the whole
     # assistant down rather than just this feature.
     try:
-        from skills import perception, screen_context
-        window = (screen_context.find_window(target) if target
-                  else screen_context.frontmost_window())
+        from skills import perception
+        window = _window_for(target, window)
         reading = perception.read(description, window,
                                   **({"operation": operation} if operation else {}))
         # Hand the structured reading back to whoever asked for it, before the
@@ -736,9 +792,9 @@ def point_at(description: str, target: str = "", seconds: float = 3.0,
         if operation:
             return _target.cannot_do(wanted)
 
-    hits = locate(description, target)
+    hits = locate(description, target, window=window)
     if not hits:
-        window = screen_context.find_window(target) if target else screen_context.frontmost_window()
+        window = _window_for(target, window)
         if window and window.get("sensitive"):
             return (f"I won't read a {window['app']} window, Sir. "
                     f"Password managers and banking stay private.")

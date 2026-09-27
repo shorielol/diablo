@@ -92,7 +92,7 @@ class Prepared:
     shown: Any                        # target.Shown
     window: Optional[Dict[str, Any]]
     screen_text: str = ""
-    refused: str = ""                 # said instead, when the window is private
+    refused: str = ""                 # said instead: a private window, or no clear one
 
 
 def _screen_text(window: Optional[Dict[str, Any]]) -> str:
@@ -141,6 +141,57 @@ def _pointed(question: str) -> bool:
     return any(phrase in lowered for phrase in target.CURSOR_PHRASES)
 
 
+def _listed_or(names: List[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " or " + names[-1]
+
+
+def _content(question: str, shown: Any):
+    """
+    Which window this turn is about, decided once, before anything looks (B.5.1).
+
+    In order: a window the question names ("in Preview", "in the Subsidy and
+    Welfare document"), then the window under the pointer for "what am I
+    pointing at", then the one in front. Named content outranks both, and a
+    name that matches two windows is asked about rather than guessed.
+
+    Returns (question, shown, window, refused). When a name was read off the
+    question, `question` and `shown` come back without it, so "in Preview"
+    is never looked for as part of the thing.
+    """
+    from skills import screen_context
+    scope = target.scope_of(question)
+    window = None
+    if scope is not None and not scope.generic:
+        found = screen_context.matching_windows(scope.name,
+                                                apps_only=not scope.explicit)
+        if len(found) > 1:
+            names = [w.get("title") or w.get("app") or "" for w in found[:3]]
+            return question, shown, None, (f"Which one do you mean, Sir, "
+                                           f"{_listed_or(names)}?")
+        if found:
+            window = found[0]
+        elif scope.explicit:
+            return question, shown, None, f"I can't see {scope.said} on screen, Sir."
+        else:
+            scope = None          # "in consumer surplus": part of the thing
+    if scope is not None:
+        question = scope.body
+        shown = target.asked_to_show(question) or shown
+    if window is None and _pointed(question):
+        try:
+            from skills import display
+            cursor = display.cursor()
+        except Exception:
+            cursor = None
+        if cursor:
+            window = screen_context.window_at(cursor[0], cursor[1])
+    if window is None:
+        window = screen_context.frontmost_window()
+    if window is None:
+        return question, shown, None, "I can't see a window to look at, Sir."
+    return question, shown, window, ""
+
+
 def prepare(question: str, shown: Any) -> Optional[Prepared]:
     """
     Whether this turn will be shown, and what it will be shown from.
@@ -152,10 +203,15 @@ def prepare(question: str, shown: Any) -> Optional[Prepared]:
     if shown is None:
         return None
     try:
-        from skills import screen_context
-        window = screen_context.frontmost_window()
-    except Exception:
-        window = None
+        question, shown, window, refused = _content(question, shown)
+    except Exception as e:
+        trace.event("show", phase="scope", error=f"{type(e).__name__}: {e}"[:120])
+        return Prepared(question, shown, None,
+                        refused="I couldn't tell which window you meant, Sir.")
+    trace.event("show", phase="scope", window=(window or {}).get("id", 0),
+                app=(window or {}).get("app", ""), refused=bool(refused))
+    if refused:
+        return Prepared(question, shown, window, refused=refused)
     if window and window.get("sensitive"):
         return Prepared(question, shown, window,
                         refused=(f"I won't read a {window.get('app', '')} window, "
@@ -278,7 +334,7 @@ def present(prepared: Prepared, speak: Callable[..., Any],
         extra = {"operation": wanted.operation} if wanted.operation else {}
         readings: List[Any] = []
         answer = pointing.point_at(description, "", reading_out=readings, kind=kind,
-                                   **extra)
+                                   window=prepared.window, **extra)
         _record(working, "point_at", {"description": description, "kind": kind},
                 answer, readings)
         trace.event("show", phase="shown", intent=shown.intent, kind=kind,
@@ -294,7 +350,7 @@ def present(prepared: Prepared, speak: Callable[..., Any],
 
     readings = []
     answer = pointing.point_at(prepared.question, "", reading_out=readings,
-                               steps=steps, speak=speak)
+                               steps=steps, speak=speak, window=prepared.window)
     _record(working, "point_at", {"description": prepared.question,
                                   "steps": steps}, answer, readings)
     if not _grounded_any(readings):
