@@ -151,8 +151,29 @@ _STATUS = re.compile(r"^how(?:'s|\s+is|\s+are|\s+was)\s+.+\s+"
                      r"(?:doing|going|getting\s+on|coming\s+along|performing|selling)$", re.I)
 
 # A procedure is the tutor's or the agent's, never the fast lane's.
-_PROCEDURE = re.compile(r"\bhow\s+(?:do|can|should|would)\s+(?:i|we|you)\b|\bhow\s+to\b",
-                        re.I)
+_PROCEDURE = re.compile(r"\bhow\s+(?:do|can|should|would)\s+(?:i|we|you)\b|\bhow\s+to\b|"
+                        r"\bwhat(?:'s|\s+is)\s+the\s+way\s+to\b", re.I)
+
+# Asking which part of a picture something is, in words target.py has no
+# phrase for (the decision corpus, v1 train split): "which part is the surplus".
+_WHICH_PART = re.compile(r"\bwhich\s+(?:part|bit|area|region|section|line|curve)\b", re.I)
+
+# Words that only mean something on the screen: the pointer, and the named
+# things a window holds. "What's the error in Preview" has no answer in the
+# model's weights (the decision corpus, v1 train split).
+_SCREEN_WORDS = {"pointer", "cursor", "mouse", "hovering", "hover", "error", "errors",
+                 "popup", "pop-up", "button", "icon", "menu", "preview", "keynote", "zen",
+                 "terminal", "finder", "pages", "numbers", "excel", "word", "slack",
+                 "notes", "mail", "vs", "code"}
+
+# Spoken tails and stutters that hide the shape of what was said: "how is
+# bitcoin doing real quick", "how do do I empty the trash".
+_TAIL = re.compile(r"(?:\s+(?:please|for me|real quick|quickly|thanks|thank you|mate|then))+$",
+                   re.I)
+
+# A turn that continues the last one: its meaning is in the history, which
+# only the router carries.
+_CONTINUES = re.compile(r"^(?:and|also|but|so)\b|^(?:what|how)\s+about\b", re.I)
 
 # Conversation that is plainly just conversation.
 _CASUAL = re.compile(
@@ -171,7 +192,7 @@ _CASUAL = re.compile(
 _DANGLING_END = {
     "and", "or", "but", "the", "a", "an", "to", "of", "with", "for", "is",
     "are", "what", "how", "my", "your", "um", "uh", "er", "because", "so",
-    "if", "in", "on", "at", "about", "between", "from",
+    "if", "in", "on", "at", "about", "between", "from", "just",
 }
 
 # Words for numbers, for the arithmetic that needs no model.
@@ -250,7 +271,8 @@ class Rules(Engine):
         if not raw:
             return None
         plain = re.sub(r"\s+", " ", _ADDRESS.sub(" ", raw)).strip(" ,.!?")
-        lowered = plain.lower()
+        plain = _TAIL.sub("", re.sub(r"\b(\w+)(?:\s+\1\b)+", r"\1", plain, flags=re.I))
+        lowered = plain.lower().strip(" ,.!?")
         tokens = _words(lowered)
         if not tokens:
             return None
@@ -266,6 +288,11 @@ class Rules(Engine):
                            needs_tools=True, engine=self.name,
                            reason="names the screen or asks to be shown")
 
+        if in_conversation and _CONTINUES.match(lowered):
+            return None                      # its meaning is in the history
+        if (set(tokens) & _SCREEN_WORDS or _WHICH_PART.search(lowered)) and not maybe:
+            return Verdict(intent=SCREEN, lane=AGENT, needs_screen=True, engine=self.name,
+                           reason="names something only the screen shows")
         if tokens[-1] in _DANGLING_END and not maybe:
             return Verdict(intent=UNKNOWN, lane=AGENT, complete=False, engine=self.name,
                            reason="stops mid-thought")
@@ -351,29 +378,112 @@ class Rules(Engine):
 
 
 # ─── Laya ────────────────────────────────────────────────────────────────────
+#
+# The contract a Laya checkpoint is asked, trained and evaluated on. One
+# choice and two yes/no questions, because those are the only decisions with
+# a consumer: the intent (lane and pace), whether the screen must be looked at
+# first, and whether the utterance is finished. research/laya_diablo/
+# contract.json holds the same definition and a test keeps the two identical.
 
+LAYA_CONTRACT_VERSION = "diablo-decision-v1"
 LAYA_INTENTS = {
-    CASUAL: "small talk, greetings, thanks, how someone is",
-    FACTUAL: "a general knowledge question with a short factual answer",
-    EXPLANATION: "asks for a concept to be explained",
-    SCREEN: "about what is on the user's screen, window, page or cursor",
-    GUIDE: "asks to be shown where something is or how to do it on screen",
-    DO: "asks the assistant to perform an action on the computer or a file",
-    MISSION: "a multi-step job to research, plan or carry out",
-    COMPLEX: "needs careful multi-step reasoning or the user's own data",
+    CASUAL: "small talk, greetings, thanks, feelings or an opinion",
+    FACTUAL: "a general knowledge question with a short answer",
+    EXPLANATION: "asks for a general idea or concept to be explained",
+    SCREEN: "about what is on the user's screen, window, page or under the cursor",
+    GUIDE: "asks where something is on screen, or how to do something in an app",
+    DO: "asks the assistant to do something on the computer, a file, an app or a message",
+    MISSION: "a multi-step job: research, plan, draft, compare or organise",
+    COMPLEX: "needs live data, the user's own data, or what was said earlier",
+    UNKNOWN: "unclear, cut off, or points at something with nothing to point at",
 }
 LAYA_QUESTIONS = {
     "intent": {"type": "choice", "instructions": "What does the user want?",
                "criteria": LAYA_INTENTS},
     "needs_screen": {"type": "noul",
                      "instructions": "Does answering require looking at the user's screen?"},
-    "needs_tools": {"type": "noul",
-                    "instructions": "Does answering require a tool, a file, the web or "
-                                    "live data rather than general knowledge?"},
     "complete": {"type": "noul",
                  "instructions": "Is this a complete request rather than cut off "
                                  "mid-sentence?"},
 }
+_CONVERSATION = (CASUAL, FACTUAL, EXPLANATION)
+
+
+def laya_state(text: str, history: Optional[List[str]] = None, app: str = "",
+               window: str = "") -> Dict[str, Any]:
+    """
+    The minimum a decision needs: the request, at most two earlier lines, and
+    which application is in front. Never OCR, the tool list, or plans.
+    """
+    state: Dict[str, Any] = {"request": (text or "").strip()[:400]}
+    if history:
+        state["history"] = [str(h)[:160] for h in history[-2:]]
+    if app:
+        state["app"] = str(app)[:40]
+    if window:
+        state["window"] = str(window)[:80]
+    return state
+
+
+def lane_for(intent: str, needs_screen: bool, complete: bool) -> str:
+    """The lane a Laya judgement implies. Only conversation can be FAST."""
+    if intent in _CONVERSATION and not needs_screen and complete:
+        return FAST
+    return AGENT if intent in (SCREEN, GUIDE, DO, MISSION) else FULL
+
+
+CHECKPOINT_MANIFEST = "diablo_manifest.json"
+_MANIFEST_KEYS = ("contract_version", "base_checkpoint", "laya_version", "dataset_version",
+                  "split_hashes", "training", "calibration", "weights_sha256")
+
+
+def verify_checkpoint(path: str, hash_weights: bool = True):
+    """
+    (True, "") for a Diablo-trained checkpoint that can be trusted, or
+    (False, why).
+
+    It must carry Diablo's manifest, be trained on this contract, and hold
+    exactly the temperatures its calibration fitted: a temperature inherited
+    from the base checkpoint that is still in the config would be used
+    instead of the fitted one, per option-count bucket, without a word.
+    """
+    import hashlib
+    import json
+    try:
+        with open(os.path.join(path, CHECKPOINT_MANIFEST)) as f:
+            manifest = json.load(f)
+        with open(os.path.join(path, "rl_agent_config.json")) as f:
+            cfg = json.load(f)
+    except Exception as e:
+        return False, f"unreadable checkpoint: {type(e).__name__}"
+    missing = [k for k in _MANIFEST_KEYS if k not in manifest]
+    if missing:
+        return False, f"manifest lacks {missing}"
+    if manifest["contract_version"] != LAYA_CONTRACT_VERSION:
+        return False, "trained on another contract"
+    calibration = manifest.get("calibration") or {}
+    if not calibration.get("fitted_on_split") == "calibration":
+        return False, "not calibrated on the calibration split"
+    fitted = calibration.get("temperature")
+    if fitted is None or [round(float(t), 6) for t in cfg.get("temperature", [])] != \
+            [round(float(t), 6) for t in fitted]:
+        return False, "config temperatures are not the fitted ones"
+    declared = calibration.get("temperature_by_options") or {}
+    stale = {k: v for k, v in (cfg.get("temperature_by_options") or {}).items()
+             if k not in declared or round(float(v), 6) != round(float(declared[k]), 6)}
+    if stale:
+        return False, f"inherited temperature overrides {sorted(stale)}"
+    if hash_weights:
+        digest = hashlib.sha256()
+        try:
+            with open(os.path.join(path, "model.safetensors"), "rb") as f:
+                for block in iter(lambda: f.read(1 << 20), b""):
+                    digest.update(block)
+        except Exception as e:
+            return False, f"no weights: {type(e).__name__}"
+        if digest.hexdigest() != manifest["weights_sha256"]:
+            return False, "weights do not match the manifest"
+    return True, ""
 
 
 class Laya(Engine):
@@ -381,56 +491,219 @@ class Laya(Engine):
     The Laya decision model behind Diablo's interface.
 
     One `predict` call answers every question in LAYA_QUESTIONS. The model is
-    loaded on first use, never at import, and a missing package or a failed
-    load is reported as None so the caller falls back.
+    loaded on first use, never at import. A checkpoint is loaded only if it
+    passes verify_checkpoint; a missing package, a refused checkpoint or a
+    failed load is reported as None so the caller falls back. Choices are
+    read by name, never by position, so option order cannot change a verdict.
     """
 
     name = "laya"
 
-    def __init__(self, router: Any = None, threshold: float = 0.5):
+    def __init__(self, router: Any = None, threshold: float = 0.5,
+                 checkpoint: Optional[str] = None, device: Optional[str] = None):
         self._router = router
         self._threshold = threshold
+        self._checkpoint = checkpoint
+        self._device = device
         self._failed = False
 
     def _get(self):
         if self._router is None and not self._failed:
             try:
-                from laya import Router
-                self._router = Router()
+                if self._checkpoint:
+                    ok, why = verify_checkpoint(self._checkpoint)
+                    if not ok:
+                        raise ValueError(why)
+                    from laya import Agent
+                    self._router = Agent(self._checkpoint, device=self._device)
+                else:
+                    from laya import Router
+                    self._router = Router(device=self._device)
             except Exception as e:
                 self._failed = True
                 trace.event("decide", engine=self.name,
                             error=f"{type(e).__name__}: {e}"[:120])
         return self._router
 
-    def raw(self, text: str) -> Optional[Dict[str, Any]]:
+    def raw(self, text: str, context: Optional[Dict[str, Any]] = None
+            ) -> Optional[Dict[str, Any]]:
         router = self._get()
         if router is None:
             return None
-        result = router.predict(text, LAYA_QUESTIONS)
+        state = laya_state(text, **(context or {}))
+        result = router.predict(state, LAYA_QUESTIONS)
         return (result or {}).get("answers")
 
-    def decide(self, text: str, in_conversation: bool = False) -> Optional[Verdict]:
-        answers = self.raw(text)
-        if not answers:
+    def judge(self, text: str, context: Optional[Dict[str, Any]] = None):
+        """(Verdict, probabilities) or None. Never raises."""
+        try:
+            answers = self.raw(text, context)
+            if not isinstance(answers, dict) or not answers:
+                return None
+            intent_answer = answers.get("intent") or {}
+            intent = str(intent_answer.get("choice") or UNKNOWN)
+            if intent not in LAYA_INTENTS:
+                intent = UNKNOWN
+            p_intent = float((intent_answer.get("probabilities") or {}).get(intent, 0.0))
+
+            def p(key: str) -> Optional[float]:
+                value = (answers.get(key) or {}).get("noul")
+                return None if value is None else float(value)
+
+            p_screen, p_complete = p("needs_screen"), p("complete")
+            if p_screen is None or p_complete is None:
+                return None
+            screen = p_screen >= self._threshold
+            complete = p_complete >= self._threshold
+            verdict = Verdict(intent=intent, lane=lane_for(intent, screen, complete),
+                              needs_screen=screen, needs_tools=intent in (DO, MISSION, COMPLEX),
+                              complete=complete, engine=self.name, reason="laya")
+            return verdict, {"intent": round(p_intent, 3), "needs_screen": round(p_screen, 3),
+                             "complete": round(p_complete, 3)}
+        except Exception as e:
+            trace.event("decide", engine=self.name, error=f"{type(e).__name__}: {e}"[:120])
             return None
-        intent = str((answers.get("intent") or {}).get("choice") or UNKNOWN)
-        if intent not in INTENTS:
-            intent = UNKNOWN
 
-        def yes(key: str) -> bool:
-            value = (answers.get(key) or {}).get("noul")
-            return value is not None and float(value) >= self._threshold
+    def decide(self, text: str, in_conversation: bool = False) -> Optional[Verdict]:
+        judged = self.judge(text)
+        return judged[0] if judged else None
 
-        screen, tools, complete = yes("needs_screen"), yes("needs_tools"), yes("complete")
-        if intent in (SCREEN, GUIDE, DO, MISSION):
-            lane = AGENT
-        elif intent in (CASUAL, FACTUAL, EXPLANATION) and not (screen or tools) and complete:
-            lane = FAST
-        else:
-            lane = FULL
-        return Verdict(intent=intent, lane=lane, needs_screen=screen, needs_tools=tools,
-                       complete=complete, engine=self.name, reason="laya")
+
+# ─── Shadow ──────────────────────────────────────────────────────────────────
+#
+# A second engine that judges the same utterance and changes nothing. It runs
+# on one background thread with a queue of one: when it is busy the next
+# utterance is not judged (and that is counted), so it can never delay a turn
+# or pile up. What it logs is decisions and probabilities, never the words.
+
+SHADOW = os.getenv("DIABLO_DECISION_SHADOW", "off").strip().lower()
+LAYA_CHECKPOINT = os.getenv("DIABLO_LAYA_CHECKPOINT", "").strip()
+
+
+class Shadow:
+    """Judge in the background, log the comparison, never answer."""
+
+    def __init__(self, factory, context=None, slow_ms: float = 2000.0):
+        import queue
+        self._factory = factory
+        self._context = context
+        self._slow_ms = slow_ms
+        self._queue = queue.Queue(maxsize=1)
+        self._engine = None
+        self._disabled = False
+        self._thread = None
+        self._lock = __import__("threading").Lock()
+        self.stats = {"seen": 0, "judged": 0, "dropped": 0, "failed": 0, "agreed": 0}
+
+    def observe(self, text: str, in_conversation: bool, verdict: Optional[Verdict],
+                turn: Optional[str]) -> None:
+        if self._disabled:
+            return
+        import queue
+        self.stats["seen"] += 1
+        try:
+            self._queue.put_nowait((text, in_conversation, verdict, turn))
+        except queue.Full:
+            self.stats["dropped"] += 1
+            trace.event("decide_shadow", turn=turn, status="dropped")
+            return
+        with self._lock:
+            if self._thread is None or not self._thread.is_alive():
+                import threading
+                self._thread = threading.Thread(target=self._run, daemon=True,
+                                                 name="decision-shadow")
+                self._thread.start()
+
+    def stop(self, timeout: float = 2.0) -> None:
+        """Stop judging. Whatever is queued is dropped, not judged."""
+        self._disabled = True
+        try:
+            while True:
+                self._queue.get_nowait()
+        except Exception:
+            pass
+        self._queue.put(None)
+        if self._thread is not None:
+            self._thread.join(timeout)
+
+    def _run(self) -> None:
+        while True:
+            item = self._queue.get()
+            if item is None or self._disabled:
+                return
+            text, in_conversation, verdict, turn = item
+            self._judge(text, in_conversation, verdict, turn)
+
+    def _judge(self, text, in_conversation, verdict, turn) -> None:
+        if self._engine is None:
+            try:
+                self._engine = self._factory()
+            except Exception as e:
+                self._fail(turn, f"load: {type(e).__name__}")
+                return
+        context = {}
+        if self._context is not None:
+            try:
+                context = self._context() or {}
+            except Exception:
+                context = {}
+        started = time.perf_counter()
+        judged = self._engine.judge(text, context)
+        ms = round((time.perf_counter() - started) * 1000, 1)
+        if judged is None:
+            self._fail(turn, "no judgement")
+            return
+        shadow, probabilities = judged
+        rules_lane = verdict.lane if verdict else "none"
+        agree = shadow.lane == rules_lane or (
+            rules_lane == "none" and shadow.lane != FAST)
+        self.stats["judged"] += 1
+        self.stats["agreed"] += int(agree)
+        trace.event("decide_shadow", turn=turn, status="slow" if ms > self._slow_ms else "ok",
+                    rules_lane=rules_lane, rules_intent=verdict.intent if verdict else "none",
+                    shadow_lane=shadow.lane, shadow_intent=shadow.intent,
+                    p_intent=probabilities["intent"], p_screen=probabilities["needs_screen"],
+                    p_complete=probabilities["complete"], agree=agree, ms=ms,
+                    in_conversation=bool(in_conversation))
+
+    def _fail(self, turn, why: str) -> None:
+        self.stats["failed"] += 1
+        trace.event("decide_shadow", turn=turn, status="failed", reason=why)
+        # A model that will not load does not get retried on every turn.
+        if why.startswith("load") or (self._engine is not None and
+                                       getattr(self._engine, "_failed", False)):
+            self._disabled = True
+
+
+def _shadow_context() -> Dict[str, Any]:
+    """Which application is in front and the last two lines said, for the shadow only."""
+    context: Dict[str, Any] = {}
+    try:
+        from skills import screen_context
+        window = screen_context.frontmost_window() or {}
+        context["app"] = window.get("app", "")
+        context["window"] = window.get("title", "")
+    except Exception:
+        pass
+    try:
+        from skills import conversation
+        turns = conversation.session.snapshot().get("turns") or []
+        context["history"] = [t.get("content", "") for t in turns[-2:]]
+    except Exception:
+        pass
+    return context
+
+
+_shadow: Optional[Shadow] = None
+
+
+def shadow() -> Optional[Shadow]:
+    """The shadow engine, when DIABLO_DECISION_SHADOW=laya asks for one."""
+    global _shadow
+    if _shadow is None and SHADOW == "laya":
+        _shadow = Shadow(lambda: Laya(checkpoint=LAYA_CHECKPOINT or None),
+                         context=_shadow_context)
+    return _shadow
 
 
 # ─── The one entry point ─────────────────────────────────────────────────────
@@ -459,11 +732,20 @@ def decide(text: str, in_conversation: bool = False) -> Optional[Verdict]:
                     error=f"{type(e).__name__}: {e}"[:120])
         return None
     ms = round((time.perf_counter() - started) * 1000, 2)
-    if verdict is None:
+    if verdict is not None:
+        verdict = Verdict(**{**verdict.__dict__, "ms": ms})
+        trace.event("decide", engine=verdict.engine, lane=verdict.lane,
+                    intent=verdict.intent, needs_screen=verdict.needs_screen,
+                    needs_tools=verdict.needs_tools, complete=verdict.complete, ms=ms,
+                    reason=verdict.reason)
+    else:
         trace.event("decide", engine=engine().name, lane="none", ms=ms)
-        return None
-    verdict = Verdict(**{**verdict.__dict__, "ms": ms})
-    trace.event("decide", engine=verdict.engine, lane=verdict.lane, intent=verdict.intent,
-                needs_screen=verdict.needs_screen, needs_tools=verdict.needs_tools,
-                complete=verdict.complete, ms=ms, reason=verdict.reason)
+    # The shadow sees the same utterance and the verdict that was used. It
+    # cannot change it: this return value is decided above and nowhere else.
+    try:
+        second = shadow()
+        if second is not None:
+            second.observe(text, in_conversation, verdict, trace.current_turn())
+    except Exception:
+        pass
     return verdict

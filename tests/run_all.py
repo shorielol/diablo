@@ -51,6 +51,7 @@ SUITES = [
     ("test_shapes.py",       False, "an area is shown by its own edge, not a box"),
     ("test_scope.py",        False, "the answer comes from the content that was asked about"),
     ("test_fast_path.py",    False, "decide cheaply, answer early, never skip a gate"),
+    ("test_laya_diablo.py",  False, "Laya may classify, never decide: data, shadow, gate"),
     ("test_do_engine.py",     False, "a goal, a closed loop, and honest completion"),
     ("test_planner_eval.py",  False, "the benchmark that measures the planner"),
     ("test_perception_eval.py", False, "the benchmark that measures perception"),

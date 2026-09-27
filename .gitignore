@@ -33,3 +33,7 @@ audio_cache/
 
 # graphify build artifacts — regenerable, ~3.7MB
 graphify-out/
+
+# Laya checkpoints are trained elsewhere and never committed; the manifest travels with them.
+research/laya_diablo/checkpoints/*
+!research/laya_diablo/checkpoints/README.md

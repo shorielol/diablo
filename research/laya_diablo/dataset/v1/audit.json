@@ -1,0 +1,165 @@
+{
+ "category_balance": {
+  "casual": 425,
+  "complex": 291,
+  "do": 701,
+  "explanation": 635,
+  "factual": 752,
+  "follow_up": 129,
+  "guide": 761,
+  "incomplete": 105,
+  "mission": 201,
+  "partial": 32,
+  "screen": 553,
+  "unknown": 191
+ },
+ "class_balance": {
+  "calibration": {
+   "casual": 45,
+   "complex": 44,
+   "do": 80,
+   "explanation": 86,
+   "factual": 104,
+   "guide": 112,
+   "mission": 34,
+   "screen": 56,
+   "unknown": 36
+  },
+  "test": {
+   "casual": 44,
+   "complex": 50,
+   "do": 81,
+   "explanation": 77,
+   "factual": 91,
+   "guide": 109,
+   "mission": 24,
+   "screen": 69,
+   "unknown": 40
+  },
+  "test_private": {
+   "casual": 6,
+   "complex": 4,
+   "do": 8,
+   "explanation": 4,
+   "factual": 3,
+   "guide": 5,
+   "mission": 3,
+   "screen": 6,
+   "unknown": 11
+  },
+  "train": {
+   "casual": 289,
+   "complex": 155,
+   "do": 497,
+   "explanation": 437,
+   "factual": 491,
+   "guide": 451,
+   "mission": 98,
+   "screen": 373,
+   "unknown": 210
+  },
+  "validation": {
+   "casual": 48,
+   "complex": 43,
+   "do": 84,
+   "explanation": 80,
+   "factual": 90,
+   "guide": 90,
+   "mission": 46,
+   "screen": 80,
+   "unknown": 32
+  }
+ },
+ "counts": {
+  "calibration": 597,
+  "test": 585,
+  "test_private": 50,
+  "train": 3001,
+  "validation": 593
+ },
+ "duplicates_dropped": {
+  "duplicates": 93,
+  "reserved": 8
+ },
+ "exact_cross_split": [],
+ "gold_option_position": {
+  "0": 492,
+  "1": 538,
+  "2": 555,
+  "3": 511,
+  "4": 556,
+  "5": 538,
+  "6": 515,
+  "7": 554,
+  "8": 517
+ },
+ "hard_negatives": 923,
+ "history_or_context": 152,
+ "label_conflicts": 0,
+ "lane_balance": {
+  "calibration": {
+   "agent": 282,
+   "fast": 235,
+   "full": 80
+  },
+  "test": {
+   "agent": 283,
+   "fast": 212,
+   "full": 90
+  },
+  "test_private": {
+   "agent": 22,
+   "fast": 13,
+   "full": 15
+  },
+  "train": {
+   "agent": 1419,
+   "fast": 1217,
+   "full": 365
+  },
+  "validation": {
+   "agent": 300,
+   "fast": 218,
+   "full": 75
+  }
+ },
+ "near_duplicates_test_vs_train": {
+  "count": 0,
+  "examples": []
+ },
+ "partials": 137,
+ "rules_verdicts_recorded": true,
+ "rules_vs_gold": {
+  "calibration:gold_fast/rules_fast": 61,
+  "calibration:gold_fast/rules_not_fast": 174,
+  "calibration:gold_not_fast/rules_fast": 3,
+  "calibration:gold_not_fast/rules_not_fast": 359,
+  "test:gold_fast/rules_fast": 116,
+  "test:gold_fast/rules_not_fast": 96,
+  "test:gold_not_fast/rules_not_fast": 373,
+  "test_private:gold_fast/rules_fast": 5,
+  "test_private:gold_fast/rules_not_fast": 8,
+  "test_private:gold_not_fast/rules_fast": 1,
+  "test_private:gold_not_fast/rules_not_fast": 36,
+  "train:gold_fast/rules_fast": 623,
+  "train:gold_fast/rules_not_fast": 594,
+  "train:gold_not_fast/rules_fast": 6,
+  "train:gold_not_fast/rules_not_fast": 1778,
+  "validation:gold_fast/rules_fast": 101,
+  "validation:gold_fast/rules_not_fast": 117,
+  "validation:gold_not_fast/rules_fast": 1,
+  "validation:gold_not_fast/rules_not_fast": 374
+ },
+ "safety_examples": {
+  "advice": 51,
+  "destructive": 104,
+  "external": 86,
+  "how_to": 24,
+  "no_action": 77,
+  "ui_action": 176
+ },
+ "secrets_found": 0,
+ "total": 4826,
+ "units": 404,
+ "units_in_two_splits": []
+}

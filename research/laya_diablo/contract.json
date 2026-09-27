@@ -1,0 +1,40 @@
+{
+  "version": "diablo-decision-v1",
+  "questions": {
+    "intent": {
+      "type": "choice",
+      "instructions": "What does the user want?",
+      "criteria": {
+        "casual": "small talk, greetings, thanks, feelings or an opinion",
+        "factual": "a general knowledge question with a short answer",
+        "explanation": "asks for a general idea or concept to be explained",
+        "screen": "about what is on the user's screen, window, page or under the cursor",
+        "guide": "asks where something is on screen, or how to do something in an app",
+        "do": "asks the assistant to do something on the computer, a file, an app or a message",
+        "mission": "a multi-step job: research, plan, draft, compare or organise",
+        "complex": "needs live data, the user's own data, or what was said earlier",
+        "unknown": "unclear, cut off, or points at something with nothing to point at"
+      }
+    },
+    "needs_screen": {
+      "type": "noul",
+      "instructions": "Does answering require looking at the user's screen?"
+    },
+    "complete": {
+      "type": "noul",
+      "instructions": "Is this a complete request rather than cut off mid-sentence?"
+    }
+  },
+  "lane_rule": "fast iff intent in {casual, factual, explanation} and not needs_screen and complete; agent iff intent in {screen, guide, do, mission}; otherwise full (router)",
+  "consumers": {
+    "intent": "delegation_tool._by_lane (lane), _chat pace (explanation), trace",
+    "needs_screen": "delegation_tool._by_lane: screen is checked before a fast answer",
+    "complete": "never a fast lane for an utterance cut off mid-thought"
+  },
+  "excluded": {
+    "needs_tools": "no consumer; implied by intent do/mission/complex",
+    "needs_agent": "no consumer; implied by the agent lane",
+    "needs_clarification": "no consumer; the router's clarify loop decides, not the engine",
+    "score questions": "no ordered scale exists in the contract"
+  }
+}

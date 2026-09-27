@@ -1,0 +1,30 @@
+{
+ "4": {
+  "n": 80,
+  "p50_ms": 45.71,
+  "p95_ms": 50.51,
+  "accuracy_where_gold_offered": 0.3125,
+  "rss_mb": 2976.2
+ },
+ "8": {
+  "n": 80,
+  "p50_ms": 72.55,
+  "p95_ms": 81.4,
+  "accuracy_where_gold_offered": 0.55,
+  "rss_mb": 2976.2
+ },
+ "12": {
+  "n": 80,
+  "p50_ms": 91.26,
+  "p95_ms": 98.05,
+  "accuracy_where_gold_offered": 0.45,
+  "rss_mb": 2976.2
+ },
+ "20": {
+  "n": 80,
+  "p50_ms": 116.11,
+  "p95_ms": 130.74,
+  "accuracy_where_gold_offered": 0.425,
+  "rss_mb": 2976.2
+ }
+}

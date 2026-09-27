@@ -1,0 +1,112 @@
+{
+ "examples": 120,
+ "orders_each": 5,
+ "intent_stable_across_orders": 0.5833,
+ "examples_that_flip": [
+  [
+   "um give me a definition of the cold war",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "Give me a definition of photosynthesis.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "uh give me a definition of photosynthesis",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "Give me a definition of inflation.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "Uh, hey diablo, give me a definition of inflation.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "hey diablo give me a definition of a production possibility frontier",
+   [
+    "complex",
+    "explanation"
+   ]
+  ],
+  [
+   "Give me a definition of a derivative in calculus.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "okay, hey diablo, give me a definition of a derivative in calculus",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "Ok diablo give me a definition of an isotope.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "Give me a definition of an enzyme.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "Give me a definition of comparative advantage.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "Give me a definition of economies of scale.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "ok diablo give me a definition of economies of scale",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "Give me a definition of dividends.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "uh, diablo, give me a definition of dividends",
+   [
+    "explanation",
+    "factual"
+   ]
+  ]
+ ]
+}

@@ -1,0 +1,69 @@
+{
+  "run_name": "diablo-decision-v1",
+  "contract_version": "diablo-decision-v1",
+  "base": {
+    "repo": "convaiinnovations/laya",
+    "subfolder": "typed-decisions",
+    "laya_version": "0.3.20",
+    "why": "the typed-decisions checkpoint is upstream's choice/noul specialist (0.766 vs 0.362 for the base English checkpoint on typed decisions)"
+  },
+  "data": {
+    "dataset_version": "v1",
+    "train": "dataset/v1/train.jsonl",
+    "validation": "dataset/v1/validation.jsonl",
+    "calibration": "dataset/v1/calibration.jsonl"
+  },
+  "sequence": {
+    "max_len": 256,
+    "head_max_len": 256,
+    "why": "Diablo states are one request, two history lines and an app name, well under 256 tokens; 1024 would only pad"
+  },
+  "optimisation": {
+    "epochs": 3,
+    "micro_batch": 8,
+    "grad_accum": 4,
+    "effective_batch_2xT4": 64,
+    "lr_encoder": 1.0e-5,
+    "lr_head": 1.0e-4,
+    "weight_decay": 0.01,
+    "clip_grad_norm": 1.0,
+    "schedule": "cosine to 1e-6",
+    "gradient_checkpointing": true,
+    "amp": "fp16 (T4 has no bf16)",
+    "why": "encoder LR is 2.5x lower than upstream's 2.5e-5: 3,001 training examples is a small domain set and the base must not forget typed decisions; head LR as upstream"
+  },
+  "rlcd": {
+    "group_size": 4,
+    "sigma_start": 0.4,
+    "sigma_end": 0.1,
+    "w_sph": 0.75,
+    "w_rps": 1.0,
+    "ce_weight": 1.0,
+    "why": "upstream's RLCD settings, unchanged: nothing in Diablo's data argues for different exploration"
+  },
+  "targets": {
+    "label_smoothing": 0.05,
+    "why": "hard gold labels; a little smoothing keeps the proper-scoring reward from pushing logits to extremes before calibration"
+  },
+  "weighting": {
+    "intent_class_balance": "weight = sqrt(median_count / class_count), clipped to [0.5, 2.0]",
+    "hard_negative_and_safety_boost": 1.5,
+    "option_order_augment": 1,
+    "why": "train intents range from 98 (mission) to 497 (do); square-root balancing lifts rare classes without drowning common ones; hard negatives and safety boundaries are the point of the dataset; one extra shuffled option order per choice item teaches order invariance"
+  },
+  "model_selection": {
+    "split": "validation",
+    "rule": "fewest false-fast, then highest lane accuracy, then highest macro intent accuracy; never training loss",
+    "save": "best epoch only, plus a rolling latest"
+  },
+  "calibration": {
+    "split": "calibration",
+    "method": "one temperature per question type (choice, noul) by NLL, on held-out logits",
+    "config": "written to rl_agent_config.json temperature; temperature_by_options removed so no inherited bucket can override the fit",
+    "never": "the train split, the test split, or test_private"
+  },
+  "outputs": [
+    "model.safetensors", "encoder/", "tokenizer/", "rl_agent_config.json",
+    "diablo_manifest.json", "validation_by_epoch.json"
+  ]
+}

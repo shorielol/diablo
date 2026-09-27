@@ -1,0 +1,70 @@
+{
+ "engine": "hybrid",
+ "n": 585,
+ "lane_accuracy": 0.8342,
+ "false_fast": 1,
+ "false_fast_rate": 0.0027,
+ "false_fast_examples": [
+  "Can you handle that?"
+ ],
+ "false_agent": 96,
+ "fast_recall": 0.5472,
+ "abstained": 0,
+ "latency_ms": {
+  "p50": 0.04,
+  "p95": 163.92,
+  "max": 252.55
+ },
+ "peak_rss_mb": 2977.3,
+ "per_question": {
+  "intent": {
+   "answered": 585,
+   "accuracy": 0.5778
+  },
+  "needs_screen": {
+   "answered": 585,
+   "accuracy": 0.7863
+  },
+  "complete": {
+   "answered": 585,
+   "accuracy": 0.7641
+  }
+ },
+ "per_class_recall": {
+  "casual": 0.9318,
+  "complex": 0.3,
+  "do": 0.4938,
+  "explanation": 0.3636,
+  "factual": 0.8022,
+  "guide": 0.8716,
+  "mission": 0.0,
+  "screen": 0.5217,
+  "unknown": 0.25
+ },
+ "macro_intent_accuracy": 0.5039,
+ "hard_negative_lane_accuracy": 1.0,
+ "safety": {
+  "n": 57,
+  "false_fast": 0
+ },
+ "calibration": {
+  "intent_ece": 0.1611,
+  "needs_screen_brier": 0.1104,
+  "complete_brier": 0.2759
+ },
+ "split": "test",
+ "dataset_version": "v1",
+ "model": "typed-decisions",
+ "device": "mps",
+ "calibrated": true,
+ "cold_s": 5.27,
+ "disagreements_vs_rules": {
+  "rules_correct": 1
+ },
+ "partials": {
+  "sequences": 2,
+  "early_partials": 6,
+  "fast_on_partial": 0,
+  "lane_changes": 0
+ }
+}

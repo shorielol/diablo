@@ -258,24 +258,27 @@ def run() -> int:
                 self.questions = questions
                 return {"answers": self.answers}
         factual = Router({"intent": {"choice": "factual"}, "needs_screen": {"noul": 0.1},
-                          "needs_tools": {"noul": 0.2}, "complete": {"noul": 0.9}})
+                          "complete": {"noul": 0.9}})
         v = decision.Laya(router=factual).decide("What is GDP?")
-        r.check("one predict call answers every question", factual.calls == 1
-                and set(factual.questions) == {"intent", "needs_screen", "needs_tools",
-                                               "complete"})
+        r.check("one predict call answers every question in the contract", factual.calls == 1
+                and set(factual.questions) == set(decision.LAYA_QUESTIONS))
         r.check("  a factual question with no screen and no tool is FAST",
                 v is not None and v.lane == decision.FAST and v.engine == "laya", str(v))
         screen = Router({"intent": {"choice": "factual"}, "needs_screen": {"noul": 0.8},
-                         "needs_tools": {"noul": 0.2}, "complete": {"noul": 0.9}})
+                         "complete": {"noul": 0.9}})
         v = decision.Laya(router=screen).decide("What does this say?")
         r.check("  a question that needs the screen is not FAST", v.lane != decision.FAST)
         doing = Router({"intent": {"choice": "do"}, "needs_screen": {"noul": 0.0},
-                        "needs_tools": {"noul": 0.0}, "complete": {"noul": 1.0}})
+                        "complete": {"noul": 1.0}})
         r.check("  an action is AGENT",
                 decision.Laya(router=doing).decide("Open Chrome").lane == decision.AGENT)
-        odd = Router({"intent": {"choice": "banana"}})
+        odd = Router({"intent": {"choice": "banana"}, "needs_screen": {"noul": 0.1},
+                      "complete": {"noul": 0.9}})
         r.check("  an answer outside the bounded set is UNKNOWN, not trusted",
                 decision.Laya(router=odd).decide("x").intent == decision.UNKNOWN)
+        partial = Router({"intent": {"choice": "factual"}})
+        r.check("  an answer missing a question is no opinion, not a guess",
+                decision.Laya(router=partial).decide("x") is None)
     with guard(r, "not installed"):
         had = "laya" in sys.modules
         if not had:

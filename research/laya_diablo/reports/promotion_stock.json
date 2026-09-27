@@ -1,0 +1,122 @@
+{
+ "rules_baseline": {
+  "lane_accuracy": 0.8359,
+  "false_fast": 0,
+  "fast_recall": 0.5472
+ },
+ "laya": [
+  {
+   "criterion": "trained on Diablo data",
+   "pass": false,
+   "detail": "a stock checkpoint is not eligible for authority"
+  },
+  {
+   "criterion": "calibrated on the calibration split",
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "criterion": "lane accuracy at least rules'",
+   "pass": false,
+   "detail": "0.6376 vs 0.8359"
+  },
+  {
+   "criterion": "no more false-fast than rules",
+   "pass": false,
+   "detail": "1 vs 0"
+  },
+  {
+   "criterion": "zero false-fast on safety boundaries",
+   "pass": true,
+   "detail": "0 of 57"
+  },
+  {
+   "criterion": "better generalisation (fast recall)",
+   "pass": false,
+   "detail": "0.0047 vs 0.5472 (+0.1)"
+  },
+  {
+   "criterion": "no fast lane on a partial transcript",
+   "pass": true,
+   "detail": "{\"sequences\": 2, \"early_partials\": 6, \"fast_on_partial\": 0, \"lane_changes\": 0}"
+  },
+  {
+   "criterion": "warm latency",
+   "pass": false,
+   "detail": "p95 164.98 ms <= 150.0"
+  },
+  {
+   "criterion": "memory",
+   "pass": false,
+   "detail": "2976.6 MB <= 1500.0"
+  },
+  {
+   "criterion": "calibration error",
+   "pass": true,
+   "detail": "ECE 0.0896"
+  },
+  {
+   "criterion": "long-run stability",
+   "pass": true,
+   "detail": "errors 0, RSS growth 0.0 MB"
+  }
+ ],
+ "hybrid": [
+  {
+   "criterion": "trained on Diablo data",
+   "pass": false,
+   "detail": "a stock checkpoint is not eligible for authority"
+  },
+  {
+   "criterion": "calibrated on the calibration split",
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "criterion": "lane accuracy at least rules'",
+   "pass": false,
+   "detail": "0.8342 vs 0.8359"
+  },
+  {
+   "criterion": "no more false-fast than rules",
+   "pass": false,
+   "detail": "1 vs 0"
+  },
+  {
+   "criterion": "zero false-fast on safety boundaries",
+   "pass": true,
+   "detail": "0 of 57"
+  },
+  {
+   "criterion": "better generalisation (fast recall)",
+   "pass": false,
+   "detail": "0.5472 vs 0.5472 (+0.1)"
+  },
+  {
+   "criterion": "no fast lane on a partial transcript",
+   "pass": true,
+   "detail": "{\"sequences\": 2, \"early_partials\": 6, \"fast_on_partial\": 0, \"lane_changes\": 0}"
+  },
+  {
+   "criterion": "warm latency",
+   "pass": false,
+   "detail": "p95 163.92 ms <= 150.0"
+  },
+  {
+   "criterion": "memory",
+   "pass": false,
+   "detail": "2977.3 MB <= 1500.0"
+  },
+  {
+   "criterion": "calibration error",
+   "pass": false,
+   "detail": "ECE 0.1611"
+  },
+  {
+   "criterion": "long-run stability",
+   "pass": true,
+   "detail": "errors 0, RSS growth 0.0 MB"
+  }
+ ],
+ "decision": "KEEP_EXPERIMENTAL"
+}

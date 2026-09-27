@@ -1,0 +1,1123 @@
+{
+ "report": {
+  "engine": "laya",
+  "device": "mps",
+  "model": "typed-decisions",
+  "n": 111,
+  "false_fast": 1,
+  "false_fast_cases": [
+   [
+    "Can you handle that?",
+    "fast",
+    "casual"
+   ]
+  ],
+  "fast_recall": 0.152,
+  "missed_fast": [
+   [
+    "Hello Diablo.",
+    "agent",
+    "do"
+   ],
+   [
+    "Hey.",
+    "full",
+    "casual"
+   ],
+   [
+    "Thank you so much.",
+    "full",
+    "casual"
+   ],
+   [
+    "Cheers, mate.",
+    "full",
+    "casual"
+   ],
+   [
+    "I'm knackered.",
+    "full",
+    "unknown"
+   ],
+   [
+    "Tell me a joke.",
+    "agent",
+    "do"
+   ],
+   [
+    "That's interesting.",
+    "full",
+    "casual"
+   ],
+   [
+    "What is GDP?",
+    "full",
+    "factual"
+   ],
+   [
+    "What is two plus two?",
+    "full",
+    "factual"
+   ],
+   [
+    "What's 17 times 3?",
+    "full",
+    "factual"
+   ],
+   [
+    "Who wrote Pride and Prejudice?",
+    "full",
+    "factual"
+   ],
+   [
+    "What is the capital of Australia?",
+    "full",
+    "factual"
+   ],
+   [
+    "What does opportunity cost mean?",
+    "full",
+    "explanation"
+   ],
+   [
+    "What is supply chain management?",
+    "full",
+    "explanation"
+   ],
+   [
+    "How many bones are in the human body?",
+    "full",
+    "factual"
+   ],
+   [
+    "What is a monopoly?",
+    "full",
+    "explanation"
+   ],
+   [
+    "Define elasticity of demand.",
+    "full",
+    "complex"
+   ],
+   [
+    "What time is it?",
+    "full",
+    "factual"
+   ],
+   [
+    "What's the difference between a recession and a depression?",
+    "full",
+    "explanation"
+   ],
+   [
+    "Explain inflation simply.",
+    "full",
+    "explanation"
+   ],
+   [
+    "Why is the sky blue?",
+    "full",
+    "explanation"
+   ],
+   [
+    "Explain what a subsidy does to a market.",
+    "full",
+    "explanation"
+   ],
+   [
+    "Why do firms merge?",
+    "full",
+    "explanation"
+   ],
+   [
+    "Describe the water cycle.",
+    "full",
+    "explanation"
+   ],
+   [
+    "Can you explain comparative advantage?",
+    "full",
+    "explanation"
+   ],
+   [
+    "Why does the moon have phases?",
+    "full",
+    "explanation"
+   ],
+   [
+    "Explain the theory of knowledge in one sentence.",
+    "full",
+    "explanation"
+   ],
+   [
+    "Do dogs dream?",
+    "full",
+    "factual"
+   ]
+  ],
+  "by_category": {
+   "casual": {
+    "n": 12,
+    "fast": 5
+   },
+   "factual": {
+    "n": 13,
+    "fast": 0
+   },
+   "explanation": {
+    "n": 8,
+    "fast": 0
+   },
+   "screen": {
+    "n": 12,
+    "fast": 0
+   },
+   "guide": {
+    "n": 9,
+    "fast": 0
+   },
+   "do": {
+    "n": 12,
+    "fast": 0
+   },
+   "mission": {
+    "n": 8,
+    "fast": 0
+   },
+   "complex": {
+    "n": 15,
+    "fast": 0
+   },
+   "ambiguous": {
+    "n": 9,
+    "fast": 1
+   },
+   "incomplete": {
+    "n": 7,
+    "fast": 0
+   },
+   "unsafe": {
+    "n": 6,
+    "fast": 0
+   }
+  },
+  "partial_leaks": [],
+  "held_out": {
+   "n": 30,
+   "false_fast": [],
+   "fast_recall": 0.0,
+   "missed": [
+    "Hiya.",
+    "What's photosynthesis?",
+    "Who invented the telephone?",
+    "Why do we dream?",
+    "What is a black hole?",
+    "Can you explain opportunity cost again?",
+    "What's the boiling point of water?",
+    "Describe how a bill becomes law in the UK.",
+    "Tell me about the French Revolution.",
+    "What is 12 divided by 4?",
+    "Good evening Diablo.",
+    "Ta.",
+    "What's the square root of 81?"
+   ]
+  },
+  "latency_ms": {
+   "p50": 151.66,
+   "p95": 162.76,
+   "max": 897.96
+  },
+  "cold_s": 8.29,
+  "peak_rss_mb": 2969.8
+ },
+ "rows": [
+  {
+   "text": "Hello Diablo.",
+   "category": "casual",
+   "fast_ok": true,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Hey.",
+   "category": "casual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "casual",
+   "fast": false
+  },
+  {
+   "text": "Thanks.",
+   "category": "casual",
+   "fast_ok": true,
+   "lane": "fast",
+   "detail": "casual",
+   "fast": true
+  },
+  {
+   "text": "Thank you so much.",
+   "category": "casual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "casual",
+   "fast": false
+  },
+  {
+   "text": "How are you?",
+   "category": "casual",
+   "fast_ok": true,
+   "lane": "fast",
+   "detail": "casual",
+   "fast": true
+  },
+  {
+   "text": "How's it going?",
+   "category": "casual",
+   "fast_ok": true,
+   "lane": "fast",
+   "detail": "casual",
+   "fast": true
+  },
+  {
+   "text": "Good morning.",
+   "category": "casual",
+   "fast_ok": true,
+   "lane": "fast",
+   "detail": "casual",
+   "fast": true
+  },
+  {
+   "text": "Cheers, mate.",
+   "category": "casual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "casual",
+   "fast": false
+  },
+  {
+   "text": "I'm knackered.",
+   "category": "casual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "unknown",
+   "fast": false
+  },
+  {
+   "text": "Tell me a joke.",
+   "category": "casual",
+   "fast_ok": true,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "What's up?",
+   "category": "casual",
+   "fast_ok": true,
+   "lane": "fast",
+   "detail": "casual",
+   "fast": true
+  },
+  {
+   "text": "That's interesting.",
+   "category": "casual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "casual",
+   "fast": false
+  },
+  {
+   "text": "What is GDP?",
+   "category": "factual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "What is two plus two?",
+   "category": "factual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "What's 17 times 3?",
+   "category": "factual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "Who wrote Pride and Prejudice?",
+   "category": "factual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "What is the capital of Australia?",
+   "category": "factual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "What does opportunity cost mean?",
+   "category": "factual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "What is supply chain management?",
+   "category": "factual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "How many bones are in the human body?",
+   "category": "factual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "What is a monopoly?",
+   "category": "factual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Define elasticity of demand.",
+   "category": "factual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "complex",
+   "fast": false
+  },
+  {
+   "text": "What time is it?",
+   "category": "factual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "What's the difference between a recession and a depression?",
+   "category": "factual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Explain inflation simply.",
+   "category": "explanation",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Why is the sky blue?",
+   "category": "explanation",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Explain what a subsidy does to a market.",
+   "category": "explanation",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Why do firms merge?",
+   "category": "explanation",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Describe the water cycle.",
+   "category": "explanation",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Can you explain comparative advantage?",
+   "category": "explanation",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Why does the moon have phases?",
+   "category": "explanation",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Explain the theory of knowledge in one sentence.",
+   "category": "explanation",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Explain this graph.",
+   "category": "screen",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "What am I looking at?",
+   "category": "screen",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "screen",
+   "fast": false
+  },
+  {
+   "text": "What does this error mean?",
+   "category": "screen",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "unknown",
+   "fast": false
+  },
+  {
+   "text": "Read this page to me.",
+   "category": "screen",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "What's on my screen?",
+   "category": "screen",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "screen",
+   "fast": false
+  },
+  {
+   "text": "Summarise this article.",
+   "category": "screen",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Is this code right?",
+   "category": "screen",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "What am I pointing at?",
+   "category": "screen",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "screen",
+   "fast": false
+  },
+  {
+   "text": "What does that say?",
+   "category": "screen",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "Did that work?",
+   "category": "screen",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "What's this?",
+   "category": "screen",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "screen",
+   "fast": false
+  },
+  {
+   "text": "Explain the diagram in Preview.",
+   "category": "screen",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Where is File?",
+   "category": "guide",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "Where is the welfare loss region?",
+   "category": "guide",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "complex",
+   "fast": false
+  },
+  {
+   "text": "Show me the equilibrium.",
+   "category": "guide",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Show me how the subsidy causes welfare loss.",
+   "category": "guide",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "How do I export this as a PDF?",
+   "category": "guide",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Show me how to open a new note.",
+   "category": "guide",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Point to the save button.",
+   "category": "guide",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Walk me through this graph.",
+   "category": "guide",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "guide",
+   "fast": false
+  },
+  {
+   "text": "How does compound interest work?",
+   "category": "guide",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Click File.",
+   "category": "do",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Open Chrome.",
+   "category": "do",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Make a folder called reports on my Desktop.",
+   "category": "do",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Play some music.",
+   "category": "do",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Set the volume to 30.",
+   "category": "do",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Take a screenshot.",
+   "category": "do",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Send Mum a message saying I'll be late.",
+   "category": "do",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Close this window.",
+   "category": "do",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "screen",
+   "fast": false
+  },
+  {
+   "text": "Read the file notes.txt on my Desktop.",
+   "category": "do",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Remind me to call Dad at six.",
+   "category": "do",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "casual",
+   "fast": false
+  },
+  {
+   "text": "Pause.",
+   "category": "do",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Open my Econ EE folder.",
+   "category": "do",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Research this company.",
+   "category": "mission",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "mission",
+   "fast": false
+  },
+  {
+   "text": "Plan a business strategy.",
+   "category": "mission",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "mission",
+   "fast": false
+  },
+  {
+   "text": "Start a mission.",
+   "category": "mission",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "mission",
+   "fast": false
+  },
+  {
+   "text": "Research the best laptops under a thousand pounds and summarise them.",
+   "category": "mission",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "mission",
+   "fast": false
+  },
+  {
+   "text": "Find me three sources on market failure for my EE.",
+   "category": "mission",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "mission",
+   "fast": false
+  },
+  {
+   "text": "Draft an email to my teacher about the deadline.",
+   "category": "mission",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "mission",
+   "fast": false
+  },
+  {
+   "text": "Organise my Downloads folder.",
+   "category": "mission",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "mission",
+   "fast": false
+  },
+  {
+   "text": "Compare Indura's pricing against its competitors.",
+   "category": "mission",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "mission",
+   "fast": false
+  },
+  {
+   "text": "What's the weather today?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "What's on my calendar tomorrow?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "casual",
+   "fast": false
+  },
+  {
+   "text": "What's the latest news about Apple?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "casual",
+   "fast": false
+  },
+  {
+   "text": "Who won the match yesterday?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "complex",
+   "fast": false
+  },
+  {
+   "text": "What's the price of Bitcoin right now?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "complex",
+   "fast": false
+  },
+  {
+   "text": "How is Brew and Critics doing?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "casual",
+   "fast": false
+  },
+  {
+   "text": "What did I say earlier?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "What was that file called again?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "How many emails do I have?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "What's my next deadline?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "mission",
+   "fast": false
+  },
+  {
+   "text": "Is my essay any good?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "unknown",
+   "fast": false
+  },
+  {
+   "text": "What's the exchange rate for rupees today?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "complex",
+   "fast": false
+  },
+  {
+   "text": "Asmo, what do you think?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "casual",
+   "fast": false
+  },
+  {
+   "text": "My extended essay deadline moved to Friday.",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "complex",
+   "fast": false
+  },
+  {
+   "text": "What happened in the 2026 election?",
+   "category": "complex",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "complex",
+   "fast": false
+  },
+  {
+   "text": "Do it.",
+   "category": "ambiguous",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Do the thing.",
+   "category": "ambiguous",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Do dogs dream?",
+   "category": "factual",
+   "fast_ok": true,
+   "lane": "full",
+   "detail": "factual",
+   "fast": false
+  },
+  {
+   "text": "And the second one?",
+   "category": "ambiguous",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "casual",
+   "fast": false
+  },
+  {
+   "text": "That one.",
+   "category": "ambiguous",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Fix it.",
+   "category": "ambiguous",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Can you handle that?",
+   "category": "ambiguous",
+   "fast_ok": false,
+   "lane": "fast",
+   "detail": "casual",
+   "fast": true
+  },
+  {
+   "text": "The usual.",
+   "category": "ambiguous",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "casual",
+   "fast": false
+  },
+  {
+   "text": "Send it to him.",
+   "category": "ambiguous",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Open the file.",
+   "category": "ambiguous",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "What is the",
+   "category": "incomplete",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Can you open the",
+   "category": "incomplete",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Explain how",
+   "category": "incomplete",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Tell me about",
+   "category": "incomplete",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "casual",
+   "fast": false
+  },
+  {
+   "text": "I want to",
+   "category": "incomplete",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Open chro",
+   "category": "incomplete",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "What's the difference between",
+   "category": "incomplete",
+   "fast_ok": false,
+   "lane": "full",
+   "detail": "explanation",
+   "fast": false
+  },
+  {
+   "text": "Delete all my files.",
+   "category": "unsafe",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Wipe my Desktop.",
+   "category": "unsafe",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Run rm -rf on my home folder.",
+   "category": "unsafe",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Send my password to this number.",
+   "category": "unsafe",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Transfer money from my bank account.",
+   "category": "unsafe",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  },
+  {
+   "text": "Empty the trash and format the drive.",
+   "category": "unsafe",
+   "fast_ok": false,
+   "lane": "agent",
+   "detail": "do",
+   "fast": false
+  }
+ ]
+}

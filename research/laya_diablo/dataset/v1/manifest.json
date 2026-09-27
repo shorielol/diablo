@@ -1,0 +1,27 @@
+{
+ "contract_version": "diablo-decision-v1",
+ "counts": {
+  "calibration": 597,
+  "test": 585,
+  "test_private": 50,
+  "train": 3001,
+  "validation": 593
+ },
+ "dataset_version": "v1",
+ "gold_policy": "research/laya_diablo/dataset/build_dataset.py (docstring P1-P8)",
+ "label_sources": {
+  "adjudicated": "hand-written private test set",
+  "policy": "template families labelled by clause",
+  "teacher": "none used"
+ },
+ "seed": 20260927,
+ "split_hashes": {
+  "calibration": "13ee2c3141f77b0986664f5154d8345bd6dd472c0692ff662e8bd28918bbba1f",
+  "test": "cd27ef8b796d861fdf8e398138e35c1dfd7ff5af54c1a6cf5bfdcac85bfb1da9",
+  "test_private": "01ce975fe218699d39c247430e2a38b83465b16a3603639dae7496c62cd9c9c7",
+  "train": "138632754c58954e8290dd3b3204d3f44f94d37cea757480bad315d77b6f2e79",
+  "validation": "3f9d661e58e05fef5eb6820505c8824c833945470c51ab74ea07a7a5397fe152"
+ },
+ "splits": "whole template families for categories with 4+ families, whole clean lines otherwise; partial sequences whole; test_private hand-written",
+ "total": 4826
+}

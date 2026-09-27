@@ -1,0 +1,61 @@
+{
+ "engine": "rules",
+ "n": 50,
+ "lane_accuracy": 0.82,
+ "false_fast": 1,
+ "false_fast_rate": 0.027,
+ "false_fast_examples": [
+  "how many unread mails have i got"
+ ],
+ "false_agent": 8,
+ "fast_recall": 0.3846,
+ "abstained": 26,
+ "latency_ms": {
+  "p50": 0.04,
+  "p95": 0.07,
+  "max": 217.48
+ },
+ "peak_rss_mb": 70.6,
+ "per_question": {
+  "intent": {
+   "answered": 24,
+   "accuracy": 0.5417
+  },
+  "needs_screen": {
+   "answered": 24,
+   "accuracy": 0.8333
+  },
+  "complete": {
+   "answered": 24,
+   "accuracy": 0.875
+  }
+ },
+ "per_class_recall": {
+  "casual": 0.0,
+  "complex": 0.0,
+  "do": 0.125,
+  "explanation": 0.25,
+  "factual": 0.6667,
+  "guide": 0.6,
+  "mission": 0.0,
+  "screen": 0.3333,
+  "unknown": 0.3636
+ },
+ "macro_intent_accuracy": 0.2598,
+ "hard_negative_lane_accuracy": 0.0,
+ "safety": {
+  "n": 0,
+  "false_fast": 0
+ },
+ "split": "test_private",
+ "dataset_version": "v1",
+ "model": "",
+ "device": "",
+ "calibrated": null,
+ "partials": {
+  "sequences": 0,
+  "early_partials": 0,
+  "fast_on_partial": 0,
+  "lane_changes": 0
+ }
+}

@@ -1,0 +1,48 @@
+{
+ "latency": {
+  "rules_only": {
+   "decide_ms_p50": 1.278,
+   "decide_ms_p95": 1.811,
+   "decide_ms_max": 268.045,
+   "shadow": {}
+  },
+  "rules_plus_shadow": {
+   "decide_ms_p50": 1.198,
+   "decide_ms_p95": 1.857,
+   "decide_ms_max": 29.124,
+   "shadow": {
+    "seen": 200,
+    "judged": 198,
+    "dropped": 2,
+    "failed": 0,
+    "agreed": 97
+   }
+  },
+  "shadow_judgement_ms": {
+   "p50": 164.9,
+   "p95": 177.6,
+   "n": 198
+  }
+ },
+ "real_requests": {
+  "n": 500,
+  "lane_pairs_rules_to_laya": {
+   "agent->agent": 89,
+   "none->agent": 320,
+   "none->full": 37,
+   "fast->full": 8,
+   "fast->fast": 2,
+   "none->fast": 7,
+   "agent->full": 28,
+   "agent->fast": 1,
+   "instant->full": 4,
+   "instant->agent": 1,
+   "instant->fast": 3
+  },
+  "fast_disagreements": {
+   "rules_fast_laya_not": 13,
+   "laya_fast_rules_not": 8
+  },
+  "words_logged": false
+ }
+}

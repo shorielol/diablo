@@ -1,0 +1,26 @@
+{
+ "temperature": {
+  "intent": 0.6587,
+  "needs_screen": 0.799,
+  "complete": 10.0
+ },
+ "nll_before_after": {
+  "intent": [
+   1.5109,
+   1.4421
+  ],
+  "needs_screen": [
+   0.4914,
+   0.485
+  ],
+  "complete": [
+   1.1677,
+   0.7316
+  ]
+ },
+ "fitted_on_split": "calibration",
+ "dataset_version": "v1",
+ "calibration_split_sha256": "13ee2c3141f77b0986664f5154d8345bd6dd472c0692ff662e8bd28918bbba1f",
+ "model": "typed-decisions",
+ "n": 597
+}
