@@ -51,6 +51,12 @@ except Exception:  # pragma: no cover
     # GUI-X.1: through the planner. Worse, and still a working assistant.
     showing = None
 from skills import conversation  # noqa: E402
+try:
+    # Advisory only, and optional: without it every turn takes the path it
+    # always took.
+    from skills import decision  # noqa: E402
+except Exception:  # pragma: no cover
+    decision = None
 from skills import local_brain  # noqa: E402
 from skills import roster  # noqa: E402
 from skills import persona  # noqa: E402
@@ -433,6 +439,12 @@ def handle(
 
     in_conversation = conversation.session.is_followup(generation=generation)
 
+    # Which lane, before any model runs (Phase C). Only the two cheapest lanes
+    # act here; every other verdict, and no verdict, goes on exactly as before.
+    laned = _by_lane(text, speak, generation, in_conversation)
+    if laned is not None:
+        return laned
+
     # One classification, carrying confidence and risk rather than just a verb.
     # classify() calls understand() internally, so this is not an extra model
     # round trip — it is the same one, with two more axes read off it.
@@ -498,10 +510,7 @@ def handle(
         # Not the one-shot reply the classifier produced — a real conversational
         # turn, with the last dozen exchanges behind it and the screen attached
         # if he pointed at it.
-        _speak_with_metadata(
-            speak, conversation.talk(text, generation=generation),
-            speech_id=f"turn:{trace.current_turn()}:chat",
-            speech_kind="USER_RESPONSE")
+        _chat(speak, text, generation)
         return "chat"
 
     # ── Strict clarify loop ──────────────────────────────────────────────
@@ -542,10 +551,7 @@ def handle(
         trace.event("focus", agent=named)
 
     if verdict["action"] == "chat":
-        _speak_with_metadata(
-            speak, conversation.talk(gathered, generation=generation),
-            speech_id=f"turn:{trace.current_turn()}:chat",
-            speech_kind="USER_RESPONSE")
+        _chat(speak, gathered, generation)
         return "chat"
 
     if verdict["action"] == "clarify":
@@ -632,6 +638,124 @@ def handle(
     submit(task, background_speak, ask=ask, confirm=confirm, pieces=pieces,
            generation=generation)
     return "queued"
+
+
+def _by_lane(text: str, speak, generation: Optional[int],
+             in_conversation: bool) -> Optional[str]:
+    """
+    Answer INSTANT and FAST turns without the router. None for everything else.
+
+    The verdict only ever chooses how little machinery to use. Anything that
+    names the screen, asks for something done, or could need a tool is not a
+    FAST verdict, and reaches the router below, its gates included.
+    """
+    if decision is None:
+        return None
+    verdict = decision.decide(text, in_conversation=in_conversation)
+    if verdict is None:
+        return None
+    metadata = {"speech_id": f"turn:{trace.current_turn()}:chat",
+                "speech_kind": "USER_RESPONSE"}
+    if verdict.lane == decision.INSTANT and verdict.reply:
+        trace.event("route", route="instant", intent=verdict.intent)
+        conversation.session.commit_turn(generation, text, verdict.reply)
+        _speak_with_metadata(speak, verdict.reply, **metadata)
+        return "chat"
+    if verdict.lane == decision.FAST:
+        if verdict.needs_screen:
+            # The screen decides first, as the router would have had it: shown
+            # if the thing named is in front of him, answered aloud if not.
+            from skills import target
+            shown = _show(text, _Asked(target.asked_to_show(text)), speak, generation)
+            if shown is not None:
+                return shown
+        trace.event("route", route="fast", intent=verdict.intent)
+        _chat(speak, text, generation,
+              explaining=verdict.intent == decision.EXPLANATION)
+        return "chat"
+    return None
+
+
+class _Asked:
+    """What _show reads off a router decision: the request to be shown, if any."""
+
+    def __init__(self, show):
+        self.show = show
+
+
+def _explaining(text: str) -> bool:
+    return bool(re.match(r"^\s*(?:(?:can|could|would)\s+you\s+)?(?:please\s+)?"
+                         r"(?:explain|describe|walk me through|why|how does|how do)\b",
+                         text or "", re.I))
+
+
+def _chat(speak, text: str, generation: Optional[int],
+          explaining: Optional[bool] = None) -> None:
+    """
+    One conversational answer, spoken as it is written when the voice can.
+
+    A speech callback that says it streams gets the answer chunk by chunk
+    (Phase C); any other gets the finished string, as it always did. If the
+    stream fails before a word of it is said, the answer comes the old way.
+    """
+    metadata = {"speech_id": f"turn:{trace.current_turn()}:chat",
+                "speech_kind": "USER_RESPONSE"}
+    if not getattr(speak, "streams", False):
+        _speak_with_metadata(speak, conversation.talk(text, generation=generation),
+                             **metadata)
+        return
+    from skills import speech, voice
+
+    def stale() -> bool:
+        return generation is not None and not voice.is_current_generation(generation)
+
+    def guarded():
+        said = False
+        pieces = speech.lead_phrase(conversation.talk_stream(
+            text, generation=generation, should_stop=stale))
+        try:
+            for piece in pieces:
+                said = True
+                yield piece
+        except GeneratorExit:
+            raise
+        except Exception as e:
+            trace.event("route", route="stream_failed",
+                        reason=f"{type(e).__name__}: {e}"[:120])
+            if not said and not stale():
+                yield conversation.talk(text, generation=generation)
+        finally:
+            pieces.close()      # an abandoned answer stops being written
+
+    if explaining is None:
+        explaining = _explaining(text)
+    pace = voice.EXPLAIN_WPM if explaining else voice.NORMAL_WPM
+    turn = trace.current_turn()
+    begun = time.time() - (trace.elapsed_ms() or 0.0) / 1000.0
+
+    def timed():
+        # The chunks run on the voice's own thread, which has no turn bound.
+        inner = guarded()
+        first = True
+        try:
+            for piece in inner:
+                if first:
+                    first = False
+                    trace.event("speech", phase="first_chunk", turn=turn,
+                                ms=round((time.time() - begun) * 1000, 1))
+                yield piece
+        finally:
+            inner.close()
+
+    pieces = timed()
+    try:
+        _speak_with_metadata(speak, pieces, pace=pace, **metadata)
+    finally:
+        try:
+            pieces.close()
+        except ValueError:
+            pass    # still running on the voice's thread, which closes it itself
+    trace.event("speech", phase="complete")
 
 
 def _show(text: str, decision, speak, generation: Optional[int]) -> Optional[str]:

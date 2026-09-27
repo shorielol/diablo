@@ -170,19 +170,81 @@ def stream_segments(pieces: Iterator[str], min_chars: int = 24) -> Iterator[str]
     for piece in pieces:
         buffer += piece
         while True:
-            match = _SENTENCE_END.search(buffer)
-            if not match:
+            cut = _first_cut(buffer, min_chars)
+            if cut is None:
                 break
-            sentence, rest = buffer[:match.start()].strip(), buffer[match.end():]
-            if len(sentence) < min_chars and rest:
-                break          # too short to say alone; wait for the next one
-            buffer = rest
+            sentence, buffer = buffer[:cut[0]].strip(), buffer[cut[1]:]
             said = spoken(sentence)
             if said:
                 yield said
     tail = spoken(buffer.strip())
     if tail:
         yield tail
+
+
+def _first_cut(buffer: str, min_chars: int):
+    """
+    Where the first speakable chunk ends: the first sentence end with at least
+    `min_chars` before it, so a short opener travels with the sentence after it.
+
+    The first version stopped at the first sentence end and, when that sentence
+    was short, waited for more text, then found the same short sentence again
+    on every token. "Sure. Supply chain management is..." spoke nothing until
+    the whole answer existed, which is the one thing this exists to prevent.
+    """
+    for match in _SENTENCE_END.finditer(buffer):
+        if len(buffer[:match.start()].strip()) >= min_chars:
+            return match.start(), match.end()
+    return None
+
+
+# Where a long first sentence may be split so the first clip is short. Kokoro
+# renders at about a third of real time on this Mac, and the first clip has to
+# be rendered in full before anything is heard: a 35-word opening sentence was
+# 3.0 s of silence on its own (Phase C baseline). A clause is a place a speaker
+# pauses anyway, so the gap between the two clips lands where a pause belongs.
+LEAD_WORDS = int(os.getenv("DIABLO_LEAD_WORDS", "16") or 0)
+_CLAUSE = re.compile(r"(?<=[,;:])\s+|\s+(?=—|–)|(?<=—|–)\s*")
+
+
+def lead_phrase(pieces: Iterator[str], max_words: int = LEAD_WORDS) -> Iterator[str]:
+    """
+    The same chunks, with the first one split at a clause if it is long.
+
+    Only the first: after it, synthesis runs one chunk ahead of playback and a
+    long sentence costs nothing audible. Only at a clause boundary with at
+    least four words before it, never mid-phrase. `max_words` of 0 turns it off.
+    """
+    try:
+        yield from _lead(pieces, max_words)
+    finally:
+        closing = getattr(pieces, "close", None)
+        if closing is not None:
+            closing()
+
+
+def _lead(pieces: Iterator[str], max_words: int) -> Iterator[str]:
+    first = True
+    for piece in pieces:
+        if first and max_words:
+            first = False
+            words = piece.split()
+            if len(words) > max_words:
+                for match in _CLAUSE.finditer(piece):
+                    head = piece[:match.start()].strip()
+                    if 4 <= len(head.split()) <= max_words:
+                        tail = piece[match.end():].strip(" —–")
+                        if len(tail.split()) >= 3:
+                            yield head
+                            yield tail
+                            break
+                else:
+                    yield piece
+                continue
+            yield piece
+            continue
+        first = False
+        yield piece
 
 
 if __name__ == "__main__":

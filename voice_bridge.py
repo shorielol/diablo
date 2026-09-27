@@ -163,6 +163,8 @@ def speak(text, lang="en", cached_key=None, pace=None, generation=None,
     if generation is not None and not voice.is_current_generation(generation):
         return "stale"
     barge_in.clear()
+    if not isinstance(text, str):
+        return _speak_stream(text, pace, generation, speech_id, speech_kind)
     if pace is None:
         pace = _pace_for(text)
     print(f"\n  Diablo: {text}")
@@ -193,9 +195,56 @@ def speak(text, lang="en", cached_key=None, pace=None, generation=None,
         set_ui_state("idle")
 
 
+# This speak() takes an answer still being written, as an iterable of chunks.
+speak.streams = True
+
+
+def _speak_stream(pieces, pace, generation, speech_id, speech_kind):
+    """
+    Say an answer chunk by chunk while the rest of it is still being written.
+
+    Phase C. Before this every reply was finished, then synthesised, then
+    played; the first chunk now plays while the model and the synthesiser are
+    still working on the next. Same owner, same generation check, same
+    barge-in flag and the same return to idle as a finished line.
+    """
+    def printed():
+        try:
+            for piece in pieces:
+                print(f"\n  Diablo: {piece}")
+                yield piece
+        finally:
+            closing = getattr(pieces, "close", None)
+            if closing is not None:
+                closing()
+
+    try:
+        return voice.speak_stream(
+            printed(), should_stop=lambda: barge_in.is_set(),
+            pace=pace or voice.NORMAL_WPM, generation=generation,
+            speech_id=speech_id, speech_kind=speech_kind)
+    except Exception as e:
+        print(f"  [TTS stream failed: {type(e).__name__}: {e}]")
+        return "failed"
+    finally:
+        set_ui_state("idle")
+
+
+_first_audio_turn = [None]
+
+
 def _audio_started():
     """Audio is coming out of the speaker right now."""
     set_ui_state("speaking")
+    # The first sound of each turn, for `diablo trace` (Phase C). Timing only.
+    try:
+        from skills import trace
+        turn = trace.current_turn()
+        if turn and _first_audio_turn[0] != turn:
+            _first_audio_turn[0] = turn
+            trace.event("speech", phase="first_audio")
+    except Exception:
+        pass
 
 
 def _audio_stopped():
@@ -649,7 +698,8 @@ def _ptt_worker(on_text):
         began = time.time()
 
         _ptt_release.wait(timeout=PTT_MAX_SECONDS)
-        held = time.time() - began
+        released = time.time()
+        held = released - began
 
         # A short tail: the microphone buffer is still carrying the last
         # syllable when the key comes up, for the same reason the pre-roll
@@ -681,12 +731,12 @@ def _ptt_worker(on_text):
         return
 
     try:
-        _handle_capture(blocks, held, on_text)
+        _handle_capture(blocks, held, on_text, released=released)
     finally:
         _end_thinking()
 
 
-def _handle_capture(blocks, held, on_text):
+def _handle_capture(blocks, held, on_text, released=None):
     """Transcribe one press and act on it. The state is "thinking" throughout."""
     audio = np.concatenate(blocks).flatten().astype(np.float32)
     started = time.time()
@@ -696,6 +746,14 @@ def _handle_capture(blocks, held, on_text):
         print(f"  [PTT] transcription failed: {type(e).__name__}: {e}")
         return
     print(f'  [PTT] held {held:.2f}s, transcribed in {time.time() - started:.2f}s: "{text}"')
+    try:
+        # When the key came up and what hearing it cost, so a turn's latency
+        # can be read from the release. Timing only: no audio, no words.
+        from skills import trace
+        trace.event("stt", released_at=round(released or started, 3),
+                    held_s=round(held, 2), stt_ms=round((time.time() - started) * 1000))
+    except Exception:
+        pass
     if not text:
         speak("I didn't catch that, Sir.", cached_key="error_1")
         return
@@ -716,6 +774,11 @@ def push_to_talk_start(on_text=None) -> bool:
         _ptt_active.set()
         _ptt_release.clear()
     threading.Thread(target=_ptt_worker, args=(on_text,), daemon=True).start()
+    # The model loads while he is still talking (Phase C). An idle Diablo lets
+    # it expire after keep_alive, and the first turn back paid the whole cold
+    # load after the key came up. Loading is not acting: nothing is decided or
+    # done here, and the microphone is the worker's alone.
+    threading.Thread(target=_warm_the_brain, daemon=True).start()
     return True
 
 
@@ -802,6 +865,7 @@ def process_command(text, is_sub_command=False, generation=None):
 
     # Existing reflex code below intentionally remains unchanged; these local
     # bindings route all of its user-facing speech through the same identity.
+    interaction_speak.streams = getattr(base_speak, "streams", False)
     speak = interaction_speak
     ask_user_voice = interaction_ask
     confirm_voice = interaction_confirm

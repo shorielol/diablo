@@ -617,10 +617,24 @@ def speak_stream(pieces, should_stop=None, pace: Optional[int] = None,
     ahead: "queue.Queue" = queue.Queue(maxsize=2)
     failed: List[BaseException] = []
 
+    def abandoned() -> bool:
+        return STOP.is_set() or not is_current_generation(generation)
+
+    def offer(item) -> bool:
+        # Never block for good on a queue nobody is reading any more: that
+        # held a model stream open, generating for a turn already abandoned.
+        while True:
+            try:
+                ahead.put(item, timeout=0.2)
+                return True
+            except queue.Full:
+                if abandoned():
+                    return False
+
     def render() -> None:
         try:
             for piece in pieces:
-                if STOP.is_set():
+                if abandoned():
                     break
                 piece = (piece or "").strip()
                 if not piece:
@@ -632,11 +646,19 @@ def speak_stream(pieces, should_stop=None, pace: Optional[int] = None,
                         path = repace(path, piece, pace)
                 except BaseException as e:
                     failed.append(e)
-                ahead.put((piece, path))
+                if not offer((piece, path)):
+                    break
         except BaseException as e:
             failed.append(e)
         finally:
-            ahead.put(None)
+            # A reply still being written stops being written here.
+            closing = getattr(pieces, "close", None)
+            if closing is not None:
+                try:
+                    closing()
+                except BaseException:
+                    pass
+            offer(None)
 
     worker = threading.Thread(target=render, daemon=True)
     worker.start()

@@ -657,6 +657,99 @@ class Session:
         separate system message rather than glued onto his sentence, so the model
         does not start quoting the screen back at him as if he had said it.
         """
+        canned, messages, turns = self._prompt(text, screen)
+        if canned is not None:
+            self.commit_turn(generation, text, canned)
+            return canned
+
+        try:
+            message = local_brain.chat(messages, num_predict=400, temperature=0.5)
+        except local_brain.BrainOffline as e:
+            # e.spoken says which of the two it was. "Ollama has stopped
+            # responding" is a lie when the daemon answered perfectly and
+            # refused the prompt for being too long — and it sends him looking
+            # at the wrong thing.
+            return e.spoken
+
+        answer = _speakable((message.get("content") or "").strip())
+        if not answer:
+            answer = "I have nothing useful to say to that, Sir."
+        elif _invents_a_status(answer, text, screen, turns=turns):
+            answer = random.choice(_UNKNOWN)
+
+        self.commit_turn(generation, text, answer)
+        return answer
+
+    def reply_stream(self, text: str, screen: Optional[str] = None,
+                     generation: Optional[int] = None, should_stop=None):
+        """
+        The same turn as reply(), a chunk at a time as the model writes it.
+
+        reply() hands back nothing until the last token, so a four-sentence
+        answer was silent for the whole of its generation (Phase C baseline:
+        1.7 s of it for "what is supply chain management"). Here the first
+        sentence can be spoken while the rest is being written.
+
+        The guards reply() applies to the whole answer are applied to what has
+        been said so far, before each chunk is let out. Markdown is stripped,
+        a trailing "anything else?" is dropped, and a chunk that would report
+        a status Diablo cannot know is never said: if nothing has been said
+        yet, the honest line is said instead, and otherwise it stops there.
+        The turn is recorded once, at the end, as what was actually said, and
+        not at all if it was cut off.
+        """
+        canned, messages, turns = self._prompt(text, screen)
+        if canned is not None:
+            self.commit_turn(generation, text, canned)
+            yield canned
+            return
+
+        def stopped() -> bool:
+            return should_stop is not None and bool(should_stop())
+
+        from skills import speech
+        said: List[str] = []
+        stream = None
+        try:
+            stream = local_brain.chat_stream(messages, num_predict=400, temperature=0.5)
+            for chunk in speech.stream_segments(stream):
+                if stopped():
+                    return
+                piece = _speakable(chunk)
+                if not piece or (said and _only_signoff(piece)):
+                    continue
+                if _invents_a_status(" ".join(said + [piece]), text, screen, turns=turns):
+                    if not said:
+                        said.append(random.choice(_UNKNOWN))
+                        yield said[-1]
+                    break
+                said.append(piece)
+                yield piece
+        except local_brain.BrainOffline as e:
+            if not said:
+                yield e.spoken
+            return
+        finally:
+            closing = getattr(stream, "close", None)
+            if closing is not None:
+                try:
+                    closing()        # stops generation when the turn is abandoned
+                except Exception:
+                    pass
+        if stopped():
+            return
+        if not said:
+            said.append("I have nothing useful to say to that, Sir.")
+            yield said[-1]
+        self.commit_turn(generation, text, " ".join(said))
+
+    def _prompt(self, text: str, screen: Optional[str]):
+        """
+        What the model is given for one turn: (canned, messages, turns).
+
+        `canned` is an answer to give without asking the model at all, or
+        None. Shared by reply() and reply_stream() so the two cannot drift.
+        """
         state = self.snapshot()
         turns = state["turns"]
         earlier = state["earlier"]
@@ -667,9 +760,7 @@ class Session:
         # asking the model, which will otherwise invent the thing being
         # referred to.
         if not turns and _asks_about_earlier(text):
-            answer = random.choice(NO_HISTORY)
-            self.commit_turn(generation, text, answer)
-            return answer
+            return random.choice(NO_HISTORY), [], turns
 
         messages: List[Dict[str, Any]] = [
             {"role": "system", "content": PERSONA},
@@ -757,24 +848,7 @@ class Session:
                 + earlier})
         messages.extend(turns)
         messages.append({"role": "user", "content": text})
-
-        try:
-            message = local_brain.chat(messages, num_predict=400, temperature=0.5)
-        except local_brain.BrainOffline as e:
-            # e.spoken says which of the two it was. "Ollama has stopped
-            # responding" is a lie when the daemon answered perfectly and
-            # refused the prompt for being too long — and it sends him looking
-            # at the wrong thing.
-            return e.spoken
-
-        answer = _speakable((message.get("content") or "").strip())
-        if not answer:
-            answer = "I have nothing useful to say to that, Sir."
-        elif _invents_a_status(answer, text, screen, turns=turns):
-            answer = random.choice(_UNKNOWN)
-
-        self.commit_turn(generation, text, answer)
-        return answer
+        return None, messages, turns
 
 
 # Questions that only make sense if something was said before. With an empty
@@ -902,19 +976,28 @@ def _speakable(text: str) -> str:
     # The "anything else?" sign-off survived every attempt to ban it in the
     # prompt, so it is removed here instead. Spoken aloud after every single
     # reply, it is the fastest way to make an assistant grating.
-    text = re.sub(
-        r"\s*(?:and\s+)?(?:just\s+)?(?:do\s+)?"
-        r"(?:let me know|just let me know|feel free to ask|don'?t hesitate)"
-        r"[^.!?]*[.!?]\s*$", "", text, flags=re.IGNORECASE)
+    text = _SIGNOFF_ASK.sub("", text)
     before = text
-    text = re.sub(r"\s*(?:i'?m here if[^.!?]*|hope (?:that|this) helps"
-                  r"|(?:is there |was there |need )?anything else[^.!?]*"
-                  r"|happy to help[^.!?]*|what else can i[^.!?]*)[.!?]?\s*$",
-                  "", text, flags=re.IGNORECASE)
+    text = _SIGNOFF_TAIL.sub("", text)
     # Never let the strip take the whole reply. "Anything else?" as the entire
     # answer is rare, and a genuine question like "let me know what you think"
     # should survive.
     return (text or before).strip()
+
+
+_SIGNOFF_ASK = re.compile(
+    r"\s*(?:and\s+)?(?:just\s+)?(?:do\s+)?"
+    r"(?:let me know|just let me know|feel free to ask|don'?t hesitate)"
+    r"[^.!?]*[.!?]\s*$", re.IGNORECASE)
+_SIGNOFF_TAIL = re.compile(
+    r"\s*(?:i'?m here if[^.!?]*|hope (?:that|this) helps"
+    r"|(?:is there |was there |need )?anything else[^.!?]*"
+    r"|happy to help[^.!?]*|what else can i[^.!?]*)[.!?]?\s*$", re.IGNORECASE)
+
+
+def _only_signoff(piece: str) -> bool:
+    """A chunk that is nothing but the sign-off _speakable strips off a whole reply."""
+    return not _SIGNOFF_TAIL.sub("", _SIGNOFF_ASK.sub("", piece)).strip()
 
 
 session = Session()
@@ -1033,6 +1116,21 @@ def talk(text: str, agent: Optional[str] = None,
             text = strip_address(text, named)
     return session.reply(text, screen=look_if_asked(text, generation=generation),
                          generation=generation)
+
+
+def talk_stream(text: str, agent: Optional[str] = None,
+                generation: Optional[int] = None, should_stop=None):
+    """talk(), a chunk at a time: the same focus handling, the same screen rule."""
+    if agent is not None:
+        session.set_focus(agent, generation=generation)
+    else:
+        named = addressed_to(text)
+        if named:
+            session.set_focus(None if named == "diablo" else named,
+                              generation=generation)
+            text = strip_address(text, named)
+    return session.reply_stream(text, screen=look_if_asked(text, generation=generation),
+                                generation=generation, should_stop=should_stop)
 
 
 RESET_PHRASES = ["forget that", "start over", "new conversation", "clear your head",
