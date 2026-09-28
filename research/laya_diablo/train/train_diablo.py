@@ -19,7 +19,8 @@ group baseline) plus soft cross-entropy, with these Diablo changes:
         --model-dir <laya>/typed-decisions --items items/ --out out/ \
         --config ../configs/train_v1.json --dataset-manifest ../dataset/v1/manifest.json
 
-    python train_diablo.py ... --dry-run     # CPU, two items, forward and loss only
+    python train_diablo.py ... --dry-run     # CPU, no optimiser step: forward, loss, and
+                                             # the save path (verify_checkpoint refuses it)
 
 The test splits are never read here.
 """
@@ -139,8 +140,12 @@ def lane_metrics(predictions):
 
 
 def fit_temperature(pairs):
-    """One temperature for a set of (logits, soft target), by NLL (upstream's LBFGS fit)."""
+    """
+    One temperature for a set of (logits, soft target), by NLL (upstream's LBFGS fit),
+    within the range Laya applies at load: a fit outside it would be recorded but clamped.
+    """
     import torch
+    from laya.common import TEMP_MAX, TEMP_MIN
     if len(pairs) < 10:
         return 1.0
     kmax = max(len(z) for z, _ in pairs)
@@ -158,7 +163,85 @@ def fit_temperature(pairs):
         loss.backward()
         return loss
     opt.step(closure)
-    return float(torch.clamp(log_t.exp(), 0.1, 10.0).item())
+    return float(torch.clamp(log_t.exp(), TEMP_MIN, TEMP_MAX).item())
+
+
+def nll(pairs, t=1.0):
+    """Mean cross-entropy of (logits, soft target) pairs at temperature t."""
+    total = 0.0
+    for z, target in pairs:
+        scaled = [v / t for v in z]
+        m = max(scaled)
+        log_z = m + math.log(sum(math.exp(v - m) for v in scaled))
+        total -= sum(p * (v - log_z) for p, v in zip(target, scaled))
+    return total / max(1, len(pairs))
+
+
+def selection_key(metrics):
+    """Validation lane safety first, then lane accuracy, then macro intent. Never loss."""
+    return (-metrics["false_fast"], metrics["lane_accuracy"], metrics["macro_intent"])
+
+
+def calibrate(model, items, pad_id, device):
+    """One temperature per question type, fitted on the calibration split only."""
+    preds = predict_items(model, items, pad_id, device)
+    temps, before, after = [], {}, {}
+    for qtype, name in ((0, "choice"), (1, "score"), (2, "noul")):
+        pairs = [(z, it["target"]) for it, z in preds if it["qtype"] == qtype]
+        t = fit_temperature(pairs) if pairs else 1.0
+        temps.append(t)
+        if pairs:
+            before[name], after[name] = round(nll(pairs), 4), round(nll(pairs, t), 4)
+    return {"fitted_on_split": "calibration", "temperature": temps,
+            "temperature_by_options": {}, "items": len(preds),
+            "nll_before": before, "nll_after": after}
+
+
+def environment():
+    import torch
+    import transformers
+    n = torch.cuda.device_count() if torch.cuda.is_available() else 0
+    return {"torch": torch.__version__, "transformers": transformers.__version__,
+            "cuda": torch.version.cuda, "gpus": [torch.cuda.get_device_name(i) for i in range(n)],
+            "platform": os.environ.get("KAGGLE_KERNEL_RUN_TYPE", "local")}
+
+
+def manifest_for(cfg_run, dataset, questions, *, laya_version, history, optimizer_steps,
+                 world_size, environment, run_id, calibration, weights_sha256, dry_run=False):
+    """The diablo_manifest.json the runtime's verify_checkpoint reads."""
+    base = cfg_run["base"]
+    return {
+        "contract_version": cfg_run["contract_version"],
+        "questions": questions,
+        "base_checkpoint": f"{base['repo']}:{base['subfolder']}",
+        "base_revision": base["revision"],
+        "laya_version": laya_version,
+        "dataset_version": dataset.get("dataset_version", cfg_run["data"]["dataset_version"]),
+        "split_hashes": dataset.get("split_hashes", {}),
+        "run_id": run_id,
+        "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "environment": environment,
+        "training": {"config": cfg_run, "world_size": world_size, "dry_run": dry_run,
+                     "optimizer_steps": optimizer_steps,
+                     "best_epoch": max(history, key=selection_key)["epoch"] if history else None,
+                     "validation_by_epoch": history},
+        "calibration": calibration,
+        "weights_sha256": weights_sha256,
+    }
+
+
+def save_checkpoint(out, state, model, tok, cfg, calibration, trained):
+    """Weights, encoder config, tokenizer and the calibrated config; returns the weights hash."""
+    from safetensors.torch import save_file
+    os.makedirs(out, exist_ok=True)
+    save_file(state, os.path.join(out, "model.safetensors"))
+    model.encoder.config.save_pretrained(os.path.join(out, "encoder"))
+    tok.save_pretrained(os.path.join(out, "tokenizer"))
+    cfg = dict(cfg, fine_tuned=trained, model_name="laya-diablo-decision",
+               temperature=calibration["temperature"])
+    cfg.pop("temperature_by_options", None)   # the fit is per type; no bucket may override it
+    json.dump(cfg, open(os.path.join(out, "rl_agent_config.json"), "w"), indent=2)
+    return sha256(os.path.join(out, "model.safetensors"))
 
 
 def sha256(path):
@@ -176,11 +259,13 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--config", required=True)
     ap.add_argument("--dataset-manifest", default="")
-    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--run-id", default="")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="CPU, no optimiser step: forward, loss, decode, and the save path")
     args = ap.parse_args()
 
     import torch
-    from safetensors.torch import load_file, save_file
+    from safetensors.torch import load_file
     from transformers import AutoTokenizer
     from laya.common import build_model, proper_reward
 
@@ -218,10 +303,15 @@ def main():
             loss, logits = loss_for(model, batch, device, rl["sigma_start"], rl, proper_reward,
                                     amp=False)
         metrics = lane_metrics(predict_items(model, valid[:30], tok.pad_token_id, device))
+        state = {k: v.detach().half().contiguous().cpu() for k, v in model.state_dict().items()}
+        manifest = finish(args, cfg_run, cfg, state, model, tok, calib[:60], device, [], 0, 1,
+                          dry_run=True)
         print(json.dumps({"dry_run": True, "loss": round(float(loss), 4),
                           "logits_shape": list(logits.shape), "train_items": len(train),
                           "validation_items": len(valid), "calibration_items": len(calib),
-                          "validation_decode_check": metrics}))
+                          "validation_decode_check": metrics, "saved": args.out,
+                          "calibration": manifest["calibration"],
+                          "optimizer_steps": manifest["training"]["optimizer_steps"]}))
         return
 
     model.encoder.gradient_checkpointing_enable(
@@ -238,7 +328,7 @@ def main():
     total = max(1, (len(mine) // (mb * accum)) * epochs)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total, eta_min=1e-6)
     scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
-    history, best, best_key = [], None, None
+    history, best, best_key, optimizer_steps = [], None, None, 0
     started = time.time()
     for epoch in range(epochs):
         random.Random(42 + epoch + rank).shuffle(mine)
@@ -257,6 +347,7 @@ def main():
                 scaler.update()
                 scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
+                optimizer_steps += 1
         if ddp:
             dist.barrier()
         if rank == 0:
@@ -264,7 +355,7 @@ def main():
             metrics.update(epoch=epoch + 1, minutes=round((time.time() - started) / 60, 1))
             history.append(metrics)
             print(json.dumps(metrics), flush=True)
-            key = (-metrics["false_fast"], metrics["lane_accuracy"], metrics["macro_intent"])
+            key = selection_key(metrics)
             if best_key is None or key > best_key:
                 best_key = key
                 best = {k: v.detach().half().contiguous().cpu()
@@ -275,38 +366,32 @@ def main():
     if rank == 0:
         model.load_state_dict({k: v.float() for k, v in best.items()})
         model.to(device)
-        preds = predict_items(model, calib, tok.pad_token_id, device)
-        choice = [(z, it["target"]) for it, z in preds if it["qtype"] == 0]
-        noul = [(z, it["target"]) for it, z in preds if it["qtype"] == 2]
-        temps = [fit_temperature(choice), 1.0, fit_temperature(noul)]
-        os.makedirs(args.out, exist_ok=True)
-        save_file(best, os.path.join(args.out, "model.safetensors"))
-        model.encoder.config.save_pretrained(os.path.join(args.out, "encoder"))
-        tok.save_pretrained(os.path.join(args.out, "tokenizer"))
-        cfg.update(fine_tuned=True, model_name="laya-diablo-decision", temperature=temps)
-        cfg.pop("temperature_by_options", None)   # the fit is per type; no bucket may override it
-        json.dump(cfg, open(os.path.join(args.out, "rl_agent_config.json"), "w"), indent=2)
-        json.dump(history, open(os.path.join(args.out, "validation_by_epoch.json"), "w"), indent=1)
-        dataset = json.load(open(args.dataset_manifest)) if args.dataset_manifest else {}
-        import laya
-        best_epoch = max(history, key=lambda h: (-h["false_fast"], h["lane_accuracy"],
-                                                 h["macro_intent"]))["epoch"]
-        manifest = {
-            "contract_version": cfg_run["contract_version"],
-            "base_checkpoint": f"{cfg_run['base']['repo']}:{cfg_run['base']['subfolder']}",
-            "laya_version": getattr(laya, "__version__", cfg_run["base"]["laya_version"]),
-            "dataset_version": dataset.get("dataset_version", cfg_run["data"]["dataset_version"]),
-            "split_hashes": dataset.get("split_hashes", {}),
-            "training": {"config": cfg_run, "world_size": world, "best_epoch": best_epoch,
-                         "validation_by_epoch": history},
-            "calibration": {"fitted_on_split": "calibration", "temperature": temps,
-                            "temperature_by_options": {}, "items": len(preds)},
-            "weights_sha256": sha256(os.path.join(args.out, "model.safetensors")),
-        }
-        json.dump(manifest, open(os.path.join(args.out, "diablo_manifest.json"), "w"), indent=1)
-        print("saved", args.out, "temperatures", temps)
+        manifest = finish(args, cfg_run, cfg, best, model, tok, calib, device, history,
+                          optimizer_steps, world)
+        print("saved", args.out, "run", manifest["run_id"], "steps", optimizer_steps,
+              "temperatures", manifest["calibration"]["temperature"], flush=True)
     if ddp:
         dist.destroy_process_group()
+
+
+def finish(args, cfg_run, cfg, state, model, tok, calib, device, history, steps, world,
+           dry_run=False):
+    """Calibrate on the calibration split, save the checkpoint, write its manifest."""
+    import laya
+    calibration = calibrate(model, calib, tok.pad_token_id, device)
+    weights = save_checkpoint(args.out, state, model, tok, cfg, calibration, trained=steps > 0)
+    json.dump(history, open(os.path.join(args.out, "validation_by_epoch.json"), "w"), indent=1)
+    dataset = json.load(open(args.dataset_manifest)) if args.dataset_manifest else {}
+    research = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    questions = json.load(open(os.path.join(research, "contract.json")))["questions"]
+    run_id = args.run_id or f"{cfg_run['run_name']}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+    manifest = manifest_for(cfg_run, dataset, questions,
+                            laya_version=getattr(laya, "__version__", "unknown"),
+                            history=history, optimizer_steps=steps, world_size=world,
+                            environment=environment(), run_id=run_id, calibration=calibration,
+                            weights_sha256=weights, dry_run=dry_run)
+    json.dump(manifest, open(os.path.join(args.out, "diablo_manifest.json"), "w"), indent=1)
+    return manifest
 
 
 if __name__ == "__main__":

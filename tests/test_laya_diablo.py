@@ -28,11 +28,15 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RESEARCH = os.path.join(REPO, "research", "laya_diablo")
 sys.path.insert(0, os.path.join(RESEARCH, "eval"))
 sys.path.insert(0, os.path.join(RESEARCH, "dataset"))
+sys.path.insert(0, os.path.join(RESEARCH, "train"))
+sys.path.insert(0, os.path.join(RESEARCH, "kaggle"))
 
 from skills import computer_use, decision, trace  # noqa: E402
 import promotion  # noqa: E402
 import eval_laya_diablo as evaluation  # noqa: E402
 import build_dataset as builder  # noqa: E402
+import train_diablo as trainer  # noqa: E402
+import bundle  # noqa: E402
 
 VERSION = "v1"
 SPLITS = ("train", "validation", "calibration", "test", "test_private")
@@ -76,7 +80,8 @@ class Router:
 
 
 def fake_checkpoint(root, temperature=(1.1, 1.2, 1.3), by_options=None, declared=None,
-                    weights=b"weights", tamper=False, contract=None):
+                    weights=b"weights", tamper=False, contract=None, questions=None, steps=12,
+                    provenance=None):
     os.makedirs(root, exist_ok=True)
     with open(os.path.join(root, "model.safetensors"), "wb") as f:
         f.write(weights)
@@ -86,12 +91,16 @@ def fake_checkpoint(root, temperature=(1.1, 1.2, 1.3), by_options=None, declared
     json.dump(cfg, open(os.path.join(root, "rl_agent_config.json"), "w"))
     manifest = {
         "contract_version": contract or decision.LAYA_CONTRACT_VERSION,
-        "base_checkpoint": "convaiinnovations/laya:typed-decisions", "laya_version": "0.3.20",
-        "dataset_version": VERSION, "split_hashes": {"train": "x"}, "training": {"epochs": 3},
+        "questions": questions or decision.LAYA_QUESTIONS,
+        "base_checkpoint": "convaiinnovations/laya:typed-decisions", "base_revision": "abc",
+        "laya_version": "0.3.20", "run_id": "test-run",
+        "dataset_version": VERSION, "split_hashes": {"train": "x"},
+        "training": {"epochs": 3, "optimizer_steps": steps},
         "calibration": {"fitted_on_split": "calibration", "temperature": list(temperature),
                         "temperature_by_options": declared or {}},
         "weights_sha256": hashlib.sha256(b"tampered" if tamper else weights).hexdigest(),
     }
+    manifest.update(provenance or {})
     json.dump(manifest, open(os.path.join(root, decision.CHECKPOINT_MANIFEST), "w"))
     return root
 
@@ -247,6 +256,10 @@ def run() -> int:
                                    declared={"noul:2": 1.4})
         r.check("a bucket the calibration itself fitted is accepted",
                 decision.verify_checkpoint(declared)[0])
+        clamped = fake_checkpoint(os.path.join(root, "clamped"), temperature=(1.1, 1.0, 10.0))
+        ok, why = decision.verify_checkpoint(clamped)
+        r.check("a fitted temperature the model would clamp at load is refused",
+                not ok and "clamp" in why, why)
         json.dump({"temperature": [1.0, 1.0, 1.0]},
                   open(os.path.join(good, "rl_agent_config.json"), "w"))
         ok, why = decision.verify_checkpoint(good)
@@ -270,6 +283,95 @@ def run() -> int:
         r.check("the dataset manifest records its version, seed and every split hash",
                 {"dataset_version", "seed", "split_hashes"} <= set(manifest)
                 and set(manifest["split_hashes"]) == set(SPLITS))
+        fewer = json.loads(json.dumps(decision.LAYA_QUESTIONS))
+        fewer["intent"]["criteria"].pop("unknown")
+        ok, why = decision.verify_checkpoint(fake_checkpoint(os.path.join(root, "q"),
+                                                             questions=fewer))
+        r.check("a checkpoint trained on other questions or options is refused",
+                not ok and "questions" in why, why)
+        ok, why = decision.verify_checkpoint(fake_checkpoint(os.path.join(root, "dry"), steps=0))
+        r.check("a checkpoint that never took an optimiser step (a dry run) is refused",
+                not ok and "trained" in why, why)
+        ok, why = decision.verify_checkpoint(fake_checkpoint(os.path.join(root, "junk"),
+                                                             steps="lots"))
+        r.check("  and a malformed step count is a refusal, not an exception", not ok, why)
+
+    with guard(r, "provenance"):
+        expect = evaluation.expected_provenance(VERSION)
+        cfg_run = json.load(open(os.path.join(RESEARCH, "configs", "train_v1.json")))
+        r.check("the evaluation expects the pinned base, Laya version and every split hash",
+                expect["split_hashes"] == manifest["split_hashes"]
+                and expect["base_revision"] == cfg_run["base"]["revision"]
+                and len(cfg_run["base"]["revision"]) == 40
+                and expect["laya_version"] == cfg_run["base"]["laya_version"])
+        ok, why = decision.verify_checkpoint(fake_checkpoint(os.path.join(root, "base")),
+                                             expect=expect)
+        r.check("a checkpoint from another base or dataset is refused", not ok, why)
+        wrong_data = dict(expect, split_hashes=dict(expect["split_hashes"], train="0" * 64))
+        ok, why = decision.verify_checkpoint(
+            fake_checkpoint(os.path.join(root, "data"), provenance=wrong_data), expect=expect)
+        r.check("  a different training split hash, by name", not ok and "split_hashes" in why, why)
+        wrong_base = dict(expect, base_revision="f" * 40)
+        ok, why = decision.verify_checkpoint(
+            fake_checkpoint(os.path.join(root, "rev"), provenance=wrong_base), expect=expect)
+        r.check("  a different base snapshot, by name", not ok and "base_revision" in why, why)
+
+        trained = fake_checkpoint(os.path.join(root, "trained"))
+        written = trainer.manifest_for(
+            cfg_run, manifest, decision.LAYA_QUESTIONS, laya_version="0.3.20",
+            history=[{"epoch": 1, "false_fast": 0, "lane_accuracy": 0.9, "macro_intent": 0.8}],
+            optimizer_steps=564, world_size=2, environment={}, run_id="run",
+            calibration={"fitted_on_split": "calibration", "temperature": [1.1, 1.2, 1.3],
+                         "temperature_by_options": {}},
+            weights_sha256=hashlib.sha256(b"weights").hexdigest())
+        json.dump(written, open(os.path.join(trained, decision.CHECKPOINT_MANIFEST), "w"))
+        ok, why = decision.verify_checkpoint(trained, expect=expect)
+        r.check("the trainer's own manifest passes the runtime check and the expected provenance",
+                ok, why)
+        r.check("  and records the run, the time and the calibration split",
+                written["run_id"] == "run" and written["created_utc"]
+                and written["training"]["best_epoch"] == 1)
+        r.check("the evaluation accepts that checkpoint",
+                evaluation.verified_checkpoint(trained, VERSION)["run_id"] == "run")
+        refused = False
+        try:
+            evaluation.verified_checkpoint(os.path.join(root, "tampered"), VERSION)
+        except SystemExit:
+            refused = True
+        r.check("the evaluation refuses to measure a checkpoint that fails the check", refused)
+        stock = fake_checkpoint(os.path.join(root, "stock"), provenance=dict(
+            expect, weights_sha256=cfg_run["base"]["weights_sha256"]))
+        why = ""
+        try:
+            evaluation.verified_checkpoint(stock, VERSION)
+        except SystemExit as e:
+            why = str(e.code)
+        r.check("  or whose weights are the base weights, whatever its manifest claims",
+                "base weights" in why and len(cfg_run["base"]["weights_sha256"]) == 64, why)
+
+    with guard(r, "kaggle package"):
+        out = tempfile.mkdtemp(prefix="laya-bundle-")
+        built = bundle.build(out, user="someone")
+        files = {os.path.relpath(os.path.join(d, f), built["dataset"])
+                 for d, _, fs in os.walk(built["dataset"]) for f in fs}
+        r.check("the upload holds no test or private split",
+                not {"dataset/v1/test.jsonl", "dataset/v1/test_private.jsonl"} & files
+                and not any(f.startswith(("eval/", "reports/", "checkpoints/")) for f in files),
+                str(sorted(files)))
+        r.check("  and holds train, validation and calibration byte for byte",
+                all(hashlib.sha256(open(os.path.join(built["dataset"], "dataset", VERSION,
+                                                     f"{s}.jsonl"), "rb").read()).hexdigest()
+                    == manifest["split_hashes"][s] for s in ("train", "validation", "calibration")))
+        kernel = json.load(open(os.path.join(built["kernel"], "kernel-metadata.json")))
+        r.check("the notebook runs on GPU T4 x2 with the dataset attached, privately",
+                kernel["machine_shape"] == "NvidiaTeslaT4" and kernel["enable_gpu"] == "true"
+                and kernel["dataset_sources"] == ["someone/diablo-laya"]
+                and kernel["is_private"] == "true")
+        cells = "".join("".join(c["source"]) for c in json.load(
+            open(os.path.join(RESEARCH, "notebooks", "laya_diablo_finetune_2xT4_kaggle.ipynb")))
+            ["cells"])
+        r.check("the notebook downloads the pinned base snapshot and refuses held-out splits",
+                "revision=" in cells and "test_private.jsonl" in cells)
 
     # ── J, K, O, R, S. The shadow ────────────────────────────────────────
     r.head("J-S  shadow mode")

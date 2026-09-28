@@ -48,19 +48,34 @@ def heard(trace_path, limit):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="typed-decisions")
+    ap.add_argument("--checkpoint", default="", help="a Diablo-trained checkpoint (verified first)")
+    ap.add_argument("--version", default="v1")
     ap.add_argument("--device", default="mps")
     ap.add_argument("--trace", default=os.path.expanduser("~/.diablo/trace.jsonl"))
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--out", default="")
     args = ap.parse_args()
     from skills import decision, trace
-    from laya import Router
 
-    router = Router(device=args.device, max_loaded=1)
+    checkpoint = None
+    if args.checkpoint:
+        sys.path.insert(0, HERE)
+        import eval_laya_diablo as evaluation
+        checkpoint = evaluation.provenance(evaluation.verified_checkpoint(args.checkpoint,
+                                                                          args.version))
+        from laya import Agent
+        agent = Agent(args.checkpoint, device=args.device)
 
-    class Pinned:
-        def predict(self, state, questions):
-            return router.predict(state, questions, model=args.model)
+        class Pinned:
+            def predict(self, state, questions):
+                return agent.predict(state, questions)
+    else:
+        from laya import Router
+        router = Router(device=args.device, max_loaded=1)
+
+        class Pinned:
+            def predict(self, state, questions):
+                return router.predict(state, questions, model=args.model)
     pinned = Pinned()
     pinned.predict({"request": "warm up"}, decision.LAYA_QUESTIONS)
 
@@ -92,19 +107,33 @@ def main():
     real = heard(args.trace, 500)
     laya = decision.Laya(router=pinned)
     rules = decision.Rules()
-    pairs, disagree = Counter(), Counter()
+    pairs, disagree, intents = Counter(), Counter(), Counter()
+    confidence, judge_ms = {"agree": [], "disagree": []}, []
     for t in real:
         r = rules.decide(t)
+        started = time.perf_counter()
         j = laya.judge(t)
+        judge_ms.append((time.perf_counter() - started) * 1000)
         rl = r.lane if r else "none"
         sl = j[0].lane if j else "failed"
         pairs[f"{rl}->{sl}"] += 1
         fast_r, fast_s = rl in ("fast", "instant"), sl == "fast"
         if fast_r != fast_s:
             disagree["laya_fast_rules_not" if fast_s else "rules_fast_laya_not"] += 1
-    out = {"latency": latency,
-           "real_requests": {"n": len(real), "lane_pairs_rules_to_laya": dict(pairs),
-                             "fast_disagreements": dict(disagree), "words_logged": False}}
+        if r and j:
+            intents["same" if r.intent == j[0].intent else "different"] += 1
+            if fast_s and r.intent in (decision.DO, decision.MISSION):
+                disagree["laya_fast_on_rules_action"] += 1      # the safety disagreement
+        if j:
+            confidence["agree" if rl == sl else "disagree"].append(j[1]["intent"])
+    out = {"latency": latency, "checkpoint": checkpoint or args.model,
+           "real_requests": {
+               "n": len(real), "lane_pairs_rules_to_laya": dict(pairs),
+               "fast_disagreements": dict(disagree), "intent_where_rules_decide": dict(intents),
+               "p_intent_mean": {k: round(sum(v) / len(v), 3) if v else None
+                                 for k, v in confidence.items()},
+               "judge_ms": {"p50": pct(judge_ms, 0.5), "p95": pct(judge_ms, 0.95)},
+               "words_logged": False}}
     print(json.dumps(out, indent=1))
     if args.out:
         json.dump(out, open(args.out, "w"), indent=1)

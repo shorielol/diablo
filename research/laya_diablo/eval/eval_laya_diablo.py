@@ -61,6 +61,40 @@ def decision_module():
     return decision
 
 
+CONFIG = os.path.join(HERE, "..", "configs", "train_v1.json")
+
+
+def expected_provenance(version="v1"):
+    """What a checkpoint must have been built from to be measured on this dataset."""
+    with open(CONFIG) as f:
+        base = json.load(f)["base"]
+    with open(os.path.join(DATA, version, "manifest.json")) as f:
+        dataset = json.load(f)
+    return {"contract_version": dataset["contract_version"],
+            "base_checkpoint": f"{base['repo']}:{base['subfolder']}",
+            "base_revision": base["revision"], "laya_version": base["laya_version"],
+            "dataset_version": dataset["dataset_version"],
+            "split_hashes": dataset["split_hashes"]}
+
+
+def verified_checkpoint(path, version="v1"):
+    """The checkpoint's manifest, or SystemExit: nothing unverified is ever measured."""
+    d = decision_module()
+    try:
+        with open(os.path.join(path, d.CHECKPOINT_MANIFEST)) as f:
+            manifest = json.load(f)
+        with open(CONFIG) as f:
+            base_weights = json.load(f)["base"]["weights_sha256"]
+    except Exception as e:
+        raise SystemExit(f"refused checkpoint {path}: unreadable ({type(e).__name__})")
+    if manifest.get("weights_sha256") == base_weights:
+        raise SystemExit(f"refused checkpoint {path}: these are the base weights, untrained")
+    ok, why = d.verify_checkpoint(path, expect=expected_provenance(version))
+    if not ok:
+        raise SystemExit(f"refused checkpoint {path}: {why}")
+    return manifest
+
+
 class RulesEngine:
     name = "rules"
 
@@ -94,12 +128,14 @@ class LayaEngine:
     name = "laya"
 
     def __init__(self, model="typed-decisions", checkpoint=None, device="cpu", calibration=None,
-                 predict_raw=None):
+                 predict_raw=None, version="v1"):
         self.d = decision_module()
+        self.manifest = None
         started = time.perf_counter()
         if predict_raw is not None:
             self.predict_raw = predict_raw
         elif checkpoint:
+            self.manifest = verified_checkpoint(checkpoint, version)
             from laya import Agent
             agent = Agent(checkpoint, device=device)
             self.predict_raw = lambda state, questions: agent.predict(state, questions)
@@ -264,8 +300,22 @@ def partials(engine, rows):
 # ─── Commands ────────────────────────────────────────────────────────────────
 
 def make_laya(args, calibration=None):
+    if args.checkpoint and calibration:
+        raise SystemExit("a trained checkpoint carries its own calibration; "
+                         "a second --calibration would apply temperatures twice")
     return LayaEngine(model=args.model, checkpoint=args.checkpoint, device=args.device,
-                      calibration=calibration)
+                      calibration=calibration, version=args.version)
+
+
+def provenance(manifest):
+    """The fields a report needs to be reproduced: which run, which weights, which fit."""
+    if not manifest:
+        return None
+    return {k: manifest.get(k) for k in ("run_id", "created_utc", "weights_sha256",
+                                         "base_revision", "laya_version", "dataset_version")} | {
+        "temperature": manifest["calibration"]["temperature"],
+        "best_epoch": manifest["training"].get("best_epoch"),
+        "optimizer_steps": manifest["training"].get("optimizer_steps")}
 
 
 def load_calibration(path):
@@ -288,7 +338,11 @@ def cmd_score(args):
                   device=args.device if args.engine != "rules" else "",
                   calibrated=bool(args.calibration) if args.engine != "rules" else None)
     if args.engine != "rules":
-        report["cold_s"] = (engine.laya if args.engine == "hybrid" else engine).cold_s
+        laya_engine = engine.laya if args.engine == "hybrid" else engine
+        report["cold_s"] = laya_engine.cold_s
+        report["checkpoint"] = provenance(laya_engine.manifest)
+        if laya_engine.manifest:        # the fitted temperatures live in the checkpoint's config
+            report["calibrated"] = laya_engine.manifest["calibration"]["fitted_on_split"]
     preds = report.pop("_preds")
     if args.engine != "rules":
         rules = score(RulesEngine(), rows)
@@ -436,7 +490,7 @@ def cmd_longrun(args):
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("score", "calibrate", "robustness", "scaling", "longrun"):
+    for name in ("verify", "score", "calibrate", "robustness", "scaling", "longrun"):
         p = sub.add_parser(name)
         p.add_argument("--version", default="v1")
         p.add_argument("--model", default="typed-decisions")
@@ -454,8 +508,22 @@ def main():
         if name == "longrun":
             p.add_argument("--n", type=int, default=3000)
     args = ap.parse_args()
-    {"score": cmd_score, "calibrate": cmd_calibrate, "robustness": cmd_robustness,
-     "scaling": cmd_scaling, "longrun": cmd_longrun}[args.cmd](args)
+    {"verify": cmd_verify, "score": cmd_score, "calibrate": cmd_calibrate,
+     "robustness": cmd_robustness, "scaling": cmd_scaling, "longrun": cmd_longrun}[args.cmd](args)
+
+
+def cmd_verify(args):
+    """Refuse (exit 1) or print the checkpoint's provenance, before anything is measured."""
+    if not args.checkpoint:
+        raise SystemExit("verify needs --checkpoint")
+    manifest = verified_checkpoint(args.checkpoint, args.version)
+    out = {"verified": True, "expected": expected_provenance(args.version),
+           "checkpoint": provenance(manifest), "calibration": manifest["calibration"],
+           "environment": manifest.get("environment"),
+           "validation_by_epoch": manifest["training"].get("validation_by_epoch")}
+    print(json.dumps(out, indent=1))
+    if args.out:
+        json.dump(out, open(args.out, "w"), indent=1)
 
 
 if __name__ == "__main__":

@@ -19,7 +19,9 @@ of it anywhere a person can see.
 | `train/prepare_items.py` | Dataset to Laya training items, with Laya's own sequence builder |
 | `train/train_diablo.py` | Upstream's RLCD recipe with Diablo's weighting, lane-based model selection and calibration on Diablo's calibration split |
 | `notebooks/laya_diablo_finetune_2xT4_kaggle.ipynb` | Runs the two scripts on Kaggle's free 2×T4 |
-| `eval/eval_laya_diablo.py` | Scores rules, Laya and hybrid on the same examples; calibration, option order, option count, long run |
+| `kaggle/bundle.py` | Builds the Kaggle dataset (training splits only) and the kernel metadata |
+| `eval/eval_laya_diablo.py` | Verifies a checkpoint, then scores rules, Laya and hybrid on the same examples; calibration, option order, option count, long run |
+| `eval/after_training.sh` | Everything after training, in order: verify, held-out test, calibration, robustness, long run, shadow, gate, then the private test |
 | `eval/promotion.py` | The gate: PROMOTE, HYBRID or KEEP_EXPERIMENTAL, from measured reports only |
 | `reports/` | Every measurement behind the current decision |
 | `checkpoints/` | Where a trained checkpoint goes. Never committed |
@@ -34,29 +36,41 @@ of it anywhere a person can see.
 - **Calibration is fitted on the calibration split**, written into the checkpoint's config, and
   `temperature_by_options` is removed so no inherited per-bucket temperature can override the fit.
   `decision.verify_checkpoint` refuses any checkpoint where that is not true.
-- **Every checkpoint carries `diablo_manifest.json`**: contract, base, Laya version, dataset version,
-  split hashes, training parameters, calibration and a weights hash. No manifest, no load.
+- **Every checkpoint carries `diablo_manifest.json`**: contract and its exact questions, base and its
+  pinned snapshot, Laya version, dataset version and split hashes, run id and time, environment,
+  training parameters and optimiser steps, calibration (temperatures, NLL before and after) and a
+  weights hash. No manifest, no load. `verify_checkpoint` also refuses a checkpoint that took no
+  optimiser step, and a fitted temperature outside [0.5, 5], which Laya would clamp at load.
+- **Nothing unverified is measured.** The evaluation checks the base snapshot, Laya version and split
+  hashes it was built for before it scores a checkpoint, and refuses the base weights themselves
+  (the dry run's output is byte-identical to them), whatever a manifest claims.
 
 ## Training (external GPU)
 
-1. Upload this folder to Kaggle as a Dataset named `diablo-laya`.
-2. Open `notebooks/laya_diablo_finetune_2xT4_kaggle.ipynb`, choose `GPU T4 x2`, Internet on, run all.
-3. Download `laya-diablo-decision-v1.zip`, unzip into `checkpoints/laya-diablo-decision-v1/`.
+1. `python research/laya_diablo/kaggle/bundle.py --user <kaggle username>` writes `dist/diablo-laya/`
+   (the training splits only: test and test_private are never uploaded) and `dist/kernel/`.
+2. With the Kaggle CLI signed in (`~/.kaggle/kaggle.json`):
 
-Local check without training: `python train/train_diablo.py ... --dry-run` runs one forward pass and
-the loss on CPU.
+       kaggle datasets create -p research/laya_diablo/dist/diablo-laya
+       kaggle kernels push    -p research/laya_diablo/dist/kernel --accelerator NvidiaTeslaT4
+       kaggle kernels status  <user>/laya-diablo-finetune
+       kaggle kernels output  <user>/laya-diablo-finetune -p ~/Downloads/laya-diablo-run
+
+   Or on kaggle.com: upload `dist/diablo-laya` as a private dataset named `diablo-laya`, import the
+   notebook, attach the dataset, Accelerator `GPU T4 x2`, Internet on, Run All.
+3. Unzip `laya-diablo-decision-v1.zip` into `checkpoints/laya-diablo-decision-v1/`.
+
+Local check without training: `train/train_diablo.py ... --dry-run` runs a forward pass, the loss and
+the whole save path on CPU. Its output has no optimiser steps, so `verify_checkpoint` refuses it.
 
 ## Evaluating a checkpoint
 
-    python eval/eval_laya_diablo.py score --engine rules --out reports/rules_test.json
-    python eval/eval_laya_diablo.py score --engine laya   --checkpoint checkpoints/<name> --device mps --out reports/laya_ft_test.json
-    python eval/eval_laya_diablo.py score --engine hybrid --checkpoint checkpoints/<name> --device mps --out reports/hybrid_ft_test.json
-    python eval/eval_laya_diablo.py longrun --checkpoint checkpoints/<name> --device mps --out reports/longrun_ft.json
-    python eval/promotion.py --rules reports/rules_test.json --laya reports/laya_ft_test.json \
-        --hybrid reports/hybrid_ft_test.json --longrun reports/longrun_ft.json \
-        --fine-tuned true --calibrated true
+    research/laya_diablo/eval/after_training.sh research/laya_diablo/checkpoints/laya-diablo-decision-v1
 
-These need `laya==0.3.20`, `transformers`, `torch` and `DIABLO_HOME` pointing at a Diablo install.
+It verifies the checkpoint, scores rules, the checkpoint and hybrid on the v1 test (MPS and CPU),
+checks calibration on the calibration split, option order, a 3,000-decision long run and shadow mode
+over real requests, runs the gate, and only then scores the private test. `LAYA_PYTHON` must have
+`laya==0.3.20` and import Diablo (`DIABLO_HOME`); the script's header shows one way to make it.
 
 ## Shadow mode
 

@@ -433,19 +433,25 @@ def lane_for(intent: str, needs_screen: bool, complete: bool) -> str:
 
 
 CHECKPOINT_MANIFEST = "diablo_manifest.json"
-_MANIFEST_KEYS = ("contract_version", "base_checkpoint", "laya_version", "dataset_version",
-                  "split_hashes", "training", "calibration", "weights_sha256")
+_MANIFEST_KEYS = ("contract_version", "questions", "base_checkpoint", "base_revision",
+                  "laya_version", "dataset_version", "split_hashes", "training", "calibration",
+                  "weights_sha256", "run_id")
+_APPLIED_TEMPERATURES = (0.5, 5.0)   # the model clamps any temperature outside this at load
 
 
-def verify_checkpoint(path: str, hash_weights: bool = True):
+def verify_checkpoint(path: str, hash_weights: bool = True, expect: dict = None):
     """
     (True, "") for a Diablo-trained checkpoint that can be trusted, or
     (False, why).
 
-    It must carry Diablo's manifest, be trained on this contract, and hold
+    It must carry Diablo's manifest, be trained on this contract and these
+    exact questions, have taken at least one optimiser step, and hold
     exactly the temperatures its calibration fitted: a temperature inherited
     from the base checkpoint that is still in the config would be used
     instead of the fitted one, per option-count bucket, without a word.
+
+    `expect` is manifest fields the caller requires exactly, such as the base
+    snapshot and the split hashes an evaluation was built for.
     """
     import hashlib
     import json
@@ -461,6 +467,17 @@ def verify_checkpoint(path: str, hash_weights: bool = True):
         return False, f"manifest lacks {missing}"
     if manifest["contract_version"] != LAYA_CONTRACT_VERSION:
         return False, "trained on another contract"
+    if manifest["questions"] != LAYA_QUESTIONS:
+        return False, "trained on other questions or options"
+    try:
+        trained = int((manifest.get("training") or {}).get("optimizer_steps") or 0) > 0
+    except (AttributeError, TypeError, ValueError):
+        trained = False
+    if not trained:
+        return False, "never trained: no optimiser steps"
+    for key, wanted in (expect or {}).items():
+        if manifest.get(key) != wanted:
+            return False, f"{key} is not the expected one"
     calibration = manifest.get("calibration") or {}
     if not calibration.get("fitted_on_split") == "calibration":
         return False, "not calibrated on the calibration split"
@@ -468,6 +485,9 @@ def verify_checkpoint(path: str, hash_weights: bool = True):
     if fitted is None or [round(float(t), 6) for t in cfg.get("temperature", [])] != \
             [round(float(t), 6) for t in fitted]:
         return False, "config temperatures are not the fitted ones"
+    lo, hi = _APPLIED_TEMPERATURES
+    if any(not lo <= float(t) <= hi for t in fitted):
+        return False, "a fitted temperature the model would clamp, so not the one applied"
     declared = calibration.get("temperature_by_options") or {}
     stale = {k: v for k, v in (cfg.get("temperature_by_options") or {}).items()
              if k not in declared or round(float(v), 6) != round(float(declared[k]), 6)}

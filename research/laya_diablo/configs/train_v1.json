@@ -4,6 +4,8 @@
   "base": {
     "repo": "convaiinnovations/laya",
     "subfolder": "typed-decisions",
+    "revision": "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851",
+    "weights_sha256": "4fa56de72383a9d3efa9cfa78955733c81b9fc8067a587ca4beb82c78107a24e",
     "laya_version": "0.3.20",
     "why": "the typed-decisions checkpoint is upstream's choice/noul specialist (0.766 vs 0.362 for the base English checkpoint on typed decisions)"
   },
