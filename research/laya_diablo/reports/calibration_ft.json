@@ -1,0 +1,26 @@
+{
+ "temperature": {
+  "intent": 0.8932,
+  "needs_screen": 0.6408,
+  "complete": 0.6795
+ },
+ "nll_before_after": {
+  "intent": [
+   0.4635,
+   0.4543
+  ],
+  "needs_screen": [
+   0.1087,
+   0.0806
+  ],
+  "complete": [
+   0.1275,
+   0.1036
+  ]
+ },
+ "fitted_on_split": "calibration",
+ "dataset_version": "v1",
+ "calibration_split_sha256": "13ee2c3141f77b0986664f5154d8345bd6dd472c0692ff662e8bd28918bbba1f",
+ "model": "/Users/shaurya/Desktop/30 Code/35 Diablo/research/laya_diablo/checkpoints/laya-diablo-decision-v1",
+ "n": 597
+}

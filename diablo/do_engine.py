@@ -371,10 +371,16 @@ def _screen_summary(window: Optional[Dict[str, Any]], limit: int = 900) -> str:
     parts = [f"Application: {window.get('app','?')}",
              f"Window: {window.get('title','')[:80]}"]
     try:
-        text = _sc.look(window.get("app", "")) or ""
-        if text.startswith("Error:") or text.startswith("Refused:"):
-            parts.append(text[:120])
-        else:
+        # THIS window, by id, not a window whose app happens to share a name.
+        # look() resolves by app name and two windows owned by the same
+        # interpreter are both "Python", so the planner was being shown a
+        # different window's text — or, measured on the controls fixture,
+        # "Error: I could not find a window matching 'Python'". _read_window_text
+        # was written for exactly this when the goal check hit it; the planner's
+        # own account never adopted it, and the benchmark stubbed this function
+        # out entirely, so nothing caught it.
+        text = _read_window_text(window) or ""
+        if text.strip():
             parts.append("On screen:\n" + text[:limit])
     except Exception:
         pass
@@ -388,6 +394,77 @@ def _screen_summary(window: Optional[Dict[str, Any]], limit: int = 900) -> str:
     return "\n".join(parts)
 
 
+# How many alternatives to show the planner when arbitration could not choose.
+BRIEF_ALTERNATIVES = 3
+
+
+def perception_brief(intent: str, window: Optional[Dict[str, Any]]) -> str:
+    """
+    What arbitration concluded about the thing the planner is trying to reach.
+
+    `_screen_summary` hands the planner raw material: OCR text and an
+    unranked list of every actionable control in the window. That is what the
+    planner benchmark stubbed, and it is the reason the 74.6% figure describes
+    a planner working from a perfect reading rather than a real one. It does
+    not consult `perception.read`, so nothing the last three builds produced —
+    fusion, the separation rule, the five verdicts, source provenance — ever
+    reached the planner.
+
+    This is the adapter. It asks the real production pipeline the same
+    question the planner is about to answer, and states the arbitrated result
+    in the terms the planner already understands: a control named the way a
+    person would say it. Built from `Reading`, `Candidate` and `Verdict`, not
+    from prose about them.
+
+    Returns an empty string when there is nothing useful to add, so the prompt
+    is unchanged in that case rather than padded.
+    """
+    if not intent or not intent.strip() or not window:
+        return ""
+    try:
+        from skills import perception
+    except Exception:
+        return ""
+    try:
+        reading = perception.read(intent, window)
+    except Exception:
+        return ""
+
+    verdict = getattr(reading, "verdict", "")
+    best = getattr(reading, "best", None)
+
+    if verdict == perception.Verdict.INVALID_OBSERVATION:
+        # The distinction Build 1.5 preserved, carried to the one consumer
+        # whose next move depends on it. "I could not see" must not reach the
+        # planner as "there is nothing there", because the right response to
+        # the first is to wait and look again.
+        why = ", ".join(getattr(reading, "unreadable", []) or []) or "unknown"
+        return (f"Perception: THE SCREEN COULD NOT BE READ ({why}). "
+                f"Do not assume the control is absent. Waiting and looking "
+                f"again is usually right.")
+
+    if best is None:
+        return (f"Perception: looked for {intent!r} and found no control "
+                f"matching it. The screen was readable.")
+
+    sources = "+".join(sorted(set(getattr(best, "sources", []) or []))) or "unknown"
+    line = (f"Perception: {verdict.upper()} — {best.label or 'an unlabelled control'!r} "
+            f"({best.role or 'control'}), confidence {best.confidence:.2f} "
+            f"from {sources}.")
+    if getattr(best, "enabled", None) is False:
+        line += " It reports itself as DISABLED; clicking it will do nothing."
+
+    if verdict == perception.Verdict.AMBIGUOUS:
+        others = [c.label or "an unlabelled control"
+                  for c in getattr(reading, "candidates", [])[1:BRIEF_ALTERNATIVES + 1]]
+        line += (f" Arbitration could not separate it from "
+                 f"{', '.join(repr(o) for o in others)}. "
+                 f"Naming one of these is a guess.")
+    elif verdict == perception.Verdict.LOW_CONFIDENCE:
+        line += " The evidence is weak; treat the name as provisional."
+    return line
+
+
 def model_planner(task: "Task", window: Optional[Dict[str, Any]]) -> Step:
     """
     Ask the local model for the next step. The default planner.
@@ -397,6 +474,18 @@ def model_planner(task: "Task", window: Optional[Dict[str, Any]]) -> Step:
     """
     from skills import local_brain
     done = "; ".join(s.describe() for s in task.steps[-4:]) or "nothing yet"
+    # NOT wired to perception_brief. Measured on the target fixture with a goal
+    # a click can actually satisfy ("FINISHED" on screen, reached by pressing
+    # Mark Done), six planner calls per arm:
+    #
+    #     without the brief   6/6  click "Mark Done"     correct
+    #     with the brief      5/6  wait                  wrong
+    #
+    # Handing the planner the arbitrated result as an extra prompt line made it
+    # hesitate on the case it should act on. The adapter is kept and tested
+    # because it demonstrably carries the structured result; wiring it in as
+    # additional prose is what failed, and tuning that wording until the 4B
+    # likes it is planner work, not an integration.
     prompt = (f"Goal: {task.goal.describe()}\n"
               f"The user asked: {task.intent!r}\n"
               f"Already done: {done}\n\n"

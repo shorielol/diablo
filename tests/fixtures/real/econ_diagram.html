@@ -1,0 +1,103 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Welfare Analysis of a Price Floor</title>
+<style>
+  @page { size: 1100px 780px; margin: 0; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1100px; height: 780px;
+    font: 15px/1.5 "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: #23252b;
+    background:
+      radial-gradient(1200px 600px at 20% -10%, #fdfdfb 0%, #f2f1ec 55%, #e9e7e0 100%);
+  }
+  .card {
+    position: absolute; left: 44px; top: 40px; width: 1012px; height: 700px;
+    background: linear-gradient(178deg, #ffffff 0%, #fbfaf7 100%);
+    border-radius: 10px;
+    box-shadow: 0 18px 44px rgba(28,28,34,.14), 0 2px 6px rgba(28,28,34,.10);
+  }
+  h1 { position: absolute; left: 76px; top: 64px; margin: 0;
+       font-size: 25px; font-weight: 600; letter-spacing: -.01em; }
+  .sub { position: absolute; left: 78px; top: 100px; font-size: 14px; color: #6d7079; }
+  svg { position: absolute; left: 44px; top: 40px; }
+  .axis { stroke: #3a3d45; stroke-width: 1.6; fill: none; }
+  .grid { stroke: #d9d7d0; stroke-width: 1; }
+  .tick { font-size: 12px; fill: #7a7d86; }
+  .curve-d { stroke: #c0392b; stroke-width: 3; fill: none; stroke-linecap: round; }
+  .curve-s { stroke: #1f6f8b; stroke-width: 3; fill: none; stroke-linecap: round; }
+  .floor   { stroke: #46484f; stroke-width: 1.8; stroke-dasharray: 7 5; fill: none; }
+  .anno    { font-size: 14px; fill: #1e2024; }
+  .legend  { font-size: 14px; fill: #1e2024; }
+</style>
+<body>
+<div class="card"></div>
+<h1>Welfare Analysis of a Price Floor</h1>
+<div class="sub">Market for winter tyres &middot; seasonal demand, quarter four</div>
+
+<svg width="1012" height="700" viewBox="0 0 1012 700">
+  <defs>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.85"
+      numOctaves="2" result="n"/><feColorMatrix in="n" type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.055"/></feComponentTransfer>
+    </filter>
+    <marker id="head" markerWidth="11" markerHeight="9" refX="10" refY="4.5"
+            orient="auto"><path d="M0,0 L11,4.5 L0,9 z" fill="#d97706"/></marker>
+  </defs>
+
+  <!-- gridlines -->
+  <g class="grid">
+    <line x1="120" y1="120" x2="800" y2="120"/><line x1="120" y1="220" x2="800" y2="220"/>
+    <line x1="120" y1="320" x2="800" y2="320"/><line x1="120" y1="420" x2="800" y2="420"/>
+    <line x1="220" y1="90"  x2="220" y2="520"/><line x1="360" y1="90" x2="360" y2="520"/>
+    <line x1="500" y1="90"  x2="500" y2="520"/><line x1="640" y1="90" x2="640" y2="520"/>
+  </g>
+
+  <!-- CONSUMER SURPLUS: violet, the only violet thing in the picture -->
+  <path d="M120,110 C230,168 330,232 420,300 L120,300 Z"
+        fill="#7c4dd6" fill-opacity="0.42"/>
+  <!-- PRODUCER SURPLUS: green -->
+  <path d="M120,470 C230,420 330,360 420,300 L120,300 Z"
+        fill="#2e9e63" fill-opacity="0.42"/>
+  <!-- DEADWEIGHT LOSS: warm grey, right of the crossing -->
+  <path d="M420,300 C470,268 510,246 556,232 L556,368 C505,350 466,328 420,300 Z"
+        fill="#8a8494" fill-opacity="0.72"/>
+
+  <!-- curves, genuinely curved -->
+  <path class="curve-d" d="M120,110 C260,190 400,286 800,470"/>
+  <path class="curve-s" d="M120,470 C260,392 400,292 800,110"/>
+  <path class="floor" d="M120,232 L640,232"/>
+
+  <!-- axes and ticks -->
+  <path class="axis" d="M120,70 L120,520 L820,520"/>
+  <text class="tick" x="72"  y="126">£90</text>
+  <text class="tick" x="72"  y="236">£70</text>
+  <text class="tick" x="72"  y="326">£50</text>
+  <text class="tick" x="72"  y="426">£30</text>
+  <text class="tick" x="206" y="544">2k</text>
+  <text class="tick" x="346" y="544">4k</text>
+  <text class="tick" x="486" y="544">6k</text>
+  <text class="tick" x="626" y="544">8k</text>
+  <text class="anno" x="806" y="476" fill="#c0392b" font-weight="600">D</text>
+  <text class="anno" x="806" y="116" fill="#1f6f8b" font-weight="600">S</text>
+  <text class="anno" x="648" y="228">price floor</text>
+
+  <!-- arrow annotation, pointing at the crossing from the lower right -->
+  <path d="M700,600 C620,596 520,470 452,338" stroke="#d97706" stroke-width="2.6"
+        fill="none" marker-end="url(#head)"/>
+  <text class="anno" x="706" y="606" fill="#9a5b06">free-market equilibrium</text>
+
+  <!-- the legend: every filled area is named HERE, far from the shapes -->
+  <g transform="translate(838,150)">
+    <rect x="0"  y="0"  width="17" height="17" fill="#7c4dd6" fill-opacity="0.42"/>
+    <text class="legend" x="26" y="14">Consumer surplus</text>
+    <rect x="0"  y="38" width="17" height="17" fill="#2e9e63" fill-opacity="0.42"/>
+    <text class="legend" x="26" y="52">Producer surplus</text>
+    <rect x="0"  y="76" width="17" height="17" fill="#8a8494" fill-opacity="0.72"/>
+    <text class="legend" x="26" y="90">Welfare loss</text>
+  </g>
+
+  <rect x="0" y="0" width="1012" height="700" filter="url(#grain)" opacity="0.5"
+        pointer-events="none"/>
+</svg>
+</body>

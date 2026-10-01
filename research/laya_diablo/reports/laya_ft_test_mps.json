@@ -1,0 +1,105 @@
+{
+ "engine": "laya",
+ "n": 585,
+ "lane_accuracy": 0.9368,
+ "false_fast": 31,
+ "false_fast_rate": 0.0831,
+ "false_fast_examples": [
+  "What does this sentence mean.",
+  "diablo what does this sentence mean",
+  "What's the error in Zen?",
+  "so plan my week",
+  "What's the time in Tokyo?",
+  "um, ok diablo, what's the time in tokyo",
+  "what is the time in tokyo",
+  "What's the the time in Tokyo?",
+  "so, diablo, what's the time in delhi",
+  "What's the time in London?",
+  "what is the time in london",
+  "What's the time in New York?",
+  "Ok diablo what's the time in New York?",
+  "What is the time in New York?",
+  "What's the time in Pune?",
+  "What's what's the time in Pune?",
+  "what's the time in pune real quick",
+  "What's the time in Pune for me?",
+  "What's the time in Sydney?",
+  "Uh what's the time in Sydney?"
+ ],
+ "false_agent": 6,
+ "fast_recall": 0.9717,
+ "abstained": 0,
+ "latency_ms": {
+  "p50": 150.33,
+  "p95": 157.23,
+  "max": 170.89
+ },
+ "peak_rss_mb": 2197.8,
+ "per_question": {
+  "intent": {
+   "answered": 585,
+   "accuracy": 0.8752
+  },
+  "needs_screen": {
+   "answered": 585,
+   "accuracy": 0.9658
+  },
+  "complete": {
+   "answered": 585,
+   "accuracy": 0.9709
+  }
+ },
+ "per_class_recall": {
+  "casual": 0.9091,
+  "complex": 0.52,
+  "do": 0.963,
+  "explanation": 1.0,
+  "factual": 0.978,
+  "guide": 0.9266,
+  "mission": 0.5,
+  "screen": 0.8841,
+  "unknown": 0.7
+ },
+ "macro_intent_accuracy": 0.8201,
+ "hard_negative_lane_accuracy": 0.986,
+ "safety": {
+  "n": 57,
+  "false_fast": 0
+ },
+ "calibration": {
+  "intent_ece": 0.0104,
+  "needs_screen_brier": 0.0319,
+  "complete_brier": 0.0297
+ },
+ "split": "test",
+ "dataset_version": "v1",
+ "model": "/Users/shaurya/Desktop/30 Code/35 Diablo/research/laya_diablo/checkpoints/laya-diablo-decision-v1",
+ "device": "mps",
+ "calibrated": "calibration",
+ "cold_s": 12.52,
+ "checkpoint": {
+  "run_id": "diablo-decision-v1-20260928T153213Z",
+  "created_utc": "2026-09-28T15:32:13Z",
+  "weights_sha256": "bcb8971585ac55d294da9ba579dedf425082fc6a565c14b59df03b1302722371",
+  "base_revision": "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851",
+  "laya_version": "0.3.20",
+  "dataset_version": "v1",
+  "temperature": [
+   1.3242601156234741,
+   1.0,
+   1.1714670658111572
+  ],
+  "best_epoch": 2,
+  "optimizer_steps": 564
+ },
+ "disagreements_vs_rules": {
+  "laya_correct": 91,
+  "rules_correct": 32
+ },
+ "partials": {
+  "sequences": 2,
+  "early_partials": 6,
+  "fast_on_partial": 0,
+  "lane_changes": 1
+ }
+}

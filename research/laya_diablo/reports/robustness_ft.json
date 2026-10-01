@@ -1,0 +1,99 @@
+{
+ "examples": 120,
+ "orders_each": 5,
+ "intent_stable_across_orders": 0.8917,
+ "examples_that_flip": [
+  [
+   "What's the deal with natural selection.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "What's the deal with entropy.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "What's the deal with Newton's third law.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "Hey diablo what's the deal with Newton's third law.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "what's the deal with an antibiotic sir",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "What's the deal with momentum.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "what's what's the deal with momentum",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "uh what's the deal with biodiversity",
+   [
+    "explanation",
+    "factual",
+    "unknown"
+   ]
+  ],
+  [
+   "What's the deal with a metaphor.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "erm what's the deal with the immune system",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "What's the deal with a balance sheet.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "what's the deal with a balance sheet for me",
+   [
+    "explanation",
+    "factual"
+   ]
+  ],
+  [
+   "What's the deal with a prime number.",
+   [
+    "explanation",
+    "factual"
+   ]
+  ]
+ ]
+}

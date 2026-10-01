@@ -53,8 +53,15 @@ def run():
             reply = conversation.talk("how's it going")
             r.check("it answers rather than raising", isinstance(reply, str) and reply,
                     reply[:60])
+            # "model" accepted alongside the older words. This checked for the
+            # literal "brain", which pinned the test to the phrase "My local
+            # brain stopped responding" — the phrase an incident on 2026-09-16
+            # showed he could not interpret, and that the conversation model,
+            # asked about, said did not exist. What this asserts is unchanged:
+            # the reply admits the model is unavailable instead of pretending.
             r.check("and says the brain is down", "offline" in reply.lower()
-                    or "brain" in reply.lower(), reply[:60])
+                    or "brain" in reply.lower() or "model" in reply.lower(),
+                    reply[:60])
     finally:
         local_brain.OLLAMA_HOST = was
 

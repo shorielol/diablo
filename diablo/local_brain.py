@@ -18,6 +18,7 @@ import os
 from skills import config  # noqa: E402
 import threading
 import re
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -91,11 +92,35 @@ class BrainOffline(Exception):
     on the exception.
     """
 
-    SPOKEN = "My local brain stopped responding, Sir."
+    # Plain words, not "local brain". That phrase is Diablo's own jargon and
+    # nothing he says explains it: asked afterwards why his local brain had
+    # stopped responding, the conversation model had never seen the phrase,
+    # denied it existed, and said it had misheard. The sentence was real and
+    # came from here; the explanation of it was invented.
+    SPOKEN = "I couldn't finish that, Sir. The model on this Mac didn't give me an answer."
 
     def __init__(self, detail: str, spoken: Optional[str] = None):
         super().__init__(detail)
         self.spoken = spoken or self.SPOKEN
+
+
+class ModelTimeout(BrainOffline):
+    """
+    The model was reachable and did not answer in time.
+
+    Separate because it is a different failure with a different cause. The
+    incident that produced this: an escalated request and a delegated research
+    job both ran past the 180-second limit while two other turns were using the
+    model, and both were reported as "Ollama unreachable" — which it was not.
+    It was busy.
+    """
+
+    SPOKEN = ("I couldn't finish that, Sir. The model on this Mac took too long "
+              "to answer, so I stopped waiting.")
+
+    def __init__(self, detail: str, seconds: Optional[float] = None):
+        super().__init__(detail, self.SPOKEN)
+        self.seconds = seconds
 
 
 class ContextFull(BrainOffline):
@@ -118,6 +143,37 @@ _CONTEXT_SIGNS = ("exceeds the available context", "exceeds context",
                   "context size", "context length", "context window",
                   "too many tokens", "maximum context", "prompt is too long",
                   "input is too long")
+
+
+def _timed_out(e: BaseException) -> bool:
+    """
+    Whether a transport failure was a timeout.
+
+    urllib reports it three ways: a bare TimeoutError on a slow read, socket.
+    timeout on older paths, and URLError wrapping either on a slow connect.
+    """
+    if isinstance(e, (TimeoutError, socket.timeout)):
+        return True
+    reason = getattr(e, "reason", None)
+    return isinstance(reason, (TimeoutError, socket.timeout))
+
+
+def _transport_failure(e: BaseException, timeout: float) -> BrainOffline:
+    """
+    Name what actually happened, instead of calling every failure unreachable.
+
+    The detail is for the trace and the log. It used to read "Ollama
+    unreachable" for a timeout and for a reply that was not valid JSON, and
+    in both of those cases Ollama had been reached.
+    """
+    if _timed_out(e):
+        return ModelTimeout(f"Ollama at {OLLAMA_HOST} did not answer within "
+                            f"{timeout}s: {e}", seconds=timeout)
+    if isinstance(e, ValueError):
+        return BrainOffline(f"Ollama at {OLLAMA_HOST} answered with an "
+                            f"unreadable body: {type(e).__name__}: {e}")
+    return BrainOffline(f"Ollama unreachable at {OLLAMA_HOST}: "
+                        f"{type(e).__name__}: {e}")
 
 
 def _refusal(code: int, body: str) -> BrainOffline:
@@ -207,7 +263,7 @@ def chat(
             detail = ""
         raise _refusal(e.code, detail)
     except Exception as e:
-        raise BrainOffline(f"Ollama unreachable at {OLLAMA_HOST}: {e}")
+        raise _transport_failure(e, timeout or REQUEST_TIMEOUT)
 
     if "error" in body:
         raise _refusal(200, str(body["error"]))
@@ -272,7 +328,7 @@ def chat_stream(
             detail = ""
         raise _refusal(e.code, detail)
     except Exception as e:
-        raise BrainOffline(f"Ollama unreachable at {OLLAMA_HOST}: {e}")
+        raise _transport_failure(e, timeout or REQUEST_TIMEOUT)
 
     with response:
         for raw in response:

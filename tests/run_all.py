@@ -67,6 +67,7 @@ SUITES = [
     ("test_memory.py",       True,  "what it remembers, and what it admits it does not"),
     ("test_rail.py",         False, "the sidebar: Diablo, then the work"),
     ("test_brain_errors.py", False, "what it says when the model refuses"),
+    ("test_model_failures.py", False, "timeouts, refusals and bad replies, told apart"),
     ("test_tidying.py",      False, "tidying a folder without reading it"),
     ("test_system.py",       False, "system tools, offline gating, screen sight"),
     ("test_voice.py",        False, "Voicebox, cache, and every fallback"),

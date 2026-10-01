@@ -1,0 +1,89 @@
+{
+ "verified": true,
+ "expected": {
+  "contract_version": "diablo-decision-v1",
+  "base_checkpoint": "convaiinnovations/laya:typed-decisions",
+  "base_revision": "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851",
+  "laya_version": "0.3.20",
+  "dataset_version": "v1",
+  "split_hashes": {
+   "calibration": "13ee2c3141f77b0986664f5154d8345bd6dd472c0692ff662e8bd28918bbba1f",
+   "test": "cd27ef8b796d861fdf8e398138e35c1dfd7ff5af54c1a6cf5bfdcac85bfb1da9",
+   "test_private": "01ce975fe218699d39c247430e2a38b83465b16a3603639dae7496c62cd9c9c7",
+   "train": "138632754c58954e8290dd3b3204d3f44f94d37cea757480bad315d77b6f2e79",
+   "validation": "3f9d661e58e05fef5eb6820505c8824c833945470c51ab74ea07a7a5397fe152"
+  }
+ },
+ "checkpoint": {
+  "run_id": "diablo-decision-v1-20260928T153213Z",
+  "created_utc": "2026-09-28T15:32:13Z",
+  "weights_sha256": "bcb8971585ac55d294da9ba579dedf425082fc6a565c14b59df03b1302722371",
+  "base_revision": "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851",
+  "laya_version": "0.3.20",
+  "dataset_version": "v1",
+  "temperature": [
+   1.3242601156234741,
+   1.0,
+   1.1714670658111572
+  ],
+  "best_epoch": 2,
+  "optimizer_steps": 564
+ },
+ "calibration": {
+  "fitted_on_split": "calibration",
+  "temperature": [
+   1.3242601156234741,
+   1.0,
+   1.1714670658111572
+  ],
+  "temperature_by_options": {},
+  "items": 1791,
+  "nll_before": {
+   "choice": 0.6923,
+   "noul": 0.2511
+  },
+  "nll_after": {
+   "choice": 0.6292,
+   "noul": 0.2454
+  }
+ },
+ "environment": {
+  "torch": "2.10.0+cu128",
+  "transformers": "5.0.0",
+  "cuda": "12.8",
+  "gpus": [
+   "Tesla T4",
+   "Tesla T4"
+  ],
+  "platform": "Batch"
+ },
+ "validation_by_epoch": [
+  {
+   "examples": 593,
+   "false_fast": 19,
+   "lane_accuracy": 0.9562,
+   "intent_accuracy": 0.8212,
+   "macro_intent": 0.8144,
+   "epoch": 1,
+   "minutes": 9.7
+  },
+  {
+   "examples": 593,
+   "false_fast": 11,
+   "lane_accuracy": 0.9578,
+   "intent_accuracy": 0.796,
+   "macro_intent": 0.7965,
+   "epoch": 2,
+   "minutes": 19.1
+  },
+  {
+   "examples": 593,
+   "false_fast": 16,
+   "lane_accuracy": 0.9528,
+   "intent_accuracy": 0.8145,
+   "macro_intent": 0.8114,
+   "epoch": 3,
+   "minutes": 28.5
+  }
+ ]
+}

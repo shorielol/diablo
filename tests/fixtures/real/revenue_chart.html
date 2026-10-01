@@ -1,0 +1,63 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Regional Revenue by Quarter</title>
+<style>
+  html,body{margin:0;padding:0}
+  body{width:1080px;height:760px;
+    font:15px/1.55 -apple-system,"SF Pro Text","Helvetica Neue",Arial,sans-serif;
+    color:#1b1d22;
+    background:linear-gradient(160deg,#eef1f6 0%,#e3e8f0 48%,#dfe4ee 100%);}
+  .panel{position:absolute;left:40px;top:36px;width:1000px;height:688px;
+    background:linear-gradient(180deg,#fff 0%,#fcfcfe 100%);border-radius:14px;
+    box-shadow:0 22px 50px rgba(22,26,40,.13),0 3px 8px rgba(22,26,40,.09);}
+  h1{position:absolute;left:76px;top:66px;margin:0;font-size:24px;font-weight:650;}
+  .sub{position:absolute;left:78px;top:102px;color:#6b7280;font-size:13.5px;}
+  .plot{position:absolute;left:112px;top:160px;width:830px;height:420px;}
+  .gl{position:absolute;left:0;width:830px;height:1px;background:#e6e8ee;}
+  .yl{position:absolute;left:-52px;width:44px;text-align:right;
+      font-size:12px;color:#8b909b;transform:translateY(-8px);}
+  .bar{position:absolute;bottom:0;width:86px;border-radius:5px 5px 0 0;
+       background:linear-gradient(180deg,#8d96a8 0%,#6f7890 100%);}
+  .bar{background:linear-gradient(180deg,#98a0b1 0%,#767e90 100%);
+       box-shadow:0 2px 5px rgba(20,24,35,.13);}
+  .bar.hot{background:linear-gradient(180deg,#f0a227 0%,#dc7f10 100%);
+           box-shadow:0 4px 12px rgba(200,120,10,.32);}
+  .xl{position:absolute;bottom:-30px;width:86px;text-align:center;
+      font-size:12.5px;color:#585e6b;}
+  .caption{position:absolute;left:788px;top:200px;font-size:14px;color:#8a5a08;
+           width:150px;font-weight:600;}
+  svg.arrow{position:absolute;left:560px;top:196px;}
+</style>
+<body>
+<div class="panel"></div>
+<h1>Regional Revenue by Quarter</h1>
+<div class="sub">Northern territory &middot; indexed, millions</div>
+
+<div class="plot" id="plot">
+  <div class="gl" style="top:0"></div><div class="yl" style="top:0">40</div>
+  <div class="gl" style="top:105px"></div><div class="yl" style="top:105px">30</div>
+  <div class="gl" style="top:210px"></div><div class="yl" style="top:210px">20</div>
+  <div class="gl" style="top:315px"></div><div class="yl" style="top:315px">10</div>
+  <div class="gl" style="top:420px;background:#c3c7d1"></div>
+  <div class="yl" style="top:420px">0</div>
+
+  <div class="bar" style="left:22px;height:148px"></div>
+  <div class="xl"  style="left:22px">Q1</div>
+  <div class="bar" style="left:168px;height:236px"></div>
+  <div class="xl"  style="left:168px">Q2</div>
+  <div class="bar" style="left:314px;height:190px"></div>
+  <div class="xl"  style="left:314px">Q3</div>
+  <div class="bar hot" style="left:460px;height:368px"></div>
+  <div class="xl"  style="left:460px">Q4</div>
+  <div class="bar" style="left:606px;height:214px"></div>
+  <div class="xl"  style="left:606px">Q5</div>
+</div>
+
+<svg class="arrow" width="300" height="120">
+  <defs><marker id="h2" markerWidth="12" markerHeight="10" refX="11" refY="5"
+    orient="auto"><path d="M0,0 L12,5 L0,10 z" fill="#c2410c"/></marker></defs>
+  <path d="M248,70 C200,74 140,56 78,28" stroke="#c2410c" stroke-width="2.8"
+        fill="none" marker-end="url(#h2)"/>
+</svg>
+<div class="caption">strongest quarter on record</div>
+</body>

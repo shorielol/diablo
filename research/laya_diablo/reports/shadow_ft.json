@@ -1,0 +1,75 @@
+{
+ "latency": {
+  "rules_only": {
+   "decide_ms_p50": 1.286,
+   "decide_ms_p95": 2.123,
+   "decide_ms_max": 60.843,
+   "shadow": {}
+  },
+  "rules_plus_shadow": {
+   "decide_ms_p50": 0.465,
+   "decide_ms_p95": 0.716,
+   "decide_ms_max": 26.081,
+   "shadow": {
+    "seen": 200,
+    "judged": 199,
+    "dropped": 1,
+    "failed": 0,
+    "agreed": 104
+   }
+  },
+  "shadow_judgement_ms": {
+   "p50": 196.6,
+   "p95": 216.4,
+   "n": 199
+  }
+ },
+ "checkpoint": {
+  "run_id": "diablo-decision-v1-20260928T153213Z",
+  "created_utc": "2026-09-28T15:32:13Z",
+  "weights_sha256": "bcb8971585ac55d294da9ba579dedf425082fc6a565c14b59df03b1302722371",
+  "base_revision": "55cf4c4ebb4ebe31b2550e8bdf3bd21b99753851",
+  "laya_version": "0.3.20",
+  "dataset_version": "v1",
+  "temperature": [
+   1.3242601156234741,
+   1.0,
+   1.1714670658111572
+  ],
+  "best_epoch": 2,
+  "optimizer_steps": 564
+ },
+ "real_requests": {
+  "n": 500,
+  "lane_pairs_rules_to_laya": {
+   "none->full": 332,
+   "agent->fast": 8,
+   "agent->agent": 98,
+   "none->fast": 16,
+   "fast->fast": 9,
+   "agent->full": 17,
+   "none->agent": 8,
+   "instant->fast": 8,
+   "instant->full": 3,
+   "fast->full": 1
+  },
+  "fast_disagreements": {
+   "laya_fast_rules_not": 24,
+   "laya_fast_on_rules_action": 3,
+   "rules_fast_laya_not": 4
+  },
+  "intent_where_rules_decide": {
+   "different": 45,
+   "same": 99
+  },
+  "p_intent_mean": {
+   "agree": 0.846,
+   "disagree": 0.624
+  },
+  "judge_ms": {
+   "p50": 197.506,
+   "p95": 213.71
+  },
+  "words_logged": false
+ }
+}

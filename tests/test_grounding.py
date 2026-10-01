@@ -111,12 +111,6 @@ def grounded(question, hits=None, reply=None, crop_used=None, frame=None,
     originals = (pointing.locate, display.capture_region, display.cursor,
                  grounding._ask_region, grounding._frame_for,
                  grounding._sized_for_model)
-    # The stub model answers in the pixels of the image it is handed (see
-    # region_reply), so it says so. Left to the default, grounding reads a
-    # qwen2.5vl answer in the model's resized canvas (B.4), and this double
-    # and the reader disagreed about where every box was.
-    saved_coords = os.environ.get("DIABLO_VISION_COORDS")
-    os.environ["DIABLO_VISION_COORDS"] = "pixels"
     try:
         pointing.locate = lambda *a, **k: list(hits if hits is not None else [anchor()])
         def capture(x, y, w, h):
@@ -139,10 +133,6 @@ def grounded(question, hits=None, reply=None, crop_used=None, frame=None,
         (pointing.locate, display.capture_region, display.cursor,
          grounding._ask_region, grounding._frame_for,
          grounding._sized_for_model) = originals
-        if saved_coords is None:
-            os.environ.pop("DIABLO_VISION_COORDS", None)
-        else:
-            os.environ["DIABLO_VISION_COORDS"] = saved_coords
 
 
 def run():
@@ -231,7 +221,6 @@ def run():
         # right-hand 60%. Measured there: the crop for "consumer surplus" ran
         # x 594..1480 and the region it was looking for ran x 235..624. The
         # model did not abstain; it confidently returned something else.
-        # B.4.1 made it the ladder: 0.34 -> 0.97 on the real rendered page.
         r.check("a named region is not looked for in a box around its caption",
                 target.PANEL not in wide and target.ANCHOR not in wide, str(wide))
         r.check("it starts from the whole window",
@@ -255,9 +244,20 @@ def run():
             if (crop[0] <= region[0] and region[0] + region[2] <= crop[0] + crop[2]
                     and crop[1] <= region[1] and region[1] + region[3] <= crop[1] + crop[3]):
                 covered = True
-            break
+                break
         r.check("the first crop that is formed contains the region",
                 covered, "the caption is 979 points from the thing it names")
+
+    with guard(r, "a cursor question still narrows around the cursor"):
+        window = {"id": 1, "app": "Preview", "x": 4.0, "y": 37.0,
+                  "width": 1476.0, "height": 905.0}
+        caption = {"text": "Consumer surplus", "left": 1214.0, "top": 358.0,
+                   "width": 150.0, "height": 18.0, "score": 0.98}
+        wanted = target.read_question("what is this")
+        crop = grounding._crop_for(target.PANEL, window, caption, (400.0, 600.0))
+        r.check("the panel follows the pointer, not a caption across the page",
+                crop is not None and crop[0] <= 400.0 <= crop[0] + crop[2]
+                and crop[1] <= 600.0 <= crop[1] + crop[3], str(crop))
         r.check("the full screen is the last resort, never the first",
                 wide[-1] == target.SCREEN_SCOPE and wide[0] != target.SCREEN_SCOPE,
                 str(wide))
@@ -436,6 +436,24 @@ def run():
                 prompt.index("`where`") < prompt.index("bbox_2d"))
         r.check("the caption is named as a caption, not as the answer",
                 "NOT the thing itself" in prompt)
+        # Found on real material: asked about the demand curve on a rendered
+        # PDF, the model returned the prompt's own example sentence verbatim —
+        # "the grey triangle just left of where the two lines cross" — and a
+        # box to match. The fixtures hid it because there the example happened
+        # to be the right answer. This project has been bitten by in-prompt
+        # examples being copied before; a model given a sentence will use it.
+        r.check("the prompt offers no sentence to copy",
+                "for example" not in prompt.lower()
+                and "grey triangle" not in prompt.lower(),
+                prompt[prompt.lower().find("first, in"):][:110])
+        for wording in ("where is the arrow", "where is the demand curve",
+                        "what is this"):
+            other = grounding._prompt(target.read_question(wording), WINDOW, anchor())
+            if "grey triangle" in other.lower() or "for example" in other.lower():
+                r.bad("no wording reintroduces an example", wording)
+                break
+        else:
+            r.ok("no wording reintroduces an example", "3 phrasings")
         got = grounded("where is the welfare loss region", reply=region_reply())
         r.check("the words it wrote are carried as evidence",
                 got.found and any("wedge" in e for e in got.candidate.evidence),

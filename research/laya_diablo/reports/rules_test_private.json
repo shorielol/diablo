@@ -12,10 +12,10 @@
  "abstained": 26,
  "latency_ms": {
   "p50": 0.04,
-  "p95": 0.07,
-  "max": 217.48
+  "p95": 0.09,
+  "max": 78.82
  },
- "peak_rss_mb": 70.6,
+ "peak_rss_mb": 33.1,
  "per_question": {
   "intent": {
    "answered": 24,

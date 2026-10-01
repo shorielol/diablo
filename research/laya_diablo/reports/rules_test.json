@@ -11,9 +11,9 @@
  "latency_ms": {
   "p50": 0.04,
   "p95": 0.05,
-  "max": 240.47
+  "max": 58.58
  },
- "peak_rss_mb": 74.5,
+ "peak_rss_mb": 35.5,
  "per_question": {
   "intent": {
    "answered": 452,
@@ -49,7 +49,7 @@
  "dataset_version": "v1",
  "model": "",
  "device": "",
- "calibration": null,
+ "calibrated": null,
  "partials": {
   "sequences": 2,
   "early_partials": 6,

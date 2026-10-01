@@ -317,11 +317,14 @@ def _crop_for(scope: str, window: Optional[Dict[str, Any]],
         return _clip(_around(anchor["left"], anchor["top"], anchor["width"],
                              anchor["height"], ANCHOR_PAD), window)
     if scope == target.PANEL:
+        # The cursor first, not the caption. PANEL is only reached by a cursor
+        # question now, and centring it on whatever words happened to match
+        # put the crop on the far side of the window from the pointer.
+        if cursor:
+            return _clip(_around(cursor[0], cursor[1], 1.0, 1.0, PANEL_PAD), window)
         if anchor:
             return _clip(_around(anchor["left"], anchor["top"], anchor["width"],
                                  anchor["height"], PANEL_PAD), window)
-        if cursor:
-            return _clip(_around(cursor[0], cursor[1], 1.0, 1.0, PANEL_PAD), window)
         return _window_crop(window)
     if scope == target.WINDOW:
         return _window_crop(window)
@@ -446,12 +449,20 @@ def _prompt(wanted: target.Target, window: Optional[Dict[str, Any]],
     # most of why this works at all. `where` comes first because the sentence
     # is what Diablo says out loud and because thinking before measuring costs
     # a second and loses nothing.
+    #
+    # No example sentence. There used to be one, and on a real rendered PDF
+    # the model returned it word for word when asked about the demand curve —
+    # "the grey triangle just left of where the two lines cross" — with a box
+    # to match. The fixtures could not show that, because on them the example
+    # happened to be the correct answer. A model handed a finished sentence
+    # reaches for it exactly when it is least sure, which is the moment it
+    # most needs to be looking instead.
     return (
         f"This is a crop of {app}.{near}\n\n"
         f"Outline the position of {job}\n\n"
-        f"First, in `where`, say in plain words where it is — for example "
-        f"“the grey triangle just left of where the two lines cross”. "
-        f"Then output its coordinates in this image as bbox_2d.\n\n"
+        f"First, in `where`, say in plain words where it is, using what is "
+        f"actually in this picture: its colour, its shape, and what it sits "
+        f"beside. Then output its coordinates in this image as bbox_2d.\n\n"
         f"If it is not visible in this crop, set found to false — that is a "
         f"useful answer and a wrong box is not.")
 
