@@ -579,12 +579,16 @@ def run_parallel(
     runner: Callable[[str, str, Callable, Optional[Callable], Optional[Callable]], str],
     attention: Attention,
     on_start: Optional[Callable[[str, str], None]] = None,
-    on_finish: Optional[Callable[[str, str, str], None]] = None,
+    on_finish: Optional[Callable[[str, str, str, bool], None]] = None,
 ) -> List[Tuple[str, str, str]]:
     """
     Run every piece at once and return (agent_id, subtask, result) in the
     order they were handed out, not the order they finished. Order matters
     because the merged answer is read aloud and should follow the request.
+
+    `on_finish` is told whether the agent finished (True) or failed (False).
+    A failure still comes back as a sentence to be read out, but the record of
+    it must not say done: the sentence alone was all that said otherwise.
     """
     results: List[Optional[Tuple[str, str, str]]] = [None] * len(pieces)
     threads: List[threading.Thread] = []
@@ -603,16 +607,18 @@ def run_parallel(
             if text:
                 collected.append(str(text))
 
+        ok = True
         try:
             answer = runner(subtask, agent_id, quiet,
                             attention.ask_for(name), attention.confirm_for(name))
         except Exception as e:
+            ok = False
             answer = f"{name} could not finish that: {type(e).__name__}: {e}"
         results[index] = (agent_id, subtask, (answer or "").strip() or
                           (collected[-1] if collected else "Nothing came back."))
         if on_finish:
             try:
-                on_finish(agent_id, subtask, results[index][2])
+                on_finish(agent_id, subtask, results[index][2], ok)
             except Exception:
                 pass
 

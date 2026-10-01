@@ -133,6 +133,28 @@ CLARIFY_STRICT = os.getenv("DIABLO_CLARIFY_STRICT", "1") not in ("0", "", "false
 
 # ─── Job Store ───────────────────────────────────────────────────────────────
 
+# A job, and each agent's part of one, only moves forward. A record that has
+# finished stays as it finished: a second completion, a late failure, or a
+# restart of something interrupted is refused rather than written over it.
+# Before this, finished work became "failed" when saying the result failed.
+_NEXT_STATUS = {"queued": ("running", "failed"), "running": ("done", "failed")}
+FINAL_STATUSES = ("done", "failed", "interrupted")
+
+
+def _may_write(record: dict, fields: dict) -> bool:
+    current = record.get("status")
+    if current in FINAL_STATUSES:
+        return False
+    wanted = fields.get("status")
+    return wanted is None or wanted in _NEXT_STATUS.get(current, ())
+
+
+def _refused(key: str, record: Optional[dict], fields: dict) -> None:
+    trace.event("job", id=key, state="refused",
+                current=(record or {}).get("status", "missing"),
+                wanted=fields.get("status", "fields"))
+
+
 class JobStore:
     """Thread-safe, disk-backed record of every task."""
 
@@ -190,24 +212,29 @@ class JobStore:
             return before - len(self._jobs)
 
 
-    def update(self, job_id: str, **fields) -> None:
+    def update(self, job_id: str, **fields) -> bool:
+        """Write fields onto a job if its lifecycle allows it. False if refused."""
         with self._lock:
-            for job in self._jobs:
-                if job["id"] == job_id:
-                    job.update(fields)
-                    break
+            job = next((j for j in self._jobs if j["id"] == job_id), None)
+            if job is None or not _may_write(job, fields):
+                _refused(job_id, job, fields)
+                return False
+            job.update(fields)
             self._flush()
+            return True
 
-    def update_part(self, job_id: str, index: int, **fields) -> None:
-        """One agent's slice of a fanned-out job."""
+    def update_part(self, job_id: str, index: int, **fields) -> bool:
+        """One agent's slice of a fanned-out job, under the same rules."""
         with self._lock:
-            for job in self._jobs:
-                if job["id"] == job_id:
-                    parts = job.get("parts") or []
-                    if 0 <= index < len(parts):
-                        parts[index].update(fields)
-                    break
+            job = next((j for j in self._jobs if j["id"] == job_id), None)
+            parts = (job or {}).get("parts") or []
+            part = parts[index] if 0 <= index < len(parts) else None
+            if part is None or not _may_write(part, fields):
+                _refused(f"{job_id}:{index}", part, fields)
+                return False
+            part.update(fields)
             self._flush()
+            return True
 
     def active(self) -> List[dict]:
         with self._lock:
@@ -243,15 +270,17 @@ def _push(event: str, **data) -> None:
         pass
 
 
-def _fan_out(job: dict, ask, confirm) -> str:
+def _fan_out(job: dict, ask, confirm) -> tuple:
     """
-    Several agents on one request, at the same time.
+    Several agents on one request, at the same time. Returns (summary,
+    every_part_failed).
 
     Every sub-agent gets a silent `speak` — four voices at once is noise — and
     they share one `Attention`, so only one of them can hold the microphone to
     ask a question. What comes back is stitched together with attribution and
     that is the only thing said out loud.
     """
+    failed: list = []
     pieces = [(p["task"], p["agent"]) for p in job["parts"]]
     index_of = {(t, a): i for i, (t, a) in enumerate(pieces)}
     attention = roster.Attention(ask, confirm)
@@ -274,18 +303,21 @@ def _fan_out(job: dict, ask, confirm) -> str:
         _push("agent_started", id=job["id"], agent=agent_id, task=subtask)
         trace.event("agent", agent=agent_id, task=subtask[:120], state="started")
 
-    def finished(agent_id, subtask, answer):
+    def finished(agent_id, subtask, answer, ok=True):
         i = index_of.get((subtask, agent_id), 0)
-        store.update_part(job["id"], i, status="done", finished_at=time.time(),
+        state = "done" if ok else "failed"
+        if not ok:
+            failed.append(agent_id)
+        store.update_part(job["id"], i, status=state, finished_at=time.time(),
                           summary=answer[:400])
-        _push("agent_done", id=job["id"], agent=agent_id, summary=answer[:200])
-        trace.event("agent", agent=agent_id, state="done", summary=answer[:120])
+        _push("agent_done", id=job["id"], agent=agent_id, summary=answer[:200], ok=ok)
+        trace.event("agent", agent=agent_id, state=state, summary=answer[:120])
 
     started_at = time.time()
     results = roster.run_parallel(pieces, runner, attention, started, finished)
-    trace.event("fan_out", agents=[a for _t, a in pieces],
+    trace.event("fan_out", agents=[a for _t, a in pieces], failed=failed,
                 elapsed_ms=int((time.time() - started_at) * 1000))
-    return roster.merge(results)
+    return roster.merge(results), len(failed) == len(pieces)
 
 
 def _speak_with_metadata(speak, text: str, **metadata):
@@ -310,54 +342,94 @@ def _speak_with_metadata(speak, text: str, **metadata):
     return speak(text)
 
 
+def _deliver(speak, job: dict, text: str, kind: str) -> None:
+    """
+    Say how a job ended. Saying it can fail; what the job did does not change.
+
+    Kept apart from the work because it used to sit inside the same try: a
+    voice that failed on the result rewrote finished work as failed, and one
+    that failed again on the apology took the worker thread down with it,
+    leaving every later job queued until the app restarted.
+    """
+    try:
+        _speak_with_metadata(speak, text, speech_id=f"job:{job['id']}:{kind}",
+                             speech_kind="TASK_RESULT")
+    except Exception as e:
+        trace.event("job", id=job["id"], state="undelivered",
+                    error=f"{type(e).__name__}: {e}"[:160])
+        print(f"  [Tasks] Job {job['id']} ended but could not be said: "
+              f"{type(e).__name__}: {e}")
+
+
+def _run_job(job: dict, speak, ask, confirm) -> None:
+    store.update(job["id"], status="running", started_at=time.time())
+    _push("job_started", id=job["id"], task=job["task"],
+          agent=job.get("agent", "diablo"), parts=job.get("parts") or [])
+    try:
+        if job.get("parts"):
+            summary, every_part_failed = _fan_out(job, ask, confirm)
+        else:
+            # One agent is the common path, not the fan-out, so the working
+            # has to be kept here too — a fix that only covered fan-outs
+            # would miss almost every research request he actually makes.
+            working: list = []
+            summary = agent_core.run(job["task"], speak, ask=ask,
+                                     confirm=confirm, working=working)
+            every_part_failed = False
+            conversation.session.record_task(
+                job.get("agent") or "diablo", job["task"], working, summary,
+                task_id=job["id"], generation=job.get("generation"))
+    except Exception as e:
+        store.update(job["id"], status="failed", finished_at=time.time(),
+                     summary=str(e))
+        # A failure is an event like a success: without it the window and
+        # the orb go on showing the job as running until something else
+        # happens to refresh them.
+        _push("job_failed", id=job["id"], agent=job.get("agent", "diablo"))
+        print(f"  [Tasks] Job {job['id']} failed: {type(e).__name__}: {e}")
+        _deliver(speak, job, "That one came apart on me, Sir. The details are in the log.",
+                 "failure")
+        return
+
+    if every_part_failed:
+        # Each agent's failure is already in the merged sentence, by name. The
+        # job did nothing, so it is not done.
+        store.update(job["id"], status="failed", finished_at=time.time(),
+                     summary=summary)
+        _push("job_failed", id=job["id"], agent=job.get("agent", "diablo"),
+              summary=summary[:400])
+        _deliver(speak, job, summary, "failure")
+        return
+
+    store.update(job["id"], status="done", finished_at=time.time(), summary=summary)
+    _push("job_done", id=job["id"], agent=job.get("agent", "diablo"),
+          summary=summary[:400])
+    try:
+        # Fold the result into the conversation so a follow-up like "what
+        # did you find?" has something to refer back to.
+        conversation.session.remember(
+            "assistant", summary, generation=job.get("generation"))
+        # Whoever did the work is now who he is talking to, so "and the
+        # other one?" reaches them rather than starting again with the
+        # orchestrator. A fan-out leaves focus alone: several of them
+        # answered and picking one would be a guess.
+        if not job.get("parts") and job.get("agent") not in (None, "diablo"):
+            conversation.session.set_focus(
+                job["agent"], generation=job.get("generation"))
+    except Exception as e:
+        print(f"  [Tasks] Job {job['id']} done but not remembered: {type(e).__name__}: {e}")
+    _deliver(speak, job, summary, "result")
+
+
 def _worker() -> None:
     while True:
         job, speak, ask, confirm = _queue.get()
         try:
-            store.update(job["id"], status="running", started_at=time.time())
-            _push("job_started", id=job["id"], task=job["task"],
-                  agent=job.get("agent", "diablo"), parts=job.get("parts") or [])
-            if job.get("parts"):
-                summary = _fan_out(job, ask, confirm)
-            else:
-                # One agent is the common path, not the fan-out, so the working
-                # has to be kept here too — a fix that only covered fan-outs
-                # would miss almost every research request he actually makes.
-                working: list = []
-                summary = agent_core.run(job["task"], speak, ask=ask,
-                                         confirm=confirm, working=working)
-                conversation.session.record_task(
-                    job.get("agent") or "diablo", job["task"], working, summary,
-                    task_id=job["id"], generation=job.get("generation"))
-            store.update(job["id"], status="done", finished_at=time.time(),
-                         summary=summary)
-            # Fold the result into the conversation so a follow-up like "what
-            # did you find?" has something to refer back to.
-            conversation.session.remember(
-                "assistant", summary, generation=job.get("generation"))
-            # Whoever did the work is now who he is talking to, so "and the
-            # other one?" reaches them rather than starting again with the
-            # orchestrator. A fan-out leaves focus alone: several of them
-            # answered and picking one would be a guess.
-            if not job.get("parts") and job.get("agent") not in (None, "diablo"):
-                conversation.session.set_focus(
-                    job["agent"], generation=job.get("generation"))
-            _push("job_done", id=job["id"], agent=job.get("agent", "diablo"),
-                  summary=summary[:400])
-            _speak_with_metadata(
-                speak, summary, speech_id=f"job:{job['id']}:result",
-                speech_kind="TASK_RESULT")
+            _run_job(job, speak, ask, confirm)
         except Exception as e:
-            store.update(job["id"], status="failed", finished_at=time.time(),
-                         summary=str(e))
-            # A failure is an event like a success: without it the window and
-            # the orb go on showing the job as running until something else
-            # happens to refresh them.
-            _push("job_failed", id=job["id"], agent=job.get("agent", "diablo"))
-            print(f"  [Tasks] Job {job['id']} failed: {type(e).__name__}: {e}")
-            _speak_with_metadata(
-                speak, "That one came apart on me, Sir. The details are in the log.",
-                speech_id=f"job:{job['id']}:failure", speech_kind="TASK_RESULT")
+            # Nothing a job does may stop the worker: there is usually only one,
+            # and without it every later job waits on a queue nobody reads.
+            print(f"  [Tasks] Job {job['id']} left the worker: {type(e).__name__}: {e}")
         finally:
             _queue.task_done()
 
@@ -614,6 +686,11 @@ def handle(
                     generation=generation)
     if not pieces:
         return "inline"
+    # The agent is given the delegated work, not the sentence it came in. The
+    # direct half has already run above; handing over the whole request asked
+    # the agent to do it a second time.
+    if direct_parts:
+        task = " and ".join(part for part, _agent in pieces)
 
     def background_speak(message, **kwargs):
         """Mark worker progress separately from the immediate user reply."""

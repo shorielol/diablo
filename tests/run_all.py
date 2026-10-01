@@ -59,6 +59,7 @@ SUITES = [
     ("test_fusion.py",         False, "how arbitration decides between candidates"),
     ("test_handoff.py",        False, "structured perception reaching a real consumer"),
     ("test_roster.py",       True,  "delegation: who gets what, and several at once"),
+    ("test_delegation_lifecycle.py", False, "delegated work: bounded, honest, forward-only"),
     ("test_scenarios.py",    True,  "what a person says, and what actually happens"),
     ("test_walkthrough.py",  False, "the marker on screen, and waiting for a click"),
     ("test_vision_maths.py", False, "reading a question off the screen, drawing the working"),

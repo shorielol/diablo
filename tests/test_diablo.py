@@ -220,6 +220,8 @@ check_true("out-of-steps report", len(agent_core.run("endless", print)) > 0)
 print("\nJob store")
 delegation_tool.store.add({"id": "t1", "task": "tidy", "status": "queued"})
 check("queued counts as active", len(delegation_tool.store.active()), 1)
+# A job is done only after it ran: queued -> done is refused by the store.
+delegation_tool.store.update("t1", status="running")
 delegation_tool.store.update("t1", status="done", summary="Tidied, Sir.")
 check("done leaves the active list", len(delegation_tool.store.active()), 0)
 check("summary persisted", delegation_tool.store.recent(1)[0]["summary"], "Tidied, Sir.")
