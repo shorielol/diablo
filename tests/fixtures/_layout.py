@@ -32,6 +32,34 @@ def _main_height() -> float:
     return display.main_height()
 
 
+def new_window(rect, style, at=None):
+    """
+    The fixture's window: where the fixture says, or at DIABLO_FIXTURE_AT.
+
+    `at` and DIABLO_FIXTURE_AT are "x,y" in AppKit screen coordinates
+    (bottom-left origin). The window is created for the screen that holds that
+    point; without naming the screen, AppKit moved a window asked for on the
+    Retina display at x=-1512 back onto the main display. Unset, nothing
+    changes: the window opens where every suite expects it.
+    """
+    from AppKit import NSBackingStoreBuffered, NSMakeRect, NSScreen, NSWindow
+    x, y, width, height = rect
+    place = at or os.getenv("DIABLO_FIXTURE_AT", "").strip()
+    if place:
+        x, y = (float(v) for v in str(place).split(","))
+    home = next((screen for screen in NSScreen.screens()
+                 if screen.frame().origin.x <= x < screen.frame().origin.x + screen.frame().size.width
+                 and screen.frame().origin.y <= y < screen.frame().origin.y + screen.frame().size.height),
+                None)
+    if home is None:
+        return NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(x, y, width, height), style, NSBackingStoreBuffered, False)
+    window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_screen_(
+        NSMakeRect(x, y, width, height), style, NSBackingStoreBuffered, False, home)
+    window.setFrameOrigin_((x, y))
+    return window
+
+
 def rect_in(window, view, rect=None) -> dict:
     """
     One rectangle of one view, in Quartz screen points.

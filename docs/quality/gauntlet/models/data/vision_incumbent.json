@@ -1,0 +1,5653 @@
+{
+ "summary": {
+  "ax": {
+   "n": 50,
+   "good": 40,
+   "verdicts": {
+    "abstained": 4,
+    "correct": 36,
+    "not_found": 10
+   },
+   "wrong_or_off": 0,
+   "p50_ms": 12.5,
+   "p95_ms": 38.6,
+   "median_centre_error_px_when_correct": 0.0,
+   "peak_gb": null
+  },
+  "fusion": {
+   "n": 50,
+   "good": 41,
+   "verdicts": {
+    "abstained": 4,
+    "ambiguity_missed": 2,
+    "ambiguous_right": 4,
+    "correct": 33,
+    "in_top3": 3,
+    "not_found": 4
+   },
+   "wrong_or_off": 0,
+   "p50_ms": 193.2,
+   "p95_ms": 628.2,
+   "median_centre_error_px_when_correct": 0.0,
+   "peak_gb": null
+  },
+  "ocr": {
+   "n": 50,
+   "good": 39,
+   "verdicts": {
+    "abstained": 4,
+    "correct": 35,
+    "not_found": 10,
+    "wrong_target": 1
+   },
+   "wrong_or_off": 1,
+   "p50_ms": 220.4,
+   "p95_ms": 427.5,
+   "median_centre_error_px_when_correct": 0.8,
+   "peak_gb": null
+  },
+  "qwen25vl": {
+   "n": 50,
+   "good": 48,
+   "verdicts": {
+    "abstained": 4,
+    "correct": 44,
+    "not_found": 1,
+    "wrong_target": 1
+   },
+   "wrong_or_off": 1,
+   "p50_ms": 3027.4,
+   "p95_ms": 9777.1,
+   "median_centre_error_px_when_correct": 1.3,
+   "peak_gb": null
+  },
+  "vision": {
+   "n": 50,
+   "good": 8,
+   "verdicts": {
+    "abstained": 4,
+    "correct": 4,
+    "in_top3": 2,
+    "not_found": 40
+   },
+   "wrong_or_off": 0,
+   "p50_ms": 19.7,
+   "p95_ms": 15447.0,
+   "median_centre_error_px_when_correct": 0.0,
+   "peak_gb": null
+  }
+ },
+ "records": [
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 10020.4,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 1.3,
+   "iou": 0.699,
+   "conf": 0.95
+  },
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 93.4,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 1104.3,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.5,
+   "iou": 0.444
+  },
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 27.8,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 221.2,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.969,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3027.4,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.8,
+   "iou": 0.778,
+   "conf": 0.95
+  },
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 15.2,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 263.8,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.5,
+   "iou": 0.444
+  },
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 19.7,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 253.6,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.969,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3349.2,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 7.7,
+   "iou": 0.428,
+   "conf": 0.95
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8.7,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "Submit",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 400.5,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "Submit",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.2,
+   "iou": 0.444
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 24.3,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 15.9,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "Submit",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2681.9,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 1.3,
+   "iou": 0.272,
+   "conf": 0.95
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 14.7,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "Submit",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 220.0,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "Submit",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.2,
+   "iou": 0.444
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 14.0,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 6.0,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "Submit",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3378.7,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_copy"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 5.8,
+   "iou": 0.715,
+   "conf": 0.95
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 13.8,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save_copy",
+    "save"
+   ],
+   "top_label": "Save a Copy",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.923
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 252.8,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save_copy",
+    "save"
+   ],
+   "top_label": "Save a Copy",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.5,
+   "iou": 0.308
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 20.6,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 13.1,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save_copy",
+    "save"
+   ],
+   "top_label": "Save a Copy",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.923
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2975.7,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_copy"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.3,
+   "iou": 0.809,
+   "conf": 0.95
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 19.0,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save_copy",
+    "save"
+   ],
+   "top_label": "Save a Copy",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.923
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 227.7,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save_copy",
+    "save"
+   ],
+   "top_label": "Save a Copy",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.5,
+   "iou": 0.308
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 18.8,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 9.2,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save_copy",
+    "save"
+   ],
+   "top_label": "Save a Copy",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.923
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3003.8,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 7.1,
+   "iou": 0.596,
+   "conf": 0.95
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 13.9,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 220.4,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.5,
+   "iou": 0.444
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 17.6,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 231.8,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.99,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2785.5,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 1.3,
+   "iou": 0.715,
+   "conf": 0.95
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 11.5,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 302.9,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.5,
+   "iou": 0.444
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 17.3,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 220.3,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.99,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3167.1,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 7.4,
+   "iou": 0.664,
+   "conf": 0.95
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 13.3,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.85,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 278.2,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.85,
+   "centre_error_px": 0.5,
+   "iou": 0.444
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 39.6,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "ambiguity_missed",
+   "good": false,
+   "ms": 223.4,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.926,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2723.8,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 1.3,
+   "iou": 0.746,
+   "conf": 0.95
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 15.8,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.85,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 240.4,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.85,
+   "centre_error_px": 0.5,
+   "iou": 0.444
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 12.7,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "ambiguity_missed",
+   "good": false,
+   "ms": 191.6,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.926,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2923.8,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 72.4,
+   "iou": 0.041,
+   "conf": 0.95
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 11.9,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "Subscribe",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.85,
+   "centre_error_px": 0.0,
+   "iou": 0.905
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 255.7,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "Subscribe",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.85,
+   "centre_error_px": 27.8,
+   "iou": 0.341
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 21.0,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 201.6,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "Subscribe",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.926,
+   "centre_error_px": 0.0,
+   "iou": 0.905
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3072.0,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 72.4,
+   "iou": 0.05,
+   "conf": 0.95
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 16.0,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "Subscribe",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.85,
+   "centre_error_px": 0.0,
+   "iou": 0.905
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 307.2,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "Subscribe",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.85,
+   "centre_error_px": 27.8,
+   "iou": 0.341
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 21.9,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 220.8,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "Subscribe",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.926,
+   "centre_error_px": 0.0,
+   "iou": 0.905
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3377.8,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 39.8,
+   "iou": 0.285,
+   "conf": 0.95
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 14.7,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "Notify me",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.905
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 261.7,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "Notify me",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 28.5,
+   "iou": 0.335
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 17.2,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 5.7,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "Notify me",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.905
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2689.0,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 39.3,
+   "iou": 0.293,
+   "conf": 0.95
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 10.0,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "Notify me",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.905
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 696.0,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "Irf Notify me",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.91,
+   "centre_error_px": 38.5,
+   "iou": 0.335
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 64.9,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8.1,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "Notify me",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.905
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2618.1,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.85,
+   "centre_error_px": 1.3,
+   "iou": 0.569,
+   "conf": 0.85
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 10.0,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "Archive",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 202.3,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "Archive",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.2,
+   "iou": 0.444
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 17.3,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 5.7,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "Archive",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2743.9,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.8,
+   "iou": 0.671,
+   "conf": 0.95
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 6.8,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "Archive",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 240.8,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "Archive",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.2,
+   "iou": 0.444
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 19.3,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 5.3,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "Archive",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3172.1,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "name_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.3,
+   "iou": 0.993,
+   "conf": 0.95
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 9.8,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 227.8,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 21.6,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 208.7,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2517.1,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "name_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.6,
+   "iou": 0.971,
+   "conf": 0.95
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 13.8,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 199.2,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 22.0,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 215.6,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "wrong_target",
+   "good": false,
+   "ms": 2720.3,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "name_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 40.0,
+   "iou": 0.0,
+   "conf": 0.95
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 12.7,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 260.2,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 21.3,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 242.6,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 10828.7,
+   "action": "abstained",
+   "error": "",
+   "candidates": 0,
+   "conf": 0.5
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 58.5,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 427.5,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 37.3,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 219.9,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2526.0,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_left"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.4,
+   "iou": 0.696,
+   "conf": 0.95
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 10.2,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_left",
+    "edge_right",
+    "edge_bottom"
+   ],
+   "top_label": "Left Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.918
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 198.1,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_left",
+    "edge_right",
+    "edge_bottom"
+   ],
+   "top_label": "Left Edge",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 1.3,
+   "iou": 0.417
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 21.0,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8.9,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_left",
+    "edge_right",
+    "edge_bottom"
+   ],
+   "top_label": "Left Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.918
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2194.1,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_left"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.0,
+   "iou": 0.742,
+   "conf": 1
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 11.8,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_left",
+    "edge_right",
+    "edge_bottom"
+   ],
+   "top_label": "Left Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.918
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 191.9,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_left",
+    "edge_right",
+    "edge_bottom"
+   ],
+   "top_label": "Left Edge",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 1.3,
+   "iou": 0.417
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 19.3,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 5.1,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_left",
+    "edge_right",
+    "edge_bottom"
+   ],
+   "top_label": "Left Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.918
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2706.6,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.5,
+   "iou": 0.745,
+   "conf": 0.95
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 6.9,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_right",
+    "edge_left",
+    "edge_bottom"
+   ],
+   "top_label": "Right Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.918
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 186.2,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_right",
+    "edge_left",
+    "edge_bottom"
+   ],
+   "top_label": "Right Edge",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 1.3,
+   "iou": 0.417
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 16.5,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 5.1,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_right",
+    "edge_left",
+    "edge_bottom"
+   ],
+   "top_label": "Right Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.918
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2389.7,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 1.4,
+   "iou": 0.775,
+   "conf": 0.95
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 14.8,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_right",
+    "edge_left",
+    "edge_bottom"
+   ],
+   "top_label": "Right Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.918
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 182.6,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_right",
+    "edge_left",
+    "edge_bottom"
+   ],
+   "top_label": "Right Edge",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 1.3,
+   "iou": 0.417
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 16.1,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 5.3,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_right",
+    "edge_left",
+    "edge_bottom"
+   ],
+   "top_label": "Right Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.918
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2419.1,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_bottom"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 1.5,
+   "iou": 0.76,
+   "conf": 0.95
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 16.2,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_bottom",
+    "edge_left",
+    "edge_right"
+   ],
+   "top_label": "Bottom Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.922
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 191.0,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_bottom"
+   ],
+   "top_label": "Bottom Edge",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.91,
+   "centre_error_px": 1.3,
+   "iou": 0.333
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 16.7,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 5.2,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_bottom",
+    "edge_left",
+    "edge_right"
+   ],
+   "top_label": "Bottom Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.922
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2058.9,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_bottom"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 7.4,
+   "iou": 0.63,
+   "conf": 0.95
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 10.9,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_bottom",
+    "edge_left",
+    "edge_right"
+   ],
+   "top_label": "Bottom Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.922
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 190.8,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_bottom"
+   ],
+   "top_label": "Bottom Edge",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.91,
+   "centre_error_px": 1.3,
+   "iou": 0.333
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 12.0,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 5.1,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_bottom",
+    "edge_left",
+    "edge_right"
+   ],
+   "top_label": "Bottom Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.922
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 1810.4,
+   "action": "abstained",
+   "error": "",
+   "candidates": 0,
+   "conf": 0.99
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 13.8,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 186.0,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 17.1,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 206.6,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 1351.0,
+   "action": "abstained",
+   "error": "",
+   "candidates": 0,
+   "conf": 1
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 12.5,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 189.1,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 18.5,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 202.2,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 1751.4,
+   "action": "abstained",
+   "error": "",
+   "candidates": 0,
+   "conf": 100
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 15.6,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 200.8,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 16.5,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 206.5,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 2090.2,
+   "action": "abstained",
+   "error": "",
+   "candidates": 0,
+   "conf": 0.9999999999999999
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 11.6,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 193.9,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 17.8,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 217.9,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3188.8,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 5.8,
+   "iou": 0.63,
+   "conf": 0.95
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 38.4,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 218.0,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.4,
+   "iou": 0.444
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 22.3,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 185.7,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.969,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3470.2,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 6.2,
+   "iou": 0.526,
+   "conf": 0.95
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8.4,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save",
+    "save_copy"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.917
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "wrong_target",
+   "good": false,
+   "ms": 245.0,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_copy"
+   ],
+   "top_label": "Save 4 Copy",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.89,
+   "centre_error_px": 120.0,
+   "iou": 0.0
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 16.1,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "in_top3",
+   "good": false,
+   "ms": 221.8,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "save_copy",
+    "save"
+   ],
+   "top_label": "Save a Copy",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.958,
+   "centre_error_px": 120.0,
+   "iou": 0.0
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 9777.1,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 37.3,
+   "iou": 0.267,
+   "conf": 0.95
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 18.6,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "Notify me",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.905
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 377.7,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "Notify me",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 28.5,
+   "iou": 0.335
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 27.0,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 10.8,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "Notify me",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.905
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2965.5,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 39.0,
+   "iou": 0.291,
+   "conf": 0.95
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 9.7,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "Notify me",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.905
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 247.3,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "Notify me",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 28.5,
+   "iou": 0.335
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 26.4,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 7.5,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "Notify me",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.905
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3160.3,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 1.3,
+   "iou": 0.784,
+   "conf": 0.95
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 16.4,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_right",
+    "edge_left",
+    "edge_bottom"
+   ],
+   "top_label": "Right Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.918
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 222.3,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_right",
+    "edge_left",
+    "edge_bottom"
+   ],
+   "top_label": "Right Edge",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 1.3,
+   "iou": 0.417
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 33.0,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 9.6,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_right",
+    "edge_left",
+    "edge_bottom"
+   ],
+   "top_label": "Right Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.918
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2909.3,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.3,
+   "iou": 0.716,
+   "conf": 0.95
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 10.7,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_right",
+    "edge_left",
+    "edge_bottom"
+   ],
+   "top_label": "Right Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.918
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 228.7,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_right",
+    "edge_left",
+    "edge_bottom"
+   ],
+   "top_label": "Right Edge",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 1.3,
+   "iou": 0.417
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 17.0,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 5.8,
+   "action": "",
+   "error": "",
+   "candidates": 3,
+   "landed": [
+    "edge_right",
+    "edge_left",
+    "edge_bottom"
+   ],
+   "top_label": "Right Edge",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.93,
+   "centre_error_px": 0.0,
+   "iou": 0.918
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3146.7,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 2.5,
+   "iou": 0.59,
+   "conf": 0.95
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 38.6,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 250.0,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 7494.3,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "magnifying glass",
+   "top_sources": [
+    "vision"
+   ],
+   "top_confidence": 0.88,
+   "centre_error_px": 0.0,
+   "iou": 0.915
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 628.2,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "magnifying glass",
+   "top_sources": [
+    "vision"
+   ],
+   "top_confidence": 0.88,
+   "centre_error_px": 0.0,
+   "iou": 0.915
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3697.5,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 2.3,
+   "iou": 0.601,
+   "conf": 0.95
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 12.7,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 204.8,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 371.5,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "magnifying glass",
+   "top_sources": [
+    "vision"
+   ],
+   "top_confidence": 0.88,
+   "centre_error_px": 0.0,
+   "iou": 0.915
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 581.7,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "magnifying glass",
+   "top_sources": [
+    "vision"
+   ],
+   "top_confidence": 0.88,
+   "centre_error_px": 0.0,
+   "iou": 0.915
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3386.1,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "house"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 3.0,
+   "iou": 0.665,
+   "conf": 0.95
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 10.2,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 196.0,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "in_top3",
+   "good": false,
+   "ms": 15731.0,
+   "action": "",
+   "error": "",
+   "candidates": 4,
+   "landed": [
+    "gear_one",
+    "magnifier",
+    "house"
+   ],
+   "top_label": "home",
+   "top_sources": [
+    "vision"
+   ],
+   "top_confidence": 0.88,
+   "centre_error_px": 108.0,
+   "iou": 0.0
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "in_top3",
+   "good": false,
+   "ms": 649.2,
+   "action": "",
+   "error": "",
+   "candidates": 4,
+   "landed": [
+    "gear_one",
+    "magnifier",
+    "house"
+   ],
+   "top_label": "home",
+   "top_sources": [
+    "vision"
+   ],
+   "top_confidence": 0.88,
+   "centre_error_px": 108.0,
+   "iou": 0.0
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4131.5,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "house"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 3.4,
+   "iou": 0.662,
+   "conf": 0.95
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 11.8,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 192.0,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "in_top3",
+   "good": false,
+   "ms": 386.9,
+   "action": "",
+   "error": "",
+   "candidates": 4,
+   "landed": [
+    "gear_one",
+    "magnifier",
+    "house"
+   ],
+   "top_label": "home",
+   "top_sources": [
+    "vision"
+   ],
+   "top_confidence": 0.88,
+   "centre_error_px": 108.0,
+   "iou": 0.0
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "in_top3",
+   "good": false,
+   "ms": 586.3,
+   "action": "",
+   "error": "",
+   "candidates": 4,
+   "landed": [
+    "gear_one",
+    "magnifier",
+    "house"
+   ],
+   "top_label": "home",
+   "top_sources": [
+    "vision"
+   ],
+   "top_confidence": 0.88,
+   "centre_error_px": 108.0,
+   "iou": 0.0
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3206.7,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "gear_one"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.99,
+   "centre_error_px": 3.2,
+   "iou": 0.623,
+   "conf": 0.99
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 6.8,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 206.8,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 16047.7,
+   "action": "",
+   "error": "",
+   "candidates": 4,
+   "landed": [
+    "gear_one",
+    "magnifier",
+    "house"
+   ],
+   "top_label": "gear",
+   "top_sources": [
+    "vision"
+   ],
+   "top_confidence": 0.88,
+   "centre_error_px": 0.0,
+   "iou": 0.915
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "ambiguous_right",
+   "good": true,
+   "ms": 696.4,
+   "action": "",
+   "error": "",
+   "candidates": 4,
+   "landed": [
+    "gear_one",
+    "magnifier",
+    "house"
+   ],
+   "top_label": "gear",
+   "top_sources": [
+    "vision"
+   ],
+   "top_confidence": 0.88,
+   "centre_error_px": 0.0,
+   "iou": 0.915
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2921.1,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "gear_one"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 2.5,
+   "iou": 0.607,
+   "conf": 0.95
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 5.7,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 216.9,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 407.3,
+   "action": "",
+   "error": "",
+   "candidates": 4,
+   "landed": [
+    "gear_one",
+    "magnifier",
+    "house"
+   ],
+   "top_label": "gear",
+   "top_sources": [
+    "vision"
+   ],
+   "top_confidence": 0.88,
+   "centre_error_px": 0.0,
+   "iou": 0.915
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "ambiguous_right",
+   "good": true,
+   "ms": 603.5,
+   "action": "",
+   "error": "",
+   "candidates": 4,
+   "landed": [
+    "gear_one",
+    "magnifier",
+    "house"
+   ],
+   "top_label": "gear",
+   "top_sources": [
+    "vision"
+   ],
+   "top_confidence": 0.88,
+   "centre_error_px": 0.0,
+   "iou": 0.915
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3280.5,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.5,
+   "iou": 0.538,
+   "conf": 0.95
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 9.4,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.942
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 195.3,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.5,
+   "iou": 0.21
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 15447.0,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 17.3,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.942
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2942.4,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.2,
+   "iou": 0.536,
+   "conf": 0.95
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 13.9,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.942
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 217.4,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.5,
+   "iou": 0.21
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 358.9,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4.5,
+   "action": "",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "Save",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.942
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3531.9,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.3,
+   "iou": 0.55,
+   "conf": 0.95
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 26.1,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done",
+    "mark_done_later"
+   ],
+   "top_label": "Mark Done",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.945
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 213.6,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done",
+    "mark_done_later"
+   ],
+   "top_label": "Mark Done",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.16
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 17.4,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 190.3,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done",
+    "mark_done_later"
+   ],
+   "top_label": "Mark Done",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.99,
+   "centre_error_px": 0.0,
+   "iou": 0.945
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3474.5,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.4,
+   "iou": 0.518,
+   "conf": 0.95
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 7.3,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done",
+    "mark_done_later"
+   ],
+   "top_label": "Mark Done",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.945
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 238.3,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done",
+    "mark_done_later"
+   ],
+   "top_label": "Mark Done",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.16
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 17.6,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 193.2,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done",
+    "mark_done_later"
+   ],
+   "top_label": "Mark Done",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.99,
+   "centre_error_px": 0.0,
+   "iou": 0.945
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3030.6,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done_later"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.4,
+   "iou": 0.558,
+   "conf": 0.95
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4.8,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done_later",
+    "mark_done"
+   ],
+   "top_label": "Mark Done Later",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.946
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 204.8,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done_later",
+    "mark_done"
+   ],
+   "top_label": "Mark Done Later",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.8,
+   "iou": 0.15
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 10.6,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2.5,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done_later",
+    "mark_done"
+   ],
+   "top_label": "Mark Done Later",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.946
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3279.2,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done_later"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.7,
+   "iou": 0.541,
+   "conf": 0.95
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 7.6,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done_later",
+    "mark_done"
+   ],
+   "top_label": "Mark Done Later",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.946
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 190.0,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done_later",
+    "mark_done"
+   ],
+   "top_label": "Mark Done Later",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.8,
+   "iou": 0.15
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 12.6,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 7.9,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done_later",
+    "mark_done"
+   ],
+   "top_label": "Mark Done Later",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.0,
+   "iou": 0.946
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "qwen25vl",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3337.3,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.5,
+   "iou": 0.517,
+   "conf": 0.95
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "ax",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 6.5,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done",
+    "mark_done_later"
+   ],
+   "top_label": "Mark Done",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.91,
+   "centre_error_px": 0.0,
+   "iou": 0.945
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "ocr",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 200.1,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done",
+    "mark_done_later"
+   ],
+   "top_label": "Mark Done",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.91,
+   "centre_error_px": 0.0,
+   "iou": 0.16
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "vision",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 13.4,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fusion",
+   "attempt": 1,
+   "verdict": "ambiguous_right",
+   "good": true,
+   "ms": 197.9,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done",
+    "mark_done_later"
+   ],
+   "top_label": "Mark Done",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.959,
+   "centre_error_px": 0.0,
+   "iou": 0.945
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "qwen25vl",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3204.7,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "qwen25vl"
+   ],
+   "top_confidence": 0.95,
+   "centre_error_px": 0.3,
+   "iou": 0.534,
+   "conf": 0.95
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "ax",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 5.9,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done",
+    "mark_done_later"
+   ],
+   "top_label": "Mark Done",
+   "top_sources": [
+    "accessibility"
+   ],
+   "top_confidence": 0.91,
+   "centre_error_px": 0.0,
+   "iou": 0.945
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "ocr",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 221.7,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done",
+    "mark_done_later"
+   ],
+   "top_label": "Mark Done",
+   "top_sources": [
+    "ocr"
+   ],
+   "top_confidence": 0.91,
+   "centre_error_px": 0.0,
+   "iou": 0.16
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "vision",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 19.5,
+   "action": "",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fusion",
+   "attempt": 2,
+   "verdict": "ambiguous_right",
+   "good": true,
+   "ms": 196.1,
+   "action": "",
+   "error": "",
+   "candidates": 2,
+   "landed": [
+    "mark_done",
+    "mark_done_later"
+   ],
+   "top_label": "Mark Done",
+   "top_sources": [
+    "accessibility",
+    "ocr"
+   ],
+   "top_confidence": 0.959,
+   "centre_error_px": 0.0,
+   "iou": 0.945
+  }
+ ]
+}

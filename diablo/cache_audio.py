@@ -2,7 +2,8 @@ import asyncio
 import edge_tts
 import os
 
-CACHE_DIR = "/Users/shaurya/.diablo/audio_cache"
+CACHE_DIR = os.path.join(os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo")),
+                         "audio_cache")
 VOICE = "en-GB-RyanNeural"
 
 # Standard phrases to cache for "Zero-Lag" response

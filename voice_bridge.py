@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 import time
 import numpy as np
 import whisper
@@ -18,7 +19,7 @@ import difflib
 from typing import List
 from http.server import SimpleHTTPRequestHandler
 from socketserver import TCPServer
-from skills import browsers  # noqa: E402
+from skills import apps, browsers  # noqa: E402
 
 # Import D.I.A.B.L.O. Skill Engine
 registry = skill_registry.registry
@@ -29,11 +30,15 @@ registry.discover_skills()
 # more, and the shipped replacement routes through Ollama rather than
 # OpenRouter, so the import would only be a dead reference to a cloud provider.
 
-# Diablo: an offline tool-calling loop on qwen3:14b via Ollama, a rolling
+# Diablo: an offline tool-calling loop on qwen3.5:4b via Ollama, a rolling
 # conversation, and per-window screen understanding. All local.
 
 # ─── Load Environment ───────────────────────────────────────────────────────
-ENV_PATH = "/Users/shaurya/.diablo/.env"
+# Wherever Diablo is installed, not one person's home folder: these were
+# written as /Users/shaurya/.diablo, so a copy anywhere else read and wrote the
+# original install.
+DIABLO_HOME = os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo"))
+ENV_PATH = os.path.join(DIABLO_HOME, ".env")
 load_dotenv(ENV_PATH)
 
 # ─── Audio Settings ──────────────────────────────────────────────────────────
@@ -41,7 +46,7 @@ CHUNK = 1280
 CHANNELS = 1
 RATE = 16000
 COMMAND_DURATION = 5
-CACHE_DIR = "/Users/shaurya/.diablo/audio_cache"
+CACHE_DIR = os.path.join(DIABLO_HOME, "audio_cache")
 
 # Global Queues and Locks
 audio_queue = queue.Queue()
@@ -61,7 +66,7 @@ COMMAND_LOCK = threading.Lock()
 MIC_LOCK = threading.RLock()
 
 # ─── Paths & Context ────────────────────────────────────────────────────────
-VISUALIZER_DIR = "/Users/shaurya/.diablo/visualizer"
+VISUALIZER_DIR = os.path.join(DIABLO_HOME, "visualizer")
 UI_STATE_PATH = os.path.join(VISUALIZER_DIR, "state.json")
 USER_CITY = "Pune"  # Default fallback
 
@@ -118,6 +123,9 @@ def set_ui_state(state):
             # carrying the last syllable after afplay returns.
             listener.mute_for(0.7)
     try:
+        # A fresh home has no visualizer folder yet; without this every state
+        # change on a clean install logged an error instead of writing.
+        os.makedirs(VISUALIZER_DIR, exist_ok=True)
         with open(UI_STATE_PATH, "w") as f:
             json.dump({"state": state}, f)
     except Exception as e:
@@ -141,6 +149,23 @@ def _pace_for(text: str) -> int:
     if words > EXPLAIN_ABOVE_WORDS:
         return voice.EXPLAIN_WPM
     return voice.NORMAL_WPM
+
+
+def _echo(label, text):
+    """
+    Show a spoken line to a person at a terminal, and only its length to a file.
+
+    In the app, stdout is ~/.diablo/diablo.log, and a reply can be read off the
+    screen ("You are currently looking at…"), so printing it kept screen text
+    on disk for good. A terminal keeps nothing, so a developer still sees it.
+    """
+    try:
+        watched = sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        watched = False
+    text = str(text)
+    shown = text if watched else f"<{len(text)} chars>"
+    print(f"\n  {label}: {shown}")
 
 
 def speak(text, lang="en", cached_key=None, pace=None, generation=None,
@@ -167,7 +192,7 @@ def speak(text, lang="en", cached_key=None, pace=None, generation=None,
         return _speak_stream(text, pace, generation, speech_id, speech_kind)
     if pace is None:
         pace = _pace_for(text)
-    print(f"\n  Diablo: {text}")
+    _echo("Diablo", text)
     # The speaking state is NOT set here. It is set by voice.py the moment
     # audio actually begins, through the hook installed below, because
     # everything between this line and the first sound — a cache lookup, a
@@ -186,7 +211,7 @@ def speak(text, lang="en", cached_key=None, pace=None, generation=None,
         return voice.speak(text, pace=pace, generation=generation,
                            speech_id=speech_id, speech_kind=speech_kind)
     except Exception as e:
-        print(f"  [TTS fallback: {e}]")
+        print(f"  [TTS fallback: {type(e).__name__}]")
         # Keep every physical speech operation behind skills.voice's owner.
         # A direct subprocess fallback here would bypass stale-result and
         # overlap protection.
@@ -211,7 +236,7 @@ def _speak_stream(pieces, pace, generation, speech_id, speech_kind):
     def printed():
         try:
             for piece in pieces:
-                print(f"\n  Diablo: {piece}")
+                _echo("Diablo", piece)
                 yield piece
         finally:
             closing = getattr(pieces, "close", None)
@@ -224,7 +249,7 @@ def _speak_stream(pieces, pace, generation, speech_id, speech_kind):
             pace=pace or voice.NORMAL_WPM, generation=generation,
             speech_id=speech_id, speech_kind=speech_kind)
     except Exception as e:
-        print(f"  [TTS stream failed: {type(e).__name__}: {e}]")
+        print(f"  [TTS stream failed: {type(e).__name__}]")
         return "failed"
     finally:
         set_ui_state("idle")
@@ -275,13 +300,6 @@ def open_url(url):
     speak(f"{ack} Opening {site_keyword.title()}.")
     if not browser_tool.run_browser_navigation(url):
         speak("I could not open your browser, Sir.")
-
-def take_screenshot():
-    desktop = os.path.expanduser("~/Desktop")
-    filename = f"DIABLO_Screenshot_{int(time.time())}.png"
-    path = os.path.join(desktop, filename)
-    subprocess.run(["screencapture", "-t", "png", path])
-    speak(f"Screenshot saved to Desktop, Sir.", cached_key="ack_2")
 
 # ─── Audio Engine ───────────────────────────────────────────────────────────
 
@@ -480,19 +498,7 @@ TRANSPORT_COMMANDS = {
     "stop": "toggle", "stop music": "toggle", "stop the music": "toggle",
 }
 
-KNOWN_APPS = {
-    "spotify": "Spotify", "safari": "Safari", "chrome": "Google Chrome",
-    "zen": browsers.default(), "zen browser": browsers.default(), "notes": "Notes",
-    "finder": "Finder", "terminal": "Terminal", "mail": "Mail",
-    "messages": "Messages", "imessage": "Messages", "calendar": "Calendar",
-    "excel": "Microsoft Excel", "word": "Microsoft Word",
-    "powerpoint": "Microsoft PowerPoint", "vscode": "Visual Studio Code",
-    "vs code": "Visual Studio Code", "code": "Visual Studio Code",
-    "obsidian": "Obsidian", "discord": "Discord", "whatsapp": "WhatsApp",
-    "preview": "Preview", "music": "Music", "photos": "Photos",
-    "reminders": "Reminders", "settings": "System Settings",
-    "system settings": "System Settings", "calculator": "Calculator",
-}
+# App names are resolved by skills/apps.py, against what is installed.
 
 KNOWN_SITES = {
     "youtube": "https://youtube.com", "gmail": "https://mail.google.com",
@@ -745,7 +751,8 @@ def _handle_capture(blocks, held, on_text, released=None):
     except Exception as e:
         print(f"  [PTT] transcription failed: {type(e).__name__}: {e}")
         return
-    print(f'  [PTT] held {held:.2f}s, transcribed in {time.time() - started:.2f}s: "{text}"')
+    print(f'  [PTT] held {held:.2f}s, transcribed in {time.time() - started:.2f}s')
+    _echo("[USER]", text)
     try:
         # When the key came up and what hearing it cost, so a turn's latency
         # can be read from the release. Timing only: no audio, no words.
@@ -804,9 +811,9 @@ def ask_user_voice(question, generation=None):
     lands before anything is listening. Usually called from a worker thread,
     which is exactly why the microphone is locked.
     """
-    print(f"\n  [ASK] {question}")
+    _echo("[ASK]", question)
     answer = capture_speech(5, prompt=question, generation=generation)
-    print(f"  [ANSWER] {answer!r}")
+    _echo("[ANSWER]", answer)
     return answer
 
 
@@ -896,7 +903,7 @@ def process_command(text, is_sub_command=False, generation=None):
             now = agent_tools.play_music(query=stripped)
             speak(now if now.startswith("Shuffling") else "Putting something on, Sir.")
         except Exception as e:
-            print(f"  [Reflex error] {e}")
+            print(f"  [Reflex error] {type(e).__name__}")
             speak("I could not start the music, Sir.")
         return
 
@@ -923,16 +930,22 @@ def process_command(text, is_sub_command=False, generation=None):
                 registry.get_skill("system_skill").adjust_volume("up" if louder else "down")
                 speak("Done, Sir.", cached_key="ack_2")
         except Exception as e:
-            print(f"  [Reflex error] {e}")
+            print(f"  [Reflex error] {type(e).__name__}")
             speak("I could not adjust that, Sir.")
         return
 
     # ── Screenshot ──
-    if is_a_command(lower) and (
-            "screenshot" in lower or "screen shot" in lower
-            or "screengrab" in lower):
-        agent_tools.take_screenshot()
-        speak("Screenshot saved to your Desktop, Sir.", cached_key="ack_2")
+    # Only when the sentence asks for one to be taken or saved, through the same
+    # check the agent's tool uses. What is said is what happened: this used to
+    # announce a saved screenshot whether or not anything was captured.
+    if is_a_command(lower) and agent_tools.wants_saved_screenshot(lower):
+        result = agent_tools.save_screenshot(lower)
+        if result.startswith("Screenshot saved to the Desktop"):
+            speak("Screenshot saved to your Desktop, Sir.", cached_key="ack_2")
+        elif result.startswith(("Screenshot saved", "Saved ")):
+            speak(result.split(" as ")[0].split(", one per")[0] + ", Sir.")
+        else:
+            speak(result)
         return
 
     # ── Open a known app or site ──
@@ -941,8 +954,15 @@ def process_command(text, is_sub_command=False, generation=None):
         stripped)
     if opener:
         target = opener.group(1).strip()
-        if target in KNOWN_APPS:
-            speak(agent_tools.open_app(KNOWN_APPS[target]))
+        # Any installed app, by whatever it is called: the one resolver, not a
+        # table here. The table this replaced mapped "zen" to the default
+        # browser, which opened Chrome when Chrome was the default.
+        named = apps.resolve(target)
+        if named.status == apps.RESOLVED:
+            speak(apps.open_app(target))
+            return
+        if named.status == apps.AMBIGUOUS:
+            speak(apps.describe(named))
             return
         if target in KNOWN_SITES:
             speak(agent_tools.open_url(KNOWN_SITES[target]))
@@ -986,7 +1006,7 @@ def handle_utterance(command):
         # This used to die on a daemon thread and take the whole reply with it,
         # which reads as a microphone fault rather than a crash. Say it out loud.
         import traceback
-        print(f"  [Utterance error] {type(e).__name__}: {e}")
+        print(f"  [Utterance error] {type(e).__name__}")
         traceback.print_exc()
         try:
             speak("Something went wrong there, Sir.")
@@ -1006,11 +1026,11 @@ def _handle_utterance(command):
     actually talk — none of that second round is needed.
     """
     if command and len(command.split()) >= 2:
-        print(f'  [USER] "{command}"  (one-shot)')
+        _echo("[USER] (one-shot)", command)
         try:
             process_command(command)
         except Exception as e:
-            print(f"  [Command error] {type(e).__name__}: {e}")
+            print(f"  [Command error] {type(e).__name__}")
             speak("Something went wrong handling that, Sir.")
         return
 
@@ -1018,12 +1038,12 @@ def _handle_utterance(command):
     # spoken before the capture rather than alongside it, so Diablo is not
     # recording itself saying hello.
     text = capture_speech(COMMAND_DURATION, prompt=persona.greeting())
-    print(f'  [USER] "{text}"')
+    _echo("[USER]", text)
     if len(text) > 2:
         try:
             process_command(text)
         except Exception as e:
-            print(f"  [Command error] {type(e).__name__}: {e}")
+            print(f"  [Command error] {type(e).__name__}")
             speak("Something went wrong handling that, Sir.")
     else:
         speak("I missed that, Sir.", cached_key="error_1")

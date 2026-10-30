@@ -198,12 +198,20 @@ def check_brain():
     brain = os.path.join(DIABLO_HOME, "skills", "local_brain.py")
     if not os.path.exists(brain):
         brain = os.path.join(here, "local_brain.py")
+    # local_brain imports `from skills import config`, so the folder that holds
+    # skills/ goes on the path, not skills/ itself. With only skills/ there, the
+    # import worked from inside ~/.diablo and nowhere else: `diablo doctor` run
+    # from any other folder said "could not query Ollama" and never named the
+    # model it wanted.
+    root = os.path.dirname(os.path.dirname(brain))
     probe = run([VENV_PY, "-c", f"""
-import sys; sys.path.insert(0, {os.path.dirname(brain)!r})
-import local_brain, json
+import sys; sys.path.insert(0, {root!r})
+from skills import local_brain
+import json
 print(json.dumps({{"up": local_brain.available(),
                    "models": local_brain.installed_models(),
-                   "want": local_brain.CHAT_MODEL}}))
+                   "want": local_brain.CHAT_MODEL,
+                   "ctx": local_brain.NUM_CTX}}))
 """], timeout=30)
     if probe is None or probe.returncode != 0:
         bad("could not query Ollama", "Start Ollama, then rerun")
@@ -221,8 +229,35 @@ print(json.dumps({{"up": local_brain.available(),
     if state["want"] not in state["models"]:
         bad(f"{state['want']} is not installed", f"ollama pull {state['want']}")
         return False
-    ok("reasoning model present", state["want"])
+    ok("reasoning and vision model present", f"{state['want']}, context {state.get('ctx')}")
     return True
+
+
+def check_grounder():
+    """GoClick: optional for safety, wanted for pointing at unlabelled controls."""
+    print("\nGrounding")
+    probe = run([VENV_PY, "-c", f"""
+import sys, json; sys.path.insert(0, {DIABLO_HOME!r})
+from skills import goclick
+import importlib.util as u
+print(json.dumps({{"installed": goclick.installed(), "dir": goclick.MODEL_DIR,
+                   "python": goclick.PYTHON,
+                   "mlx_vlm": bool(u.find_spec("mlx_vlm")) if goclick.PYTHON == sys.executable else None}}))
+"""], timeout=30)
+    try:
+        state = json.loads((probe.stdout or "").strip().splitlines()[-1])
+    except Exception:
+        warn("could not check GoClick", "grounding falls back to accessibility, text and qwen3.5")
+        return
+    if not state["installed"]:
+        warn("GoClick-Large is not installed",
+             f"pointing at unlabelled controls uses qwen3.5 instead. Install: "
+             f"tools/install.sh --grounder  ({state['dir']})")
+        return
+    if state.get("mlx_vlm") is False:
+        warn("GoClick's runtime (mlx-vlm) is missing", f"{state['python']} -m pip install mlx-vlm==0.7.4")
+        return
+    ok("GoClick-Large present", state["dir"])
 
 
 # ─── 5. Voice and speech ─────────────────────────────────────────────────────
@@ -299,6 +334,7 @@ def main():
         check_microphone(fix=fix)
         check_coreaudio()
         check_brain()
+        check_grounder()
         check_voice()
         check_speech()
 

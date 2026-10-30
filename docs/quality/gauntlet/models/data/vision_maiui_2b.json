@@ -1,0 +1,1462 @@
+{
+ "summary": {
+  "maiui": {
+   "n": 50,
+   "good": 42,
+   "verdicts": {
+    "correct": 42,
+    "should_have_abstained": 4,
+    "wrong_target": 4
+   },
+   "wrong_or_off": 8,
+   "p50_ms": 3073.4,
+   "p95_ms": 3487.7,
+   "median_centre_error_px_when_correct": 3.6,
+   "peak_gb": 5.44
+  }
+ },
+ "records": [
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4385.9,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.5,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 51
+  },
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3146.8,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.5,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 51
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3127.5,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.0,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 922,
+   "output_tokens": 47
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3028.4,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.0,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 922,
+   "output_tokens": 47
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2993.3,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_copy"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 4.3,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 46
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2947.2,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_copy"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 4.3,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 46
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3305.8,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.4,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 922,
+   "output_tokens": 57
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3285.2,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.4,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 922,
+   "output_tokens": 57
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3128.9,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.5,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 51
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3114.0,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.5,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 51
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2867.6,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 71.7,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 43
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2885.9,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 71.7,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 43
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2993.3,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 38.4,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 923,
+   "output_tokens": 47
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2989.2,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 38.4,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 923,
+   "output_tokens": 47
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3187.3,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.9,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 52
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3487.7,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.9,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 56
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2862.3,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "name_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.6,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 925,
+   "output_tokens": 44
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2860.0,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "name_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.6,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 925,
+   "output_tokens": 44
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "wrong_target",
+   "good": false,
+   "ms": 3036.9,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "name_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 38.9,
+   "iou": 0.0,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 48
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "wrong_target",
+   "good": false,
+   "ms": 3073.4,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "name_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 38.9,
+   "iou": 0.0,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 48
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3166.7,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_left"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.6,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 925,
+   "output_tokens": 51
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3203.6,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_left"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.6,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 925,
+   "output_tokens": 51
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3177.6,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 4.1,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 925,
+   "output_tokens": 51
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3165.6,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 4.1,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 925,
+   "output_tokens": 51
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3245.3,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_bottom"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.8,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 925,
+   "output_tokens": 53
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3192.2,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_bottom"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.8,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 925,
+   "output_tokens": 53
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "should_have_abstained",
+   "good": false,
+   "ms": 3115.1,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    null
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 50
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "should_have_abstained",
+   "good": false,
+   "ms": 3130.8,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    null
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 50
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "should_have_abstained",
+   "good": false,
+   "ms": 3087.0,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    null
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 49
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "should_have_abstained",
+   "good": false,
+   "ms": 3116.5,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    null
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 49
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3255.1,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 3.0,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 51
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3248.6,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 3.0,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 924,
+   "output_tokens": 51
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3216.7,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 42.6,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 923,
+   "output_tokens": 48
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3512.7,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 42.6,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 923,
+   "output_tokens": 48
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3310.0,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 4.2,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 925,
+   "output_tokens": 51
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3047.2,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 4.2,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 925,
+   "output_tokens": 51
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2528.2,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 5.8,
+   "iou": 0.002,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 591,
+   "output_tokens": 49
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2295.3,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 5.8,
+   "iou": 0.002,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 591,
+   "output_tokens": 49
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2386.7,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "house"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 6.2,
+   "iou": 0.002,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 591,
+   "output_tokens": 50
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2476.6,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "house"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 6.2,
+   "iou": 0.002,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 591,
+   "output_tokens": 50
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "wrong_target",
+   "good": false,
+   "ms": 2490.9,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 45.6,
+   "iou": 0.0,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 590,
+   "output_tokens": 52
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "wrong_target",
+   "good": false,
+   "ms": 2506.6,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 45.6,
+   "iou": 0.0,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 590,
+   "output_tokens": 52
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2347.1,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 4.5,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 589,
+   "output_tokens": 50
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2361.3,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 4.5,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 589,
+   "output_tokens": 50
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2431.0,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 3.5,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 597,
+   "output_tokens": 48
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2267.8,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 3.5,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 597,
+   "output_tokens": 48
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2204.7,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done_later"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 5.2,
+   "iou": 0.0,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 598,
+   "output_tokens": 46
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2207.2,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done_later"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 5.2,
+   "iou": 0.0,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 598,
+   "output_tokens": 46
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "maiui",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2264.6,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 3.6,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 598,
+   "output_tokens": 48
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "maiui",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2443.5,
+   "action": "click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "maiui"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 3.6,
+   "iou": 0.001,
+   "peak_gb": 5.44,
+   "load_s": 5.65,
+   "prompt_tokens": 598,
+   "output_tokens": 48
+  }
+ ]
+}

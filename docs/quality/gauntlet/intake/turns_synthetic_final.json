@@ -1,0 +1,314 @@
+[
+{
+"id": "broad-1",
+"label": "should_proceed",
+"result": "queued",
+"queued": 1,
+"agent_ran": 1,
+"s": 1.28
+},
+{
+"id": "broad-2",
+"label": "should_proceed",
+"result": "queued",
+"queued": 1,
+"agent_ran": 1,
+"s": 1.26
+},
+{
+"id": "broad-3",
+"label": "should_proceed",
+"result": "taught",
+"queued": 0,
+"agent_ran": 0,
+"s": 77.77
+},
+{
+"id": "broad-4",
+"label": "should_proceed",
+"result": "taught",
+"queued": 0,
+"agent_ran": 0,
+"s": 45.02
+},
+{
+"id": "broad-5",
+"label": "should_proceed",
+"result": "shown",
+"queued": 0,
+"agent_ran": 0,
+"s": 7.87
+},
+{
+"id": "broad-6",
+"label": "should_proceed",
+"result": "queued",
+"queued": 1,
+"agent_ran": 1,
+"s": 1.7
+},
+{
+"id": "broad-7",
+"label": "should_proceed",
+"result": "inline",
+"queued": 0,
+"agent_ran": 1,
+"s": 1.79
+},
+{
+"id": "broad-8",
+"label": "should_proceed",
+"result": "chat",
+"queued": 0,
+"agent_ran": 0,
+"s": 4.56
+},
+{
+"id": "broad-9",
+"label": "should_proceed",
+"result": "taught",
+"queued": 0,
+"agent_ran": 0,
+"s": 74.35
+},
+{
+"id": "broad-10",
+"label": "should_proceed",
+"result": "chat",
+"queued": 0,
+"agent_ran": 0,
+"s": 4.28
+},
+{
+"id": "broad-11",
+"label": "should_proceed",
+"result": "queued",
+"queued": 1,
+"agent_ran": 1,
+"s": 2.09
+},
+{
+"id": "broad-12",
+"label": "should_proceed",
+"result": "chat",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.57
+},
+{
+"id": "broad-13",
+"label": "should_proceed",
+"result": "escalated",
+"queued": 0,
+"agent_ran": 1,
+"s": 2.3
+},
+{
+"id": "broad-14",
+"label": "should_proceed",
+"result": "escalated",
+"queued": 0,
+"agent_ran": 1,
+"s": 3.21
+},
+{
+"id": "screen-1",
+"label": "should_proceed",
+"result": "shown",
+"queued": 0,
+"agent_ran": 0,
+"s": 13.65
+},
+{
+"id": "screen-2",
+"label": "should_proceed",
+"result": "escalated",
+"queued": 0,
+"agent_ran": 1,
+"s": 2.48
+},
+{
+"id": "screen-3",
+"label": "should_proceed",
+"result": "shown",
+"queued": 0,
+"agent_ran": 0,
+"s": 18.34
+},
+{
+"id": "screen-4",
+"label": "should_proceed",
+"result": "taught",
+"queued": 0,
+"agent_ran": 0,
+"s": 46.11
+},
+{
+"id": "screen-5",
+"label": "should_proceed",
+"result": "inline",
+"queued": 0,
+"agent_ran": 1,
+"s": 3.57
+},
+{
+"id": "screen-6",
+"label": "should_proceed",
+"result": "inline",
+"queued": 0,
+"agent_ran": 1,
+"s": 4.01
+},
+{
+"id": "target-1",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.14
+},
+{
+"id": "target-2",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.02
+},
+{
+"id": "target-3",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 0.98
+},
+{
+"id": "target-4",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 0.99
+},
+{
+"id": "target-5",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.22
+},
+{
+"id": "target-6",
+"label": "clarify_ok",
+"result": "chat",
+"queued": 0,
+"agent_ran": 0,
+"s": 3.05
+},
+{
+"id": "target-7",
+"label": "clarify_ok",
+"result": "escalated",
+"queued": 0,
+"agent_ran": 1,
+"s": 1.11
+},
+{
+"id": "noise-1",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 3.72
+},
+{
+"id": "noise-2",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.29
+},
+{
+"id": "noise-3",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.04
+},
+{
+"id": "noise-4",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.18
+},
+{
+"id": "noise-5",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.38
+},
+{
+"id": "noise-6",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.11
+},
+{
+"id": "noise-7",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.23
+},
+{
+"id": "vague-1",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.32
+},
+{
+"id": "vague-2",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.1
+},
+{
+"id": "vague-3",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.13
+},
+{
+"id": "vague-4",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.31
+},
+{
+"id": "vague-5",
+"label": "clarify_ok",
+"result": "unclear",
+"queued": 0,
+"agent_ran": 0,
+"s": 1.04
+}
+]

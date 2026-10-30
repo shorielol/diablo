@@ -24,6 +24,7 @@ Nothing here draws on screen or asks a real model. Captures are synthetic
 images whose every shape is known.
 """
 
+import atexit
 import json
 import os
 import shutil
@@ -44,6 +45,9 @@ from skills import (computer_use, display, grounding, regions,  # noqa: E402
 DEFAULT_NONE_POLICY = grounding.NONE_POLICY
 
 TMP = tempfile.mkdtemp(prefix="diablo_b4_")
+# Removed when the process ends, for this suite and for test_shapes, which
+# draws into the same folder. Each run used to leave one behind.
+atexit.register(shutil.rmtree, TMP, True)
 
 
 def save_png(arr: np.ndarray, name: str) -> str:
@@ -106,62 +110,33 @@ def near(region, box, tol=4):
 def run() -> int:
     r = Results()
 
-    # ── A. The coordinate experiment, as law ────────────────────────────────
-    r.head("A  the model answers in its own canvas")
-    with guard(r, "model_canvas matches every measured size"):
-        # (image, canvas the model's answers implied, within one 28-pixel patch)
-        measured = [((426, 316), (1082, 782)), ((852, 632), (1059, 783)),
-                    ((600, 600), (893, 891)), ((1200, 400), (1566, 524)),
-                    # 1278x948: the line fit said 1253, dragged by one point; the
-                    # per-point ratios have a median of 1.005, i.e. about 1284.
-                    ((1278, 948), (1284, 953)), ((1280, 1280), (1286, 1287)),
-                    ((1280, 1000), (1285, 1008)), ((1100, 1100), (1091, 1095))]
-        for (w, h), (mw, mh) in measured:
-            cw, ch = grounding.model_canvas(w, h)
-            r.check(f"{w}x{h} -> {cw}x{ch} (measured ~{mw}x{mh})",
-                    abs(cw - mw) <= 28 and abs(ch - mh) <= 28)
-        cw, ch = grounding.model_canvas(1200, 400)
-        r.check("aspect is kept", abs(cw / ch - 3.0) < 0.1, f"{cw}x{ch}")
-        r.check("patch multiples", all(v % 28 == 0 for v in grounding.model_canvas(852, 632)))
-
-    with guard(r, "the box is read in that canvas"):
-        saved = os.environ.get("DIABLO_VISION_COORDS")
-        os.environ["DIABLO_VISION_COORDS"] = "canvas"
+    # ── A. The box's space is declared, never guessed ───────────────────────
+    #
+    # Qwen2.5-VL answered in its own resized canvas and the reader used to try
+    # four spaces in turn. With one vision model, qwen3.5, the space is the one
+    # Qwen documents — a 0..1000 grid — and nothing else is tried.
+    r.head("A  the model's box space is declared")
+    with guard(r, "one space per model family"):
+        r.check("qwen3.5:4b answers on the 0..1000 grid",
+                grounding.box_scale("qwen3.5:4b") == 1000.0)
+        r.check("so does the Qwen3-VL family", grounding.box_scale("qwen3-vl:8b") == 1000.0)
+        r.check("a removed model has no declared space",
+                grounding.box_scale("qwen2.5vl:7b") is None)
+        r.check("nor does an unknown one", grounding.box_scale("some-model:7b") is None)
+        r.check("no environment variable changes the reading",
+                "DIABLO_VISION_COORDS" not in open(grounding.__file__).read())
+    with guard(r, "the same numbers mean the same place at every image size"):
+        from skills import local_brain
+        saved = local_brain.CHAT_MODEL
         try:
-            # The raw box the model gave for the triangle on the 852 crop.
-            got = grounding._box_in_crop([477, 337, 529, 406], (852, 632))
-            cw, ch = grounding.model_canvas(852, 632)
-            r.check("read as fractions of the 1064x784 canvas, not of the image",
-                    got is not None and abs(got[0] - 477 / cw) < 1e-6
-                    and abs(got[1] - 337 / ch) < 1e-6, str(got))
-            r.check("  which is 1.25x nearer the origin than the old reading",
-                    got is not None and abs(got[0] * 852 - 477 / 1.249) < 3)
-            r.check("fractions still read as fractions",
-                    grounding._box_in_crop([0.1, 0.2, 0.3, 0.4], (852, 632))
-                    == (0.1, 0.2, 0.3, 0.4))
+            local_brain.CHAT_MODEL = "qwen3.5:4b"
+            boxes = {size: grounding._box_in_crop([550, 300, 700, 550], size)
+                     for size in ((426, 316), (852, 632), (1600, 500))}
         finally:
-            if saved is None:
-                os.environ.pop("DIABLO_VISION_COORDS", None)
-            else:
-                os.environ["DIABLO_VISION_COORDS"] = saved
-
-    with guard(r, "only for the model it was measured on"):
-        saved = {k: os.environ.get(k) for k in ("DIABLO_VISION_COORDS", "DIABLO_VISION_MODEL")}
-        try:
-            os.environ.pop("DIABLO_VISION_COORDS", None)
-            os.environ["DIABLO_VISION_MODEL"] = "qwen2.5vl:7b"
-            r.check("qwen2.5vl: canvas", grounding._canvas_applies())
-            os.environ["DIABLO_VISION_MODEL"] = "qwen3-vl:8b"
-            r.check("another model: not assumed", not grounding._canvas_applies())
-            os.environ["DIABLO_VISION_COORDS"] = "pixels"
-            os.environ["DIABLO_VISION_MODEL"] = "qwen2.5vl:7b"
-            r.check("an explicit setting wins", not grounding._canvas_applies())
-        finally:
-            for k, v in saved.items():
-                if v is None:
-                    os.environ.pop(k, None)
-                else:
-                    os.environ[k] = v
+            local_brain.CHAT_MODEL = saved
+        r.check("fractions of the image, independent of its pixels",
+                len(set(boxes.values())) == 1
+                and list(boxes.values())[0] == (0.55, 0.3, 0.7, 0.55), str(boxes))
 
     # ── B. The mapper, proven with known coordinates ────────────────────────
     r.head("B  crop -> screen, independently of any model")

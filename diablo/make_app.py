@@ -134,6 +134,10 @@ if [ -f "$DIABLO_HOME/.env" ]; then
     . "$DIABLO_HOME/.env" 2>/dev/null || true
     set +a
 fi
+# The bundle was built for this home, and it stays this home. A DIABLO_HOME
+# line in .env used to win here, so a copy of Diablo whose .env named another
+# install ran that install's code, wrote its trace, and logged here.
+DIABLO_HOME="{home}"
 
 export DIABLO_HOME
 export PYTHONUNBUFFERED=1

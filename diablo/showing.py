@@ -208,7 +208,7 @@ def prepare(question: str, shown: Any) -> Optional[Prepared]:
         trace.event("show", phase="scope", error=f"{type(e).__name__}: {e}"[:120])
         return Prepared(question, shown, None,
                         refused="I couldn't tell which window you meant, Sir.")
-    trace.event("show", phase="scope", window=(window or {}).get("id", 0),
+    trace.event("show", phase="scope", window_id=(window or {}).get("id", 0),
                 app=(window or {}).get("app", ""), refused=bool(refused))
     if refused:
         return Prepared(question, shown, window, refused=refused)
@@ -272,12 +272,12 @@ def plan_steps(question: str, screen_text: str, title: str = "",
         dropped = [s["what"] for s in steps if s.get("kind") in NOT_PICTURE]
         steps = [s for s in steps if s.get("kind") not in NOT_PICTURE]
         if dropped:
-            trace.event("show", phase="plan", dropped=dropped,
+            # Counts, not names: a step's name is read off his screen.
+            trace.event("show", phase="plan", dropped_count=len(dropped),
                         reason="a caption or control is not part of the picture")
     if _about_one_shape(shown):
         steps = steps[:1]
-    trace.event("show", phase="plan", steps=len(steps),
-                what=[s["what"] for s in steps])
+    trace.event("show", phase="plan", steps=len(steps))
     return steps
 
 
@@ -314,6 +314,39 @@ def _explain(prepared: Prepared, working: Optional[List[dict]]) -> str:
     return answer
 
 
+def _by_menu(prepared: Prepared, shown: Any, working: Optional[List[dict]]) -> str:
+    """
+    The app's own command for it, when the screen alone will not do.
+
+    "how do I open settings in Zen" ended at "I can't see a control on screen"
+    with Zen › Settings… (⌘,) in Zen's menu bar. A how-to goes to the app's
+    commands first; a "where is" goes there only when the control is not
+    decisively on screen, so a visible Save button is still pointed at.
+    Returns "" to let the screen-only path carry on.
+    """
+    from skills import perception, task_context
+    try:
+        context = task_context.about(prepared.question, front=prepared.window)
+        if context.source != task_context.FRONT:
+            task_context.bring_up(context)
+        # A control decisively on screen is pointed at the usual way, for a
+        # how-to as much as a where-is: the visible New Note button beats a
+        # menu path. The menus are for when the screen does not settle it.
+        if context.source == task_context.FRONT and prepared.window is not None:
+            seen = perception.read(shown.target.semantic, prepared.window)
+            if seen.verdict == perception.Verdict.RESOLVED:
+                return ""
+        answer = task_context.guide(prepared.question, context) or ""
+    except Exception as e:         # the menu route is extra; its failure is not the turn's
+        trace.event("show", phase="menu_failed", reason=f"{type(e).__name__}: {e}"[:120])
+        return ""
+    if answer:
+        _record(working, "menu_route", {"question": prepared.question}, answer, [])
+        trace.event("show", phase="menu", intent=shown.intent,
+                    app=(context.app.name if context.app else ""))
+    return answer
+
+
 def present(prepared: Prepared, speak: Callable[..., Any],
             working: Optional[List[dict]] = None) -> str:
     """Show it, through the existing point_at. Returns what to say last."""
@@ -329,6 +362,10 @@ def present(prepared: Prepared, speak: Callable[..., Any],
         # action ("show me how to open a new note") is a control found by what
         # it does, so its operation goes too (B.3).
         pointed = _pointed(prepared.question)
+        if not pointed:
+            routed = _by_menu(prepared, shown, working)
+            if routed:
+                return routed
         description = prepared.question if pointed else wanted.semantic
         kind = target.OBJECT if pointed else wanted.kind
         extra = {"operation": wanted.operation} if wanted.operation else {}

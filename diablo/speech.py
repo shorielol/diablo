@@ -262,3 +262,74 @@ if __name__ == "__main__":
         print(f"  out  {spoken(sample)[:100]!r}")
         print(f"  segs {segments(sample)}")
         print()
+
+
+# ─── What a person hears when something inside fails ────────────────────────
+#
+# Real use put lines naming Diablo's parts into speech. A person needs what
+# happened, what could not be done and what comes next, never the machinery.
+# This is the one translator: voice.speak and voice.speak_stream apply it to
+# every line, so no path goes round it. It rewrites only sentences that carry
+# a failure shape or an internal name; everything else passes untouched, so
+# "the worker in the factory" and "relax" are left alone.
+
+_FAILED = (r"\b(?:fail(?:ed|s|ure)?|crash(?:ed|es)?|errors?|timed? ?out|timeout|exited|"
+           r"returned none|unavailable|not responding|died|broke(?:n)?|refused)\b")
+# Internal names, each with what its failure means to the person.
+_PARTS = [
+    (re.compile(r"\bvoice ?box\b", re.I),
+     "My voice had trouble there, so I'll carry on in text."),
+    (re.compile(r"\bocr\b", re.I),
+     "I couldn't read the screen just then, so I'll try another way."),
+    (re.compile(r"\bAX\b|\baccessibility (?:api|read|tree)\b"),
+     "I couldn't read that app's controls directly, so I'll use another way to find it."),
+    (re.compile(r"\b(?:grounding[_ ]gate|goclick|perception|screenframe)\b", re.I),
+     "I couldn't confidently locate that exact control, so I don't want to point you "
+     "to the wrong place."),
+    (re.compile(r"\b(?:ollama|qwen[\w.:-]*|subprocess|worker|tool [a-z_]+|[a-z]+_[a-z_]+)\b",
+                re.I),
+     "Something went wrong on my side."),
+]
+# Shapes that are never speech, failure word or not.
+_RAW = [
+    (re.compile(r"Errno 13|Permission denied", re.I),
+     "macOS didn't give me permission for that."),
+    (re.compile(r"Traceback|File \"[^\"]+\", line \d+|\[Errno \d+\]|"
+                r"\b[A-Z][A-Za-z]*(?:Error|Exception)\b:?|\bobject at 0x"),
+     "Something went wrong on my side."),
+    (re.compile(r"\b(?:REJECT_[A-Z_]+|LOW_CONFIDENCE|NOT_FOUND|INVALID_OBSERVATION)\b"),
+     "I couldn't confidently locate that exact control, so I don't want to point you "
+     "to the wrong place."),
+    (re.compile(r"\bqwen[\w.:-]*\b.*\bnot installed\b", re.I),
+     "My local model isn't installed yet, so I can't think that through right now."),
+]
+_SENTENCES = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"'(\[])")
+
+
+def user_safe(text: str) -> str:
+    """Say what happened in the person's terms; never name Diablo's parts."""
+    if not text:
+        return text or ""
+    out, seen = [], set()
+    for sentence in _SENTENCES.split(text):
+        plain = sentence
+        for pattern, meaning in _RAW:
+            if pattern.search(sentence):
+                plain = meaning
+                break
+        else:
+            if re.search(_FAILED, sentence, re.I):
+                for pattern, meaning in _PARTS:
+                    if pattern.search(sentence):
+                        plain = meaning
+                        break
+        if plain is sentence or plain not in seen:
+            out.append(plain)
+        seen.add(plain)
+    joined = " ".join(out)
+    # A raw tool prefix, kept as meaning: "Error: no file at x" -> "No file at x".
+    joined = re.sub(r"(^|(?<=[.!?] ))Error:\s*(\w)", lambda m: m.group(1) + m.group(2).upper(),
+                    joined)
+    # A command for a developer is not something to say to a person.
+    joined = re.sub(r"\s*Run: ollama pull \S+\.?", "", joined)
+    return joined.strip()

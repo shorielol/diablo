@@ -1,0 +1,162 @@
+{
+  "when": "2026-10-05 10:32:48",
+  "voicebox": false,
+  "first_audio_path": "macOS say (fallback)",
+  "model": {
+    "chat_model": "qwen3:4b-instruct-2507-q4_K_M",
+    "cold_load_s": 1.165
+  },
+  "tasks": {
+    "multi": {
+      "label": "multi-step file task",
+      "request": "make a folder called bench-notes on my desktop and put a file called todo.txt in it that says buy milk",
+      "cold": {
+        "first_text_s": 5.604,
+        "first_audio_s": 7.364,
+        "complete_s": 20.81,
+        "returned_s": 20.81,
+        "spoken_lines": 2,
+        "status": "inline",
+        "blocked": [],
+        "error": null,
+        "stages_ms": {
+          "turn_start": 0.0,
+          "heard": 1.1,
+          "decide": 0.9,
+          "route:inline": 5602.5,
+          "carry": 7362.8,
+          "tool": 16024.7,
+          "done": 20808.7,
+          "recorded": 20809.1
+        },
+        "file_written": true
+      },
+      "warm_runs": [
+        {
+          "first_text_s": 2.179,
+          "first_audio_s": 3.388,
+          "complete_s": 15.981,
+          "returned_s": 15.981,
+          "spoken_lines": 2,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 17766.1,
+            "recorded": 17767.0,
+            "turn_start": 0.0,
+            "heard": 0.2,
+            "decide": 0.2,
+            "route:inline": 2178.7,
+            "carry": 3388.5,
+            "tool": 11100.6
+          },
+          "file_written": true
+        },
+        {
+          "first_text_s": 2.233,
+          "first_audio_s": 3.902,
+          "complete_s": 12.429,
+          "returned_s": 12.429,
+          "spoken_lines": 2,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 15979.3,
+            "recorded": 15980.4,
+            "turn_start": 0.0,
+            "heard": 0.4,
+            "decide": 0.3,
+            "route:inline": 2232.7,
+            "carry": 3902.4,
+            "tool": 7731.7
+          },
+          "file_written": true
+        },
+        {
+          "first_text_s": 1.932,
+          "first_audio_s": 3.068,
+          "complete_s": 11.028,
+          "returned_s": 11.028,
+          "spoken_lines": 2,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 12426.9,
+            "recorded": 12428.0,
+            "turn_start": 0.0,
+            "heard": 0.2,
+            "decide": 0.4,
+            "route:inline": 1932.0,
+            "carry": 3067.7,
+            "tool": 6627.6
+          },
+          "file_written": true
+        },
+        {
+          "first_text_s": 1.912,
+          "first_audio_s": 3.053,
+          "complete_s": 11.206,
+          "returned_s": 11.206,
+          "spoken_lines": 2,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 11026.6,
+            "recorded": 11027.2,
+            "turn_start": 0.0,
+            "heard": 0.4,
+            "decide": 0.2,
+            "route:inline": 1911.1,
+            "carry": 3053.0,
+            "tool": 6547.9
+          },
+          "file_written": true
+        },
+        {
+          "first_text_s": 2.043,
+          "first_audio_s": 3.637,
+          "complete_s": 17.566,
+          "returned_s": 17.566,
+          "spoken_lines": 3,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 11204.6,
+            "recorded": 11205.5,
+            "turn_start": 0.0,
+            "heard": 0.6,
+            "decide": 0.2,
+            "route:inline": 2042.4,
+            "carry": 3636.5,
+            "tool": 9480.7,
+            "guard": 14785.1
+          },
+          "file_written": true
+        }
+      ],
+      "warm": {
+        "first_text_s": {
+          "p50": 2.043,
+          "p95": 2.233,
+          "n": 5
+        },
+        "first_audio_s": {
+          "p50": 3.388,
+          "p95": 3.902,
+          "n": 5
+        },
+        "complete_s": {
+          "p50": 12.429,
+          "p95": 17.566,
+          "n": 5
+        }
+      }
+    }
+  },
+  "multi_step_runs_that_wrote_the_file": "6 of 6"
+}

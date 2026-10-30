@@ -534,7 +534,7 @@ def run():
                 "; ".join(s for s in safe if computer_use.is_destructive(s)))
 
     with guard(r, "clicking refuses every way it should"):
-        result = computer_use.click(100, 100, "Continue", confirm=lambda q: True)
+        result = computer_use.click((100, 100), confirm=lambda q: True)
         r.check("a click is refused while computer use is off",
                 result.ok is False and "not allowed" in result.spoken.lower(),
                 result.spoken[:70])
@@ -580,14 +580,17 @@ def run():
     with guard(r, "bad coordinates"):
         r.check("a coordinate off every display is rejected",
                 not display.on_any_display(-99999, -99999))
-        result = computer_use.click(-99999, -99999, "anything", confirm=lambda q: True)
+        result = computer_use.click((-99999, -99999), confirm=lambda q: True)
         r.check("clicking off-screen is refused", result.ok is False, result.spoken[:60])
+        r.check("a bare coordinate is not a target at all",
+                result.refusal in (computer_use.SWITCHED_OFF, computer_use.NOT_VALIDATED),
+                result.refusal)
 
     with guard(r, "no raw errors reach the spoken path"):
         problems = []
         for text in [screen.capture_window("nonexistent").problem,
                      screen.what_changed("nonexistent"),
-                     computer_use.click(1, 1, "x").spoken]:
+                     computer_use.click((1, 1)).spoken]:
             if any(sign in text for sign in ("Traceback", "Exception", "errno",
                                              "0x", "self.", "__")):
                 problems.append(text[:50])

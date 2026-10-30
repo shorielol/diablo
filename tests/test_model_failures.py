@@ -205,6 +205,60 @@ def main() -> int:
         r.check("the existing catchers are all on BrainOffline",
                 catchers >= 8, f"{catchers} catchers")
 
+    # Real use had turns where the model "did not run" and the trace could not
+    # say why: a timeout, a refusal and unusable JSON were all one class name.
+    r.head("Every call leaves one row saying how it ended")
+    from skills import trace
+    import tempfile
+    saved_path = trace.PATH
+    trace.PATH = os.path.join(tempfile.mkdtemp(prefix="diablo-model-rows-"), "trace.jsonl")
+
+    def rows():
+        try:
+            return [json.loads(l) for l in open(trace.PATH) if l.strip()]
+        except OSError:
+            return []
+
+    def last_outcomes(n):
+        return [row.get("outcome") for row in rows() if row.get("stage") == "model"][-n:]
+
+    try:
+        for behaviour, expected in (("success", "ok"), ("read_timeout", "timeout"),
+                                    ("connect_timeout", "timeout"), ("refused", "unreachable"),
+                                    ("runner_crashed", "refused"), ("bad_body", "unreadable"),
+                                    ("unexpected", "unreachable")):
+            with guard(r, behaviour):
+                attempt(behaviour)
+                r.check(f"{behaviour}: one row, outcome {expected}",
+                        last_outcomes(1) == [expected], str(last_outcomes(1)))
+        with guard(r, "a stream"):
+            attempt("success", stream=True)
+            row = [x for x in rows() if x.get("stage") == "model"][-1]
+            r.check("a stream that finished is ok", row.get("outcome") == "ok", str(row))
+        with guard(r, "an answer that is not JSON"):
+            counter = {"calls": 0}
+            real = urllib.request.urlopen
+            urllib.request.urlopen = transport("success", counter)   # content "hello"
+            try:
+                LB.chat_json([{"role": "user", "content": "hi"}], schema={"type": "object"})
+                outcome = None
+            except LB.BrainOffline as e:
+                outcome = e.outcome
+            finally:
+                urllib.request.urlopen = real
+            r.check("the call came back, and what came back was unusable",
+                    last_outcomes(2) == ["ok", "invalid_json"] and outcome == "invalid_json",
+                    str(last_outcomes(2)))
+        with guard(r, "what a row holds"):
+            row = [x for x in rows() if x.get("stage") == "model"][0]
+            r.check("which call, which model, how long",
+                    row.get("purpose") == "attempt" and row.get("model")
+                    and isinstance(row.get("call_ms"), float), str(row)[:120])
+            r.check("and never the words", "hello" not in open(trace.PATH).read()
+                    and "hi" not in [str(v) for v in row.values()])
+    finally:
+        trace.PATH = saved_path
+
     return r.report("model failures")
 
 

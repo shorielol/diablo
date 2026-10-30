@@ -150,16 +150,14 @@ def _settings() -> Dict[str, Any]:
         "address":   {"value": os.getenv("DIABLO_ADDRESS", "Sir"), "type": "text",
                       "label": "Calls you", "help": "Used sparingly, never as an opener."},
         "model":     {"value": os.getenv("DIABLO_MODEL", ""), "type": "text",
-                      "label": "Model", "help": "Restart required."},
-        "escalate":  {"value": os.getenv("DIABLO_ESCALATE_MODEL", ""), "type": "text",
-                      "label": "Escalates to", "help": "Blank disables escalation."},
+                      "label": "Model", "help": "Blank means qwen3.5:4b. Restart required."},
     }
 
 
 ENV_KEYS = {
     "humour": "DIABLO_HUMOUR", "warmth": "DIABLO_WARMTH",
     "formality": "DIABLO_FORMALITY", "address": "DIABLO_ADDRESS",
-    "model": "DIABLO_MODEL", "escalate": "DIABLO_ESCALATE_MODEL",
+    "model": "DIABLO_MODEL",
 }
 
 
@@ -196,7 +194,7 @@ def _save_settings(changes: Dict[str, Any]) -> Dict[str, Any]:
             if len(value) > 32:
                 rejected.append("address is too long")
                 continue
-        elif key in ("model", "escalate"):
+        elif key == "model":
             if any(c in value for c in " \t\n\"'$`"):
                 rejected.append(f"{key} has characters a model name cannot have")
                 continue
@@ -403,6 +401,11 @@ def _control(action: str) -> Dict[str, Any]:
             from skills import voice
             voice.interrupt()
             return {"ok": True}
+        if action.startswith("cancel_job:"):
+            # The Stop button on a running task. Stops that job only; the
+            # voice and every other job carry on.
+            from skills import delegation_tool
+            return delegation_tool.cancel(action.split(":", 1)[1].strip())
         if action == "clear_jobs":
             # The sidebar, emptied. Anything still running stays, because its
             # thread carries on regardless and a row is the only sign of it.

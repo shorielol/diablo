@@ -381,7 +381,9 @@ kbd {
 .needs {
   flex-shrink: 0; margin: var(--s1) var(--s4) var(--s2);
   padding: var(--s3) var(--s3) var(--s3) var(--s4);
-  border-left: 2px solid var(--focus);
+  /* Amber, the colour that means "needs you". It was the focus blue, which
+     belongs to the keyboard: a rule in that colour read as something focused. */
+  border-left: 2px solid var(--warn);
   display: flex; flex-direction: column; gap: var(--s2);
 }
 .needs .why {
@@ -422,6 +424,21 @@ kbd {
 }
 .runpart[data-status="queued"] .runtask,
 .runpart[data-status="done"] .runtask { color: var(--faint); }
+
+/* The rule and, at its end, the one way to stop the work. */
+.runfoot { display: flex; align-items: center; gap: var(--s3); }
+.runfoot .runrule { flex: 1; }
+.runstop {
+  flex-shrink: 0; height: 22px; padding: 0 10px; border-radius: var(--r-sm);
+  font-size: var(--fs-label); color: var(--text-2);
+  border: 1px solid var(--line-strong); background: transparent;
+  transition: background var(--t-hover) var(--ease-hover);
+}
+.runstop[disabled] { color: var(--faint); }
+@media (hover: hover) and (pointer: fine) {
+  .runstop:hover:not([disabled]) { background: var(--raise-2); color: var(--text); }
+}
+.stage[data-level="interaction"] .running { margin: 0 0 var(--s3); }
 
 /* An indeterminate rule rather than a percentage, because there is no
    percentage to show. */

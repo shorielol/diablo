@@ -1,0 +1,1229 @@
+{
+ "summary": {
+  "fara_ollama": {
+   "n": 50,
+   "good": 50,
+   "verdicts": {
+    "abstained": 4,
+    "correct": 46
+   },
+   "wrong_or_off": 0,
+   "p50_ms": 4451.5,
+   "p95_ms": 5391.4,
+   "median_centre_error_px_when_correct": 1.2,
+   "peak_gb": null
+  }
+ },
+ "records": [
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4547.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.6,
+   "iou": 0.001
+  },
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4523.1,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.6,
+   "iou": 0.001
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 5099.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.2,
+   "iou": 0.001
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4546.6,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.2,
+   "iou": 0.001
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4556.4,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_copy"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.9,
+   "iou": 0.001
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4552.1,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_copy"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.9,
+   "iou": 0.001
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4472.9,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.6,
+   "iou": 0.001
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4545.7,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.6,
+   "iou": 0.001
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4416.4,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.6,
+   "iou": 0.001
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4417.5,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.6,
+   "iou": 0.001
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4435.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 38.0,
+   "iou": 0.001
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4451.5,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 38.0,
+   "iou": 0.001
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4502.4,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 39.5,
+   "iou": 0.001
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4508.5,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 39.5,
+   "iou": 0.001
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4405.1,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.0,
+   "iou": 0.001
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 1381.9,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.0,
+   "iou": 0.001
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4646.9,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "name_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.0,
+   "iou": 0.001
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4625.9,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "name_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.0,
+   "iou": 0.001
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4445.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "email_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.3,
+   "iou": 0.001
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4521.9,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "email_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.3,
+   "iou": 0.001
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4423.4,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_left"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.3,
+   "iou": 0.001
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4423.6,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_left"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.3,
+   "iou": 0.001
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4460.8,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.5,
+   "iou": 0.001
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4437.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.0,
+   "iou": 0.001
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4486.1,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_bottom"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.7,
+   "iou": 0.001
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4488.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_bottom"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.7,
+   "iou": 0.001
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 5683.0,
+   "action": "terminate",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 2586.4,
+   "action": "terminate",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 5391.4,
+   "action": "terminate",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 5652.2,
+   "action": "terminate",
+   "error": "",
+   "candidates": 0
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4551.8,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.6,
+   "iou": 0.001
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4448.6,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.6,
+   "iou": 0.001
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4506.6,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 39.5,
+   "iou": 0.001
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4505.1,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 39.5,
+   "iou": 0.001
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4465.5,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 3.0,
+   "iou": 0.001
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 4516.3,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 3.0,
+   "iou": 0.001
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3068.3,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.2,
+   "iou": 0.002
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 1438.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.2,
+   "iou": 0.002
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2957.3,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "house"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.5,
+   "iou": 0.002
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 1422.3,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "house"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.5,
+   "iou": 0.002
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 2967.2,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "gear_two"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 161.5,
+   "iou": 0.0
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 1392.6,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "gear_two"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 161.5,
+   "iou": 0.0
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3050.1,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 3.9,
+   "iou": 0.001
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 1382.4,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 3.9,
+   "iou": 0.001
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3097.8,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.7,
+   "iou": 0.001
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 1506.4,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.7,
+   "iou": 0.001
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3093.3,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done_later"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.5,
+   "iou": 0.0
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 1513.9,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done_later"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.5,
+   "iou": 0.0
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fara_ollama",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 3054.9,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.7,
+   "iou": 0.001
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fara_ollama",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 1521.5,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara_ollama"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.7,
+   "iou": 0.001
+  }
+ ]
+}

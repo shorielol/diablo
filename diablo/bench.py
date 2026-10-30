@@ -253,7 +253,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--models", default=os.getenv(
         "DIABLO_BENCH_MODELS",
-        "qwen3:14b,qwen3:4b-instruct-2507-q4_K_M"))
+        "qwen3.5:4b"))
     parser.add_argument("--stt", default="")
     parser.add_argument("--runs", type=int, default=1)
     parser.add_argument("--num-ctx", type=int, default=int(os.getenv("DIABLO_NUM_CTX", "4096")))

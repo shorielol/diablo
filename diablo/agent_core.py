@@ -1,14 +1,14 @@
 """
 D.I.A.B.L.O. Agent Core
 =======================
-The loop that turns a sentence into finished work, running entirely on qwen3:14b
+The loop that turns a sentence into finished work, running entirely on qwen3.5:4b
 through Ollama. Nothing here touches the internet.
 
     understand()  →  is this actionable, ambiguous, or just conversation?
-    plan()        →  a short checklist, because a 14B model drifts without one
+    plan()        →  a short checklist, because a small model drifts without one
     run()         →  think → call a tool → read the result → repeat → report
 
-A 14B model is not a frontier model, and the whole design leans on that:
+A 4B model is not a frontier model, and the whole design leans on that:
 
 * It gets a short menu of tools, not all twenty-nine (agent_tools.select).
 * It gets a written plan to follow rather than holding one in its head.
@@ -157,6 +157,9 @@ than a filename."""
 UNDERSTAND_SCHEMA = {
     "type": "object",
     "properties": {
+        # No "why" field ahead of "action", unlike the DO planner's schema.
+        # Tried on qwen3.5:4b, 2026-10-05: 103 of 117 against 104 without it,
+        # 14 unnecessary questions against 13, and P95 5.5s against 3.5s.
         "action": {"type": "string", "enum": ["act", "clarify", "chat"]},
         "task": {"type": "string"},
         "question": {"type": "string"},
@@ -335,6 +338,49 @@ def fast_understand(text: str) -> Optional[Dict[str, Any]]:
     return {"action": "act", "task": text.strip()}
 
 
+# What the intake desk may write back, bounded by the grammar rather than by
+# asking. A cleaned-up instruction is the sentence with mis-hearings repaired,
+# not a brief: asked to "research the best budget mechanical keyboards under
+# 100 dollars", the 4B wrote 1,500 characters of requirements nobody asked for
+# ("as of 2024 or 2025", named review sites) until num_predict cut it off. That
+# was 7.4 s of the 7.8 s before a research job was even acknowledged, and the
+# truncated JSON was thrown away anyway. A maxLength in the schema makes the
+# string close; a task that runs into it was being embellished, so the
+# person's own words are used instead.
+TASK_SLACK_CHARS = 40
+SPOKEN_MAX_CHARS = 400
+
+
+def _bounded_schema(text: str) -> Dict[str, Any]:
+    limit = len(text) + TASK_SLACK_CHARS
+    props = dict(UNDERSTAND_SCHEMA["properties"])
+    props["task"] = {**props["task"], "maxLength": limit}
+    props["question"] = {**props["question"], "maxLength": SPOKEN_MAX_CHARS}
+    props["reply"] = {**props["reply"], "maxLength": SPOKEN_MAX_CHARS}
+    item = dict(props["operations"]["items"])
+    item["properties"] = {**item["properties"],
+                          "text": {**item["properties"]["text"], "maxLength": limit}}
+    props["operations"] = {**props["operations"], "items": item}
+    return {**UNDERSTAND_SCHEMA, "properties": props}
+
+
+def _whole_sentences(spoken: str, closing: str = ".") -> str:
+    """
+    A reply cut by its bound, back to the last full sentence.
+
+    With no sentence break to go back to, it ends at the last whole word
+    instead. It used to come back empty, and an empty question made understand
+    fall back to acting: a clarify turned into doing the thing it asked about.
+    """
+    if len(spoken) < SPOKEN_MAX_CHARS - 1:
+        return spoken
+    end = max(spoken.rfind(". "), spoken.rfind("? "), spoken.rfind("! "))
+    if end > 0:
+        return spoken[:end + 1]
+    words = spoken[:spoken.rfind(" ")] if " " in spoken else spoken
+    return words.rstrip(" ,;:-") + closing
+
+
 def understand(text: str, in_conversation: bool = False) -> Dict[str, Any]:
     """
     Decide whether to act, ask, or just talk. Falls back to acting.
@@ -355,10 +401,18 @@ def understand(text: str, in_conversation: bool = False) -> Dict[str, Any]:
         result = local_brain.chat_json(
             [{"role": "system", "content": prompt},
              {"role": "user", "content": text}],
-            schema=UNDERSTAND_SCHEMA, num_predict=300,
+            schema=_bounded_schema(text), num_predict=300,
         )
     except BrainOffline:
         return {"action": "act", "task": text}
+
+    task = str(result.get("task") or "")
+    if task and len(task) >= len(text) + TASK_SLACK_CHARS - 1:
+        trace.event("understand", kept="original", reason="task ran into its bound")
+        result["task"] = text
+    for spoken, closing in (("reply", "."), ("question", "?")):
+        if result.get(spoken):
+            result[spoken] = _whole_sentences(str(result[spoken]), closing)
 
     action = result.get("action")
     if action not in ("act", "clarify", "chat"):
@@ -487,6 +541,10 @@ def _call_signature(name: str, args: Any) -> str:
         return name + str(args)
 
 
+class Cancelled(Exception):
+    """The person stopped this run. Raised between steps, never mid-tool."""
+
+
 def run(
     task: str,
     speak: Speak,
@@ -495,6 +553,8 @@ def run(
     on_step: Optional[Callable[[int, str, str], None]] = None,
     working: Optional[List[Dict[str, str]]] = None,
     decision: Any = None,
+    should_stop: Optional[Callable[[], bool]] = None,
+    request: Optional[str] = None,
 ) -> str:
     """
     Work the task to completion. Returns the spoken summary.
@@ -534,6 +594,11 @@ def run(
 
     agent_tools.CONTEXT["ask"] = ask
     agent_tools.CONTEXT["confirm"] = confirm
+    # The person's words, for the one tool that must check them rather than
+    # the model's arguments: take_screenshot saves only when this asked for it.
+    # `task` is the intake model's rewrite of them, so callers that still have
+    # what was said pass it as `request`; background jobs only have the task.
+    agent_tools.CONTEXT["request"] = task if request is None else request
     # Where a tool puts a structured result. Drained onto the working step
     # after each call, so the evidence a tool produced survives next to the
     # sentence it returned instead of only inside it.
@@ -568,7 +633,16 @@ def run(
     quoted_challenge = False
     reassured = False
 
+    def stop_if_asked() -> None:
+        # Checked before the model is asked and before each tool runs, so a
+        # stop lands within one step: whatever is already running finishes,
+        # and nothing new starts.
+        if should_stop is not None and should_stop():
+            trace.event("agent", state="cancelled", step=step)
+            raise Cancelled()
+
     for step in range(1, MAX_STEPS + 1):
+        stop_if_asked()
         if step == 4 and not reassured:
             # Long silence on a voice interface reads as a crash. Say something.
             # Step 4 rather than 7: seven tool calls is fifteen seconds or more,
@@ -608,7 +682,7 @@ def run(
             if (ask and not asked_aloud and not performed
                     and _is_really_a_question(answer, performed)):
                 asked_aloud = True
-                trace.event("guard", guard="question_not_asked", text=answer[:120])
+                trace.event("guard", guard="question_not_asked", chars=len(answer))
                 asked = _speakable(answer)
                 reply = ask(asked)
                 if reply:
@@ -619,13 +693,13 @@ def run(
                 # question, so the turn ends here. Carrying on made the caller
                 # say it a second time twenty seconds later, or sent the loop
                 # back to the model for a reworded version of the same answer.
-                trace.event("guard", guard="question_unanswered", text=asked[:120])
+                trace.event("guard", guard="question_unanswered", chars=len(asked))
                 return AlreadySpoken(asked)
 
             if (_did_maths_in_its_head(task, answer, used_tools)
                     and not counted):
                 counted = True
-                trace.event("guard", guard="maths_in_its_head", answer=answer[:120])
+                trace.event("guard", guard="maths_in_its_head", chars=len(answer))
                 messages.append({"role": "user", "content":
                     "You have given a number without calculating it. Call "
                     "calculate with the arithmetic written out — every sum, "
@@ -635,7 +709,7 @@ def run(
 
             if _claims_unperformed_action(answer, performed) and not challenged:
                 challenged = True
-                trace.event("guard", guard="claimed_unperformed", claim=answer[:120])
+                trace.event("guard", guard="claimed_unperformed", chars=len(answer))
                 messages.append({"role": "user", "content":
                                  "You have not called any tool that changes "
                                  "anything, so nothing has happened yet. Do not "
@@ -656,7 +730,7 @@ def run(
             invented = _quotes_something_unread(answer, "\n".join(saw))
             if invented and not quoted_challenge:
                 quoted_challenge = True
-                trace.event("guard", guard="quoted_unread", quote=invented[:100])
+                trace.event("guard", guard="quoted_unread", chars=len(invented))
                 messages.append({"role": "user", "content":
                                  f"You put {invented[:80]!r} in quotes, and no tool "
                                  f"returned that. Quote only what the tools actually "
@@ -681,7 +755,7 @@ def run(
                 if short:
                     content = short[-1].strip()
                     trace.event("guard", guard="quoted_unread_replaced",
-                                content=content[:80])
+                                chars=len(content))
                     return _speakable(f"It says: {content}")
                 return _speakable(
                     "I read it, Sir, but I can't report the contents reliably. "
@@ -705,7 +779,7 @@ def run(
             if question and ask and not asked_which:
                 asked_which = True
                 trace.event("guard", guard="ambiguous_target", tool=name, question=question[:120])
-                print(f"  [Agent {step}] ambiguous target, asking: {question}")
+                print(f"  [Agent {step}] ambiguous target, asking ({len(question)} chars)")
                 reply = ask(question)
                 messages.append({"role": "tool", "tool_name": name, "content":
                                  (f"Not done — the target was ambiguous so I asked. "
@@ -738,9 +812,16 @@ def run(
                           "it did not get you anywhere. Try a different tool, or "
                           "call ask_user, or give your final answer.")
             else:
+                stop_if_asked()
                 if on_step:
                     on_step(step, name, json.dumps(args)[:120])
-                print(f"  [Agent {step}] {name}({json.dumps(args)[:110]})")
+                # Names and sizes only. The model builds arguments from what it
+                # read, so a search for a line off the screen, printed here,
+                # was that line in diablo.log.
+                print(f"  [Agent {step}] {name}("
+                      + ", ".join(f"{k}: {len(str(v))} chars" for k, v in
+                                  (args.items() if isinstance(args, dict) else [("args", args)]))
+                      + ")")
                 began_call = time.time()
                 result = agent_tools.execute(name, args)
                 used_any_tool = True
@@ -768,20 +849,28 @@ def run(
                     best = getattr(reading, "best", None)
                     trace.event("observed", tool=name,
                                 verdict=getattr(reading, "verdict", ""),
-                                label=getattr(best, "label", "") if best else "",
+                                labelled=bool(getattr(best, "label", "")) if best else False,
                                 confidence=(round(best.confidence, 3)
                                             if best is not None else None),
                                 sources=("+".join(sorted(set(best.sources)))
                                          if best is not None else ""),
                                 kept=working is not None)
+                # The size of the result, never the result. It used to keep the
+                # first 120 characters, which for read_screen was the screen,
+                # for list_windows every window title and for read_file the
+                # file — all written to disk in a log that rotates but stays.
                 trace.event("tool", tool=name,
                             ok=not result.startswith(("Error", "Refused", "Cancelled")),
                             ms_call=round((time.time() - began_call) * 1000, 1),
-                            detail=result[:120])
+                            chars=len(result))
                 if name in MUTATING and not result.lower().startswith(
                         ("error", "refused", "cancelled")):
                     performed.add(name)
-                print(f"  [Agent {step}] -> {result[:160]}")
+                # The size, and an error's wording, never the result itself:
+                # stdout is diablo.log in the app, and for read_screen the
+                # result is whatever was on his screen.
+                failed = result.startswith(("Error", "Refused", "Cancelled"))
+                print(f"  [Agent {step}] -> {result[:120] if failed else f'{len(result)} chars'}")
 
             messages.append({"role": "tool", "tool_name": name, "content": result})
 

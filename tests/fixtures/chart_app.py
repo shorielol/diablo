@@ -129,9 +129,7 @@ def main() -> int:
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
 
-    window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-        NSMakeRect(*_origin(340.0, 200.0), 880, 600), NSWindowStyleMaskTitled,
-        NSBackingStoreBuffered, False)
+    window = _layout.new_window((*_origin(340.0, 200.0), 880, 600), NSWindowStyleMaskTitled)
     window.setTitle_(TITLE)
     view = Chart.alloc().initWithFrame_(NSMakeRect(0, 0, 880, 600))
     window.contentView().addSubview_(view)

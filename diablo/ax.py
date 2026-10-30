@@ -97,6 +97,8 @@ def _load():
     _cf.CFArrayGetValueAtIndex.argtypes = [ctypes.c_void_p, ctypes.c_long]
     _cf.CFBooleanGetValue.restype = ctypes.c_bool
     _cf.CFBooleanGetValue.argtypes = [ctypes.c_void_p]
+    _cf.CFNumberGetValue.restype = ctypes.c_bool
+    _cf.CFNumberGetValue.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p]
     _cf.CFRelease.argtypes = [ctypes.c_void_p]
 
     _as.AXIsProcessTrusted.restype = ctypes.c_bool
@@ -107,6 +109,16 @@ def _load():
                                                   ctypes.POINTER(ctypes.c_void_p)]
     _as.AXValueGetValue.restype = ctypes.c_bool
     _as.AXValueGetValue.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p]
+    _as.AXUIElementCreateSystemWide.restype = ctypes.c_void_p
+    _as.AXUIElementCreateSystemWide.argtypes = []
+    _as.AXUIElementCopyElementAtPosition.restype = ctypes.c_int
+    _as.AXUIElementCopyElementAtPosition.argtypes = [ctypes.c_void_p, ctypes.c_float,
+                                                     ctypes.c_float,
+                                                     ctypes.POINTER(ctypes.c_void_p)]
+    _as.AXUIElementGetPid.restype = ctypes.c_int
+    _as.AXUIElementGetPid.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+    _as.AXUIElementPerformAction.restype = ctypes.c_int
+    _as.AXUIElementPerformAction.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
 
 
 class _Point(ctypes.Structure):
@@ -169,6 +181,23 @@ def _bool_attribute(element, name: str) -> Optional[bool]:
     return None
 
 
+def _number_attribute(element, name: str) -> Optional[float]:
+    ref = _attribute(element, name)
+    if not ref:
+        return None
+    try:
+        if _cf.CFGetTypeID(ref) == _cf.CFNumberGetTypeID():
+            out = ctypes.c_double()
+            # 13 is kCFNumberDoubleType.
+            if _cf.CFNumberGetValue(ref, 13, ctypes.byref(out)):
+                return float(out.value)
+        if _cf.CFGetTypeID(ref) == _cf.CFBooleanGetTypeID():
+            return 1.0 if _cf.CFBooleanGetValue(ref) else 0.0
+    except Exception:
+        pass
+    return None
+
+
 def _frame(element) -> Optional[Tuple[float, float, float, float]]:
     """The element's rectangle in Quartz space, or None if it will not say."""
     position, size = _attribute(element, "AXPosition"), _attribute(element, "AXSize")
@@ -196,6 +225,10 @@ class Element:
     enabled: Optional[bool] = None
     focused: Optional[bool] = None
     selected: Optional[bool] = None
+    # A checkbox's or radio button's on/off, read as a number. Kept out of
+    # `value`, because `label` falls back to `value` and a control's name
+    # must not change when it is ticked.
+    state: Optional[float] = None
 
     x: float = 0.0
     y: float = 0.0
@@ -301,6 +334,8 @@ def elements_for_window(window: Dict[str, Any],
                 if rect and rect[2] > 0 and rect[3] > 0:
                     found.append(Element(
                         role=role,
+                        state=(_number_attribute(node, "AXValue")
+                               if role in TOGGLE_ROLES else None),
                         subrole=_string_attribute(node, "AXSubrole"),
                         title=_string_attribute(node, "AXTitle"),
                         description=_string_attribute(node, "AXDescription"),
@@ -343,6 +378,237 @@ def element_at(x: float, y: float, window: Dict[str, Any]) -> Optional[Element]:
         if area < smallest:
             best, smallest = element, area
     return best
+
+
+@dataclass
+class Hit:
+    """
+    What macOS says is under a point right now.
+
+    `element` is the nearest actionable control at or above what was hit, or
+    None when the point lands on scenery. `pid` and `window_frame` belong to
+    whatever is frontmost there, which is how a point on a window that covers
+    the one being asked about is told apart from a point on that window.
+    """
+
+    element: Optional[Element] = None
+    deepest_role: str = ""
+    pid: int = 0
+    window_title: str = ""
+    window_frame: Optional[Tuple[float, float, float, float]] = None
+
+
+# Controls whose on/off is their AXValue.
+TOGGLE_ROLES = {"AXCheckBox", "AXRadioButton"}
+
+
+def _element(node, pid: int, window_title: str) -> Optional[Element]:
+    rect = _frame(node)
+    if not rect or rect[2] <= 0 or rect[3] <= 0:
+        return None
+    role = _string_attribute(node, "AXRole")
+    return Element(
+        role=role,
+        state=_number_attribute(node, "AXValue") if role in TOGGLE_ROLES else None,
+        subrole=_string_attribute(node, "AXSubrole"),
+        title=_string_attribute(node, "AXTitle"),
+        description=_string_attribute(node, "AXDescription"),
+        value=_string_attribute(node, "AXValue")[:120],
+        help=_string_attribute(node, "AXHelp"),
+        enabled=_bool_attribute(node, "AXEnabled"),
+        focused=_bool_attribute(node, "AXFocused"),
+        selected=_bool_attribute(node, "AXSelected"),
+        x=rect[0], y=rect[1], width=rect[2], height=rect[3],
+        pid=pid, window_title=window_title)
+
+
+# How far up from the deepest element to look for the control. A button's
+# title cell or a checkbox's label is one or two levels below the control.
+CLIMB = 4
+
+
+def hit_test(x: float, y: float) -> Optional[Hit]:
+    """
+    The control under a Quartz point, asked of the system rather than of one
+    window's tree.
+
+    `element_at` searches the tree of the window it is given, so it cannot see
+    another window lying on top of that point, and a click goes to whatever is
+    on top. This asks the window server's view of the screen. Returns None when
+    accessibility is unavailable, which is "cannot tell", never "nothing there".
+    """
+    if not available():
+        return None
+    try:
+        _load()
+        system = _as.AXUIElementCreateSystemWide()
+        hit = ctypes.c_void_p()
+        err = _as.AXUIElementCopyElementAtPosition(system, float(x), float(y),
+                                                   ctypes.byref(hit))
+    except Exception:
+        return None
+    if err != 0 or not hit.value:
+        return Hit()
+
+    pid = ctypes.c_int(0)
+    try:
+        _as.AXUIElementGetPid(hit.value, ctypes.byref(pid))
+    except Exception:
+        pass
+    window = _attribute(hit.value, "AXWindow")
+    window_title = _string_attribute(window, "AXTitle") if window else ""
+    result = Hit(deepest_role=_string_attribute(hit.value, "AXRole"), pid=int(pid.value),
+                 window_title=window_title,
+                 window_frame=_frame(window) if window else None)
+
+    node = hit.value
+    for _ in range(CLIMB + 1):
+        role = _string_attribute(node, "AXRole")
+        if role in ACTIONABLE_ROLES:
+            result.element = _element(node, result.pid, window_title)
+            break
+        if role in ("AXWindow", "AXApplication", "AXSheet", "AXDrawer", ""):
+            break
+        node = _attribute(node, "AXParent")
+        if not node:
+            break
+    return result
+
+
+@dataclass(frozen=True)
+class MenuItem:
+    """
+    One command in an application's menu bar, as the application publishes it.
+
+    `path` runs from the menu bar title to the item: ("File", "New Tab"), or
+    ("File", "Export", "PDF…") for a submenu. `cmd_mods` is the accessibility
+    modifier mask: 1 Shift, 2 Option, 4 Control, 8 means no Command.
+    """
+
+    path: Tuple[str, ...]
+    enabled: bool = True
+    cmd_char: str = ""
+    cmd_mods: int = 0
+    node: Optional[int] = field(default=None, compare=False, repr=False)
+    # Where the menu's title sits in the menu bar, in Quartz points: what to
+    # point at when the command itself is inside a closed menu.
+    bar_frame: Optional[Tuple[float, float, float, float]] = field(
+        default=None, compare=False, repr=False)
+
+    @property
+    def title(self) -> str:
+        return self.path[-1] if self.path else ""
+
+
+# How much of a menu bar is read: deep enough for File › Export › PDF…, and
+# bounded, because some apps publish hundreds of items (fonts, recent files).
+MENU_DEPTH = 3
+MENU_LIMIT = 1500
+
+
+def menu_tree(pid: int) -> List[MenuItem]:
+    """
+    Every command in an application's menu bar, without opening a menu.
+
+    The Apple menu is skipped: it belongs to the system, not the app. Works
+    for an application in the background, since the bar is read from the
+    application, not from the screen.
+    """
+    if not pid or not available():
+        return []
+    try:
+        _load()
+        bar = _attribute(_as.AXUIElementCreateApplication(pid), "AXMenuBar")
+    except Exception:
+        return []
+    out: List[MenuItem] = []
+
+    def children(node) -> List[int]:
+        ref = _attribute(node, "AXChildren")
+        if not ref:
+            return []
+        try:
+            return [_cf.CFArrayGetValueAtIndex(ref, i)
+                    for i in range(min(_cf.CFArrayGetCount(ref), 400))]
+        except Exception:
+            return []
+
+    def walk(menu, path: Tuple[str, ...], depth: int, bar) -> None:
+        for item in children(menu):
+            if len(out) >= MENU_LIMIT:
+                return
+            title = _string_attribute(item, "AXTitle").strip()
+            if not title:
+                continue                          # a separator
+            here = path + (title,)
+            submenus = [c for c in children(item)
+                        if _string_attribute(c, "AXRole") == "AXMenu"]
+            if submenus and depth < MENU_DEPTH:
+                walk(submenus[0], here, depth + 1, bar)
+                continue
+            mods = _number_attribute(item, "AXMenuItemCmdModifiers")
+            out.append(MenuItem(here, _bool_attribute(item, "AXEnabled") is not False,
+                                _string_attribute(item, "AXMenuItemCmdChar"),
+                                int(mods or 0), item, bar))
+
+    for index, top in enumerate(children(bar) if bar else []):
+        title = _string_attribute(top, "AXTitle").strip()
+        if index == 0 or not title or title == "Apple":
+            continue
+        bar_frame = _frame(top)
+        for menu in children(top):
+            if _string_attribute(menu, "AXRole") == "AXMenu":
+                walk(menu, (title,), 1, bar_frame)
+    return out
+
+
+def window_titles(pid: int) -> Tuple[str, ...]:
+    """The titles of an application's windows, front first, from the app itself."""
+    if not pid or not available():
+        return ()
+    try:
+        _load()
+        windows = _attribute(_as.AXUIElementCreateApplication(pid), "AXWindows")
+        if not windows:
+            return ()
+        return tuple(_string_attribute(_cf.CFArrayGetValueAtIndex(windows, i), "AXTitle")
+                     for i in range(min(_cf.CFArrayGetCount(windows), 50)))
+    except Exception:
+        return ()
+
+
+def press(node: Optional[int]) -> bool:
+    """Press a control or menu item through accessibility. True if the app accepted it."""
+    if not node or not available():
+        return False
+    try:
+        _load()
+        return _as.AXUIElementPerformAction(node, _cfstr("AXPress")) == 0
+    except Exception:
+        return False
+
+
+# Controls that take typed text. Keystrokes sent to anything else are lost,
+# or worse: a space bar press on a focused button presses it.
+EDITABLE_ROLES = {"AXTextField", "AXTextArea", "AXSearchField", "AXComboBox"}
+
+
+def focused_element(pid: int) -> Optional[Element]:
+    """
+    The control that has keyboard focus in an application, or None when
+    nothing has it or accessibility cannot say. Both mean "do not type".
+    """
+    if not pid or not available():
+        return None
+    try:
+        _load()
+        node = _attribute(_as.AXUIElementCreateApplication(pid), "AXFocusedUIElement")
+    except Exception:
+        return None
+    if not node:
+        return None
+    window = _attribute(node, "AXWindow")
+    return _element(node, pid, _string_attribute(window, "AXTitle") if window else "")
 
 
 if __name__ == "__main__":

@@ -167,6 +167,15 @@ class ScreenFrame:
     pixel_height: int = 0
     fingerprint: List[int] = field(default_factory=list)
 
+    # Set once this frame has authorised a click (computer_use.click). A frame
+    # vouches for one action; the next one looks again.
+    spent: bool = False
+
+    # Which capture this is. A GroundingProposal names the frame its point was
+    # read from, and grounding_gate refuses a point offered against any other:
+    # two captures of the same window a second apart are different evidence.
+    frame_id: str = field(default_factory=lambda: os.urandom(8).hex())
+
     def age(self) -> float:
         return time.time() - self.captured_at
 

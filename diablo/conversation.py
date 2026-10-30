@@ -17,7 +17,7 @@ Three things it does that the command path does not:
   Sight       when you say "this", "on screen", "my chrome tab", the window you
               are looking at is read and attached to the turn. It is not
               attached otherwise — sending a screenshot's worth of OCR into
-              every reply is how a 14B model loses the thread.
+              every reply is how a small model loses the thread.
 
   Restraint   it answers in one or two spoken sentences. Anything longer is
               being read aloud at you while you are trying to work.
@@ -315,6 +315,13 @@ def _absorb(record: Dict[str, Any], step: Dict[str, str]) -> None:
     elif tool == "read_the_question":
         record["findings"].append(" ".join(result.split())[:TASK_FINDING_CHARS])
 
+
+
+# A question about what he did before now: the one case where saying what
+# Diablo can actually check (recently changed files) is the useful answer.
+_ABOUT_THE_PAST = re.compile(
+    r"\b(?:yesterday|last (?:week|night|time|few days)|past (?:few )?(?:days|weeks|week)|"
+    r"lately|recently|earlier|been (?:doing|working|up to)|worked on|working on)\b", re.I)
 
 class Session:
     """One rolling conversation with interaction-scoped commit ownership."""
@@ -805,6 +812,13 @@ class Session:
                 "earlier — what he said, what you decided, a file he mentioned "
                 "— you genuinely do not have it. Say so and ask him to remind "
                 "you. Do not reconstruct it."})
+            # Only when he asks about the past. Sent with every first message,
+            # this made a plain "good morning" come back as a paragraph.
+            if _ABOUT_THE_PAST.search(text or ""):
+                messages.append({"role": "system", "content":
+                    "What you can do, if he wants: look at which files he changed "
+                    "on his Mac recently, by their names and dates. Offer that; "
+                    "never say you cannot see his files."})
         # How the last answer was actually arrived at, when he is asking about
         # that and not about something new.
         #

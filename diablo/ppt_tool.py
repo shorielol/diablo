@@ -1,7 +1,10 @@
 import os
 import random
 from pptx import Presentation
-from tools import llm_tool
+# The shipped module, installed beside this one. `from tools import llm_tool`
+# only resolved on a machine that still had a legacy ~/.diablo/tools folder,
+# and there it ran an older copy than the one in the repository.
+from skills import llm_tool
 
 def create_presentation(topic: str, slide_count: int = 8):
     """

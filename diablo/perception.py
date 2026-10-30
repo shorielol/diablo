@@ -521,9 +521,59 @@ def locate(intent: str, window: Optional[Dict[str, Any]] = None,
             observation["ocr"] = seen
         fused = _for_operation(_fuse(found), operation, observation)
     if _needs_vision(intent, fused):
-        found = found + _from_vision(intent, window)
+        # GoClick when it is installed, because pointing is what it was trained
+        # for; otherwise the brain model's numbered-box pick below. Never both:
+        # two models agreeing is not evidence, and the gate is the evidence.
+        grounded = _from_grounder(intent, window, observation)
+        found = found + (grounded if grounded is not None else _from_vision(intent, window))
         fused = _for_operation(_fuse(found), operation, observation)
     return fused[:limit]
+
+
+def _from_grounder(intent: str, window: Dict[str, Any],
+                   observation: Optional[Dict[str, Any]] = None
+                   ) -> Optional[List[Candidate]]:
+    """
+    A control GoClick pointed at and the application vouched for, or nothing.
+
+    None means GoClick is not installed, so the caller may look another way.
+    An empty list means it looked and the gate refused what it saw, which is
+    an answer and is not second-guessed by asking a different model.
+
+    The candidate is the accessibility element under the point: its rectangle,
+    its label, its enabled state. Nothing GoClick said survives except where
+    it pointed. A control with no published name enters below DECISIVE, so it
+    can only ever be asked about, never pressed on GoClick's word.
+    """
+    from skills import goclick
+    from skills import grounding_gate as gate
+
+    if not goclick.available():
+        return None
+    look = gate.observe(window)
+    try:
+        if not look.frame.ok:
+            return []
+        proposal = goclick.propose(look.frame, intent)
+        if proposal is None:
+            return []
+        verdict = gate.validate(proposal, look)
+    finally:
+        look.frame.release()
+    if observation is not None:
+        observation["grounder"] = {"ok": True, **verdict.as_record()}
+    target = verdict.target
+    if target is None:
+        return []
+    confidence = 0.95 if verdict.ok else 0.85
+    return [Candidate(
+        label=target.label, role=target.role,
+        x=target.x, y=target.y, width=target.width, height=target.height,
+        confidence=confidence, sources=["grounder"],
+        source_confidence={"grounder": confidence},
+        evidence=[f"GoClick pointed here and accessibility says it is {target.describe()}"],
+        enabled=True, app=window.get("app", ""),
+        window_id=int(window.get("id") or 0))]
 
 
 def _wants_a_picture(intent: str) -> bool:

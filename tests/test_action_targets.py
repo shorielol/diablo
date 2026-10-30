@@ -103,8 +103,15 @@ class Screen:
         self.screen, self.vision, self.asked_ocr, self.asked_vision = screen, vision, [], []
 
     def __enter__(self):
+        from skills import task_context
         self.saved = (ax.elements_for_window, pointing.locate, perception._from_vision,
-                      screen_context.frontmost_window)
+                      screen_context.frontmost_window, perception._from_grounder,
+                      task_context.guide, task_context.bring_up)
+        # The app's own menus are a route of their own, tested in
+        # test_task_context; this stand-in screen has no menu bar, and the
+        # real one belongs to whatever app is running on this Mac.
+        task_context.guide = lambda question, context: None
+        task_context.bring_up = lambda context, wait=0: None
         ax.elements_for_window = lambda window, actionable_only=True: [
             e for e in self.screen.get("ax", [])
             if not actionable_only or e.role in ax.ACTIONABLE_ROLES]
@@ -126,12 +133,17 @@ class Screen:
             self.asked_vision.append(intent)
             return list(self.vision or [])
         perception._from_vision = vision
+        # GoClick is asked before the numbered-box pick when it is installed.
+        # These checks are about the pick, so GoClick reports itself absent.
+        perception._from_grounder = lambda intent, window, observation=None: None
         screen_context.frontmost_window = lambda: WINDOW
         return self
 
     def __exit__(self, *exc):
+        from skills import task_context
         (ax.elements_for_window, pointing.locate, perception._from_vision,
-         screen_context.frontmost_window) = self.saved
+         screen_context.frontmost_window, perception._from_grounder,
+         task_context.guide, task_context.bring_up) = self.saved
 
 
 def best(screen, intent, operation="", vision=None):
@@ -395,9 +407,14 @@ def run() -> int:
             pass
 
     calls = {"point_at": [], "tutor": [], "run": []}
+    from skills import task_context
     saved = (pointing.point_at, tutor.walk, agent_core.run, agent_core.understand,
              local_brain.available, conversation.session,
-             screen_context.frontmost_window)
+             screen_context.frontmost_window, task_context.guide, task_context.bring_up)
+    # The menu route reads the real Mac's menus; this turn is about the
+    # router -> show -> point_at plumbing, so it stands in for "no route".
+    task_context.guide = lambda question, context: None
+    task_context.bring_up = lambda context, wait=0: None
 
     def fake_point_at(description, target="", seconds=3.0, reading_out=None, kind="",
                       steps=None, speak=None, operation="", window=None):
@@ -440,7 +457,8 @@ def run() -> int:
     finally:
         (pointing.point_at, tutor.walk, agent_core.run, agent_core.understand,
          local_brain.available, conversation.session,
-         screen_context.frontmost_window) = saved
+         screen_context.frontmost_window, task_context.guide,
+         task_context.bring_up) = saved
 
     with guard(r, "the reference request, through the real turn"):
         shown = target.asked_to_show("Where is Diablo Notes?")
@@ -529,7 +547,11 @@ def run() -> int:
     with guard(r, "nothing here can act"):
         from skills import showing
         r.check("computer use is off", computer_use.ENABLED is False)
-        r.check("the tool list did not grow", len(agent_tools.TOOLS) == 48,
+        # 48, plus find_in_menus and choose_menu, reviewed 2026-10-06
+        # (tests/test_boundaries.py says why each is allowed).
+        r.check("the tool list did not grow beyond the reviewed menu pair",
+                len(agent_tools.TOOLS) == 50
+                and {"find_in_menus", "choose_menu"} <= set(agent_tools.TOOLS),
                 str(len(agent_tools.TOOLS)))
         banned = ("CGEventPost", "CGEventCreateMouseEvent", "CGEventCreateKeyboardEvent",
                   "CGWarpMouseCursorPosition", "setMouseLocation")

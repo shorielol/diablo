@@ -1,0 +1,9 @@
+bundle evidence, 2026-10-05 (scratch build used by launch_2026-10-05.log)
+codesign --verify: valid
+Diablo.icns
+  "CFBundleIconFile" => "Diablo.icns"
+  "CFBundleIdentifier" => "com.shaurya.diablo.gauntlet"
+  "CFBundleShortVersionString" => "2.0"
+  "LSUIElement" => true
+11:DIABLO_HOME="$S/gauntlet/w9/home"
+34:DIABLO_HOME="$S/gauntlet/w9/home"

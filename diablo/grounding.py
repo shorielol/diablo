@@ -173,66 +173,43 @@ def _sized_for_model(path: str) -> Tuple[str, int, int, bool]:
     return sized, 0, 0, temporary
 
 
-# ─── The model's own canvas (B.4) ───────────────────────────────────────────
+# ─── The box's coordinate space ──────────────────────────────────────────────
 #
-# Measured, not assumed. A red dot was placed at known positions in blank
-# images of eight sizes and qwen2.5vl was asked, through Ollama, where it was.
-# Its answers were an exact, aspect-preserving, zero-offset scaling of the
-# truth — residuals of 0.2 to 5.5 pixels — by a factor that depended only on
-# the image's size: 2.54 for 426x316, 1.24 for 852x632, 1.00 for 1278x948.
-# That is Qwen2.5-VL's own smart_resize: the picture is resized to multiples
-# of 28, scaled UP until it has at least 1024 x 28 x 28 pixels, and the model
-# answers in the resized picture, which Ollama never reports.
+# A box is four numbers, and four numbers mean nothing until it is said what
+# they are measured in. This used to be guessed: fractions of the image first,
+# then Qwen2.5-VL's resized canvas, then the image's own pixels, then a
+# 0..1000 grid, taking the first reading that made a sane rectangle. For a
+# model answering on a 0..1000 grid about an image wider than 1000 pixels the
+# "pixels" reading always fits first, and the box lands in the wrong place
+# without a word.
 #
-# Reading those numbers as pixels of the image that was sent put the
-# welfare-loss box 170 points right of the triangle on an 852-pixel crop.
-# The mapper from crop to screen was right all along; this was the step
-# before it.
-VISION_PATCH = config.env_int("DIABLO_VISION_PATCH", 28, low=1, high=64)
-VISION_MIN_PIXELS = config.env_int("DIABLO_VISION_MIN_PIXELS", 1024 * 28 * 28,
-                                   low=0, high=64_000_000)
-VISION_MAX_PIXELS = config.env_int("DIABLO_VISION_MAX_PIXELS", 16384 * 28 * 28,
-                                   low=1, high=512_000_000)
+# So the space is declared per model family and read exactly one way. Qwen3.5
+# answers on Qwen's documented 0..1000 grid. Measured 2026-10-05 on red boxes
+# at known positions, qwen3.5:4b at Q4_K_M was exact on that grid for a
+# 426x316 image and drifted towards pixel-like values on larger ones, which is
+# why GUI targets are GoClick's job and a model box is used only for regions
+# inside figures, where the deterministic shape picker checks it.
+BOX_SPACES = (("qwen3.5", 1000.0), ("qwen3-vl", 1000.0), ("qwen3vl", 1000.0))
 
 
-def _canvas_applies() -> bool:
-    """Whether the vision model in use answers in a smart-resized canvas."""
-    override = os.getenv("DIABLO_VISION_COORDS", "").strip().lower()
-    if override:
-        return override == "canvas"
-    model = os.getenv("DIABLO_VISION_MODEL", "qwen2.5vl").lower()
-    return "qwen2.5vl" in model or "qwen2.5-vl" in model
+def box_scale(model: Optional[str] = None) -> Optional[float]:
+    """The grid the vision model's boxes are measured on, or None if unknown."""
+    from skills import local_brain as _lb
+    name = (model or _lb.CHAT_MODEL or "").lower()
+    for family, scale in BOX_SPACES:
+        if family in name:
+            return scale
+    return None
 
 
-def model_canvas(width: int, height: int) -> Tuple[int, int]:
-    """The size of the picture the model actually answered about."""
-    import math
-    factor = max(1, VISION_PATCH)
-    if width <= 0 or height <= 0:
-        return (0, 0)
-    w_bar = max(factor, round(width / factor) * factor)
-    h_bar = max(factor, round(height / factor) * factor)
-    if w_bar * h_bar > VISION_MAX_PIXELS:
-        beta = math.sqrt((width * height) / VISION_MAX_PIXELS)
-        w_bar = max(factor, math.floor(width / beta / factor) * factor)
-        h_bar = max(factor, math.floor(height / beta / factor) * factor)
-    elif w_bar * h_bar < VISION_MIN_PIXELS:
-        beta = math.sqrt(VISION_MIN_PIXELS / (width * height))
-        w_bar = math.ceil(width * beta / factor) * factor
-        h_bar = math.ceil(height * beta / factor) * factor
-    return (int(w_bar), int(h_bar))
-
-
-def _box_in_crop(values: Any, image: Tuple[int, int]
+def _box_in_crop(values: Any, image: Tuple[int, int], scale: Optional[float] = None
                  ) -> Optional[Tuple[float, float, float, float]]:
     """
-    Four numbers from a model, as fractions of the crop — or nothing.
+    Four numbers from the model, as fractions of the crop — or nothing.
 
-    Three spaces are tried because three are in use in the wild: fractions of
-    the image, absolute pixels of the image (what Qwen VL emits), and the
-    per-mille convention the older Qwen2-VL used. The image's own dimensions
-    decide which reading is even possible, and a set of numbers that is not a
-    sane rectangle in any of them is refused rather than rescued.
+    Read in the model's declared space and no other. Numbers that are not a
+    sane rectangle there are refused rather than reinterpreted, and a model
+    with no declared space gets no box at all.
     """
     if not isinstance(values, (list, tuple)) or len(values) < 4:
         return None
@@ -242,24 +219,15 @@ def _box_in_crop(values: Any, image: Tuple[int, int]
         return None
     if any(v != v for v in (x1, y1, x2, y2)):
         return None
-    width, height = float(image[0] or 0), float(image[1] or 0)
-    spaces = [(1.0, 1.0)]
-    if width > 0 and height > 0 and _canvas_applies():
-        # The model's canvas first: for any image under a megapixel it is
-        # larger than the image, and its numbers read as the image's own
-        # pixels land in the wrong place (B.4).
-        spaces.append(tuple(float(v) for v in model_canvas(int(width), int(height))))
-    if width > 0 and height > 0:
-        spaces.append((width, height))
-    spaces.append((1000.0, 1000.0))
-    for sw, sh in spaces:
-        u1, v1, u2, v2 = x1 / sw, y1 / sh, x2 / sw, y2 / sh
-        if not all(-0.02 <= v <= 1.02 for v in (u1, v1, u2, v2)):
-            continue
-        if u2 - u1 <= 0.005 or v2 - v1 <= 0.005:
-            continue
-        return (max(u1, 0.0), max(v1, 0.0), min(u2, 1.0), min(v2, 1.0))
-    return None
+    scale = scale or box_scale()
+    if not scale:
+        return None
+    u1, v1, u2, v2 = x1 / scale, y1 / scale, x2 / scale, y2 / scale
+    if not all(-0.02 <= v <= 1.02 for v in (u1, v1, u2, v2)):
+        return None
+    if u2 - u1 <= 0.005 or v2 - v1 <= 0.005:
+        return None
+    return (max(u1, 0.0), max(v1, 0.0), min(u2, 1.0), min(v2, 1.0))
 
 
 def _ask_region(path: str, question: str,
@@ -403,13 +371,15 @@ def _rect_from(reply: Any, crop: Tuple[float, float, float, float],
         return None
     if not reply.get("found"):
         return None
-    box = reply.get("bbox_2d")
+    box, scale = reply.get("bbox_2d"), None
     if box is None and "left" in reply:
-        # A model that answered in the older fraction shape. Accepted so that
-        # changing the vision model cannot silently stop the path working.
+        # The older fraction shape. Its keys say what its numbers are —
+        # fractions of the crop — so it is read on that scale, never the
+        # model's grid.
         box = [reply.get("left"), reply.get("top"),
                reply.get("right"), reply.get("bottom")]
-    normalised = _box_in_crop(box, image)
+        scale = 1.0
+    normalised = _box_in_crop(box, image, scale)
     if normalised is None:
         return None
     left, top, right, bottom = normalised

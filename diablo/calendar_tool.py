@@ -18,11 +18,12 @@ import os
 import datetime
 from typing import Optional, List
 
+_HOME = os.getenv("DIABLO_HOME", os.path.expanduser("~/.diablo"))
 CREDENTIALS_PATH = os.getenv(
     "GOOGLE_CALENDAR_CREDENTIALS_PATH",
-    "/Users/shaurya/.diablo/credentials.json"
+    os.path.join(_HOME, "credentials.json")
 )
-TOKEN_PATH = "/Users/shaurya/.diablo/token.json"
+TOKEN_PATH = os.path.join(_HOME, "token.json")
 
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 

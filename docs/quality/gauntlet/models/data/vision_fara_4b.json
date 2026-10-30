@@ -1,0 +1,1391 @@
+{
+ "summary": {
+  "fara": {
+   "n": 50,
+   "good": 44,
+   "verdicts": {
+    "abstained": 4,
+    "correct": 40,
+    "not_found": 4,
+    "wrong_target": 2
+   },
+   "wrong_or_off": 2,
+   "p50_ms": 8376.9,
+   "p95_ms": 10181.5,
+   "median_centre_error_px_when_correct": 1.2,
+   "peak_gb": 6.86
+  }
+ },
+ "records": [
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 9328.2,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.4,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 45
+  },
+  {
+   "case": "btn-save",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 9120.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.4,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 45
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8562.6,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.2,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2502,
+   "output_tokens": 45
+  },
+  {
+   "case": "btn-submit",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8376.9,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "submit"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.2,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2502,
+   "output_tokens": 45
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8539.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_copy"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.8,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 49
+  },
+  {
+   "case": "btn-save-copy",
+   "category": "labelled_button",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8438.5,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_copy"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.8,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 49
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8976.5,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.4,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2502,
+   "output_tokens": 45
+  },
+  {
+   "case": "sim-save",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 7973.4,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.4,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2502,
+   "output_tokens": 45
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8736.8,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.4,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 45
+  },
+  {
+   "case": "sim-ambiguous",
+   "category": "similar_labels",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8928.4,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.4,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 45
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8871.3,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 38.5,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 45
+  },
+  {
+   "case": "chk-subscribe",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8856.1,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "subscribe"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 38.5,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 45
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8805.9,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 39.0,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2503,
+   "output_tokens": 48
+  },
+  {
+   "case": "chk-notify",
+   "category": "checkbox",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8757.3,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 39.0,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2503,
+   "output_tokens": 48
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8618.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.4,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 45
+  },
+  {
+   "case": "dis-archive",
+   "category": "disabled",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 9366.1,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "archived"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.4,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 45
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8097.6,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "name_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.3,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2505,
+   "output_tokens": 46
+  },
+  {
+   "case": "txt-first",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8155.1,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "name_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.3,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2505,
+   "output_tokens": 46
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "wrong_target",
+   "good": false,
+   "ms": 8012.4,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "name_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 39.8,
+   "iou": 0.0,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 45
+  },
+  {
+   "case": "txt-email",
+   "category": "text_field",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "wrong_target",
+   "good": false,
+   "ms": 8175.9,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "name_field"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 39.8,
+   "iou": 0.0,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 45
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 9130.6,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_left"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.9,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2505,
+   "output_tokens": 45
+  },
+  {
+   "case": "edge-left",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 9100.6,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_left"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.9,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2505,
+   "output_tokens": 45
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8977.3,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.7,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2505,
+   "output_tokens": 46
+  },
+  {
+   "case": "edge-right",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 9176.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.7,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2505,
+   "output_tokens": 46
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 9278.3,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_bottom"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.7,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2505,
+   "output_tokens": 46
+  },
+  {
+   "case": "edge-bottom",
+   "category": "near_edge",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 9736.3,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_bottom"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.7,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2505,
+   "output_tokens": 46
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 11035.4,
+   "action": "terminate",
+   "error": "",
+   "candidates": 0,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 77
+  },
+  {
+   "case": "abs-delete",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 10536.4,
+   "action": "terminate",
+   "error": "",
+   "candidates": 0,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 77
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 10181.5,
+   "action": "terminate",
+   "error": "",
+   "candidates": 0,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 79
+  },
+  {
+   "case": "abs-print",
+   "category": "absent",
+   "fixture": "controls_app",
+   "variant": "light",
+   "outcome_wanted": "abstain",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "abstained",
+   "good": true,
+   "ms": 9726.3,
+   "action": "terminate",
+   "error": "",
+   "candidates": 0,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 79
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 8190.8,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.6,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 45
+  },
+  {
+   "case": "dark-save",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 7520.5,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.6,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2504,
+   "output_tokens": 45
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 7592.7,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 39.5,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2503,
+   "output_tokens": 48
+  },
+  {
+   "case": "dark-notify",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 7669.2,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "notify"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 39.5,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2503,
+   "output_tokens": 48
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 7487.9,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.6,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2505,
+   "output_tokens": 46
+  },
+  {
+   "case": "dark-edge",
+   "category": "dark_mode",
+   "fixture": "controls_app",
+   "variant": "dark",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 7565.7,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "edge_right"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.6,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2505,
+   "output_tokens": 46
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 6950.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 3.3,
+   "iou": 0.002,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2171,
+   "output_tokens": 45
+  },
+  {
+   "case": "icon-search",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 6376.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "magnifier"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 3.3,
+   "iou": 0.002,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2171,
+   "output_tokens": 45
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 6422.9,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "house"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.0,
+   "iou": 0.002,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2171,
+   "output_tokens": 45
+  },
+  {
+   "case": "icon-home",
+   "category": "icon_unlabelled",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 6381.3,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "house"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 2.0,
+   "iou": 0.002,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2171,
+   "output_tokens": 45
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 8004.1,
+   "action": "terminate",
+   "error": "",
+   "candidates": 0,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2170,
+   "output_tokens": 85
+  },
+  {
+   "case": "icon-gear-dup",
+   "category": "duplicate",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 7912.8,
+   "action": "terminate",
+   "error": "",
+   "candidates": 0,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2170,
+   "output_tokens": 85
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 6423.9,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.7,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2169,
+   "output_tokens": 45
+  },
+  {
+   "case": "icon-save-label",
+   "category": "labelled_button",
+   "fixture": "icon_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 6364.3,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "save_label"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.7,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2169,
+   "output_tokens": 45
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 7020.0,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.0,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2177,
+   "output_tokens": 48
+  },
+  {
+   "case": "tgt-done",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 6471.7,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 1.0,
+   "iou": 0.001,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2177,
+   "output_tokens": 48
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "correct",
+   "good": true,
+   "ms": 6632.6,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done_later"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.9,
+   "iou": 0.0,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2178,
+   "output_tokens": 49
+  },
+  {
+   "case": "tgt-later",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "found",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "correct",
+   "good": true,
+   "ms": 6593.6,
+   "action": "left_click",
+   "error": "",
+   "candidates": 1,
+   "landed": [
+    "mark_done_later"
+   ],
+   "top_label": "",
+   "top_sources": [
+    "fara"
+   ],
+   "top_confidence": 1.0,
+   "centre_error_px": 0.9,
+   "iou": 0.0,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2178,
+   "output_tokens": 49
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fara",
+   "attempt": 1,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 8312.7,
+   "action": "terminate",
+   "error": "",
+   "candidates": 0,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2178,
+   "output_tokens": 92
+  },
+  {
+   "case": "tgt-vague",
+   "category": "similar_labels",
+   "fixture": "target_app",
+   "variant": "light",
+   "outcome_wanted": "ambiguous",
+   "source": "fara",
+   "attempt": 2,
+   "verdict": "not_found",
+   "good": false,
+   "ms": 8190.2,
+   "action": "terminate",
+   "error": "",
+   "candidates": 0,
+   "peak_gb": 6.86,
+   "load_s": 3.34,
+   "prompt_tokens": 2178,
+   "output_tokens": 92
+  }
+ ]
+}

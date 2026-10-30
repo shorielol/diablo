@@ -1,0 +1,153 @@
+{
+ "vision_model": "hf.co/bartowski/Fara1.5-4B-GGUF:Q4_K_M",
+ "summary": {
+  "prod": {
+   "n": 11,
+   "hits": 9,
+   "p50_ms": 3783.7,
+   "answered": 10
+  }
+ },
+ "records": [
+  {
+   "fixture": "diagram_app",
+   "region": "welfare loss",
+   "mode": "prod",
+   "hit": true,
+   "iou": 0.896,
+   "ms": 6580.2,
+   "note": "",
+   "centre": [
+    714.5,
+    550.0
+   ]
+  },
+  {
+   "fixture": "diagram_app",
+   "region": "consumer surplus",
+   "mode": "prod",
+   "hit": true,
+   "iou": 0.107,
+   "ms": 3813.4,
+   "note": "",
+   "centre": [
+    714.5,
+    550.0
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "consumer surplus",
+   "mode": "prod",
+   "hit": true,
+   "iou": 0.648,
+   "ms": 3880.6,
+   "note": "",
+   "centre": [
+    557.0,
+    416.5
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "producer surplus",
+   "mode": "prod",
+   "hit": true,
+   "iou": 0.643,
+   "ms": 3724.7,
+   "note": "",
+   "centre": [
+    557.0,
+    602.5
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "deadweight loss",
+   "mode": "prod",
+   "hit": true,
+   "iou": 0.851,
+   "ms": 3778.8,
+   "note": "",
+   "centre": [
+    688.0,
+    512.0
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "demand curve",
+   "mode": "prod",
+   "hit": true,
+   "iou": 0.362,
+   "ms": 6198.8,
+   "note": "",
+   "centre": [
+    568.1,
+    500.2
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "equilibrium",
+   "mode": "prod",
+   "hit": false,
+   "iou": null,
+   "ms": 3719.0,
+   "note": "I can see the words but I cannot make out the equilibrium itself, Sir. I would r",
+   "centre": null
+  },
+  {
+   "fixture": "chart_app",
+   "region": "highlighted bar",
+   "mode": "prod",
+   "hit": true,
+   "iou": 1.0,
+   "ms": 3783.7,
+   "note": "",
+   "centre": [
+    845.0,
+    594.0
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "tallest bar",
+   "mode": "prod",
+   "hit": true,
+   "iou": 1.0,
+   "ms": 3607.4,
+   "note": "",
+   "centre": [
+    845.0,
+    594.0
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "third bar",
+   "mode": "prod",
+   "hit": true,
+   "iou": 1.0,
+   "ms": 3595.9,
+   "note": "",
+   "centre": [
+    733.0,
+    673.0
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "arrow",
+   "mode": "prod",
+   "hit": false,
+   "iou": 0.0,
+   "ms": 5553.7,
+   "note": "",
+   "centre": [
+    845.1,
+    588.3
+   ]
+  }
+ ]
+}

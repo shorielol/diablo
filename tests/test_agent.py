@@ -3,8 +3,8 @@
 The agent loop doing real multi-step work, end to end, with a real model.
 
 test_diablo.py exercises the loop against a scripted fake brain, which proves
-the control flow. This runs qwen3:14b against the actual filesystem, because the
-failures that matter are the ones a 14B model produces and a scripted one never
+the control flow. This runs the real model (qwen3.5:4b) against the actual filesystem, because
+the failures that matter are the ones a small model produces and a scripted one never
 will: narrating a plan instead of executing it, calling the same tool forever,
 answering from the task description without reading anything, and declaring
 success having done nothing.

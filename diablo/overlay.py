@@ -72,6 +72,21 @@ KEYLINE_ALPHA = 0.75   # of the stroke's own alpha
 SHAPE_PAD = 3.0
 
 
+def _reduce_motion() -> bool:
+    """
+    Whether macOS has been asked for less motion.
+
+    Read here because the overlay is its own process: the shell honours the
+    setting, but nothing it knows reaches this one. Under it the marker still
+    appears and fades, which says where to look, but does not pulse or glide.
+    """
+    try:
+        from AppKit import NSWorkspace
+        return bool(NSWorkspace.sharedWorkspace().accessibilityDisplayShouldReduceMotion())
+    except Exception:
+        return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--x", type=float, required=True, help="Quartz x of the TARGET")
@@ -195,7 +210,7 @@ def main() -> int:
         spread = view.phase % 1.0
         grow = radius + 2.0 + spread * 16.0
         fade = (1.0 - spread) * 0.42 * view.opacity
-        if fade > 0.01:
+        if fade > 0.01 and not getattr(view, "still", False):
             # The pulse is the quiet part: ink alone, no keyline.
             NSColor.colorWithCalibratedWhite_alpha_(tones(view)[0], fade).set()
             pulse = NSBezierPath.bezierPathWithOvalInRect_(
@@ -425,6 +440,7 @@ def main() -> int:
     window.setHasShadow_(False)
 
     view = GuideView.alloc().initWithFrame_(NSMakeRect(0, 0, 10, 10))
+    view.still = _reduce_motion()
     window.setContentView_(view)
 
     def aim(x, y, label, step, on_light, animate=False, w=0.0, h=0.0, fresh=False,
@@ -457,7 +473,8 @@ def main() -> int:
         elif not args.session:
             view.opacity = 1.0
         view.target_opacity = 1.0
-        view.was = previous if (animate and previous and not fresh) else None
+        view.was = (previous if (animate and previous and not fresh and not view.still)
+                    else None)
         view.travel = 0.0 if view.was else 1.0
         window.orderFrontRegardless()
         view.setNeedsDisplay_(True)

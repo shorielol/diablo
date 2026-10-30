@@ -169,27 +169,40 @@ def run():
 
     # ── settings round trip ─────────────────────────────────────────────────
     r.head("Settings")
-    with guard(r, "a dial can be changed and read back"):
-        before = json.loads(get("/api/settings")[1])["humour"]["value"]
-        target = 0 if before != 0 else 3
-        status, result = post("/api/settings", {"humour": target})
-        r.check("the write is accepted", result.get("ok"), str(result)[:60])
-        after = json.loads(get("/api/settings")[1])["humour"]["value"]
-        r.check("and it took effect", after == target, f"{before} -> {after}")
-        post("/api/settings", {"humour": before})
-        restored = json.loads(get("/api/settings")[1])["humour"]["value"]
-        r.check("and it can be put back", restored == before, str(restored))
+    # These write .env through whichever Diablo app is running, and the
+    # running one is usually the person's own: on 2026-10-06 a full-suite run
+    # rewrote ~/.diablo/.env through it (values restored, but written). They
+    # run only when asked for, like the other suites with side effects.
+    writes = os.getenv("DIABLO_TEST_WRITES_SETTINGS") == "1"
+    if not writes:
+        r.skip("changing a dial and reading it back",
+               "writes the live .env; set DIABLO_TEST_WRITES_SETTINGS=1")
+        r.skip("a model change flagged as needing a restart",
+               "writes the live .env; set DIABLO_TEST_WRITES_SETTINGS=1")
+    if writes:
+        with guard(r, "a dial can be changed and read back"):
+            before = json.loads(get("/api/settings")[1])["humour"]["value"]
+            target = 0 if before != 0 else 3
+            status, result = post("/api/settings", {"humour": target})
+            r.check("the write is accepted", result.get("ok"), str(result)[:60])
+            after = json.loads(get("/api/settings")[1])["humour"]["value"]
+            r.check("and it took effect", after == target, f"{before} -> {after}")
+            post("/api/settings", {"humour": before})
+            restored = json.loads(get("/api/settings")[1])["humour"]["value"]
+            r.check("and it can be put back", restored == before, str(restored))
 
-    with guard(r, "a model change is reported as needing a restart"):
-        current = json.loads(get("/api/settings")[1])["model"]["value"]
-        _, result = post("/api/settings", {"model": current})
-        r.check("model is flagged", "model" in (result.get("needs_restart") or []),
-                str(result.get("needs_restart")))
+    if writes:
+        with guard(r, "a model change is reported as needing a restart"):
+            current = json.loads(get("/api/settings")[1])["model"]["value"]
+            _, result = post("/api/settings", {"model": current})
+            r.check("model is flagged", "model" in (result.get("needs_restart") or []),
+                    str(result.get("needs_restart")))
 
-    with guard(r, "rubbish in the settings body does not break it"):
-        for body in ({}, {"nonsense": 1}, {"humour": "loud"}):
-            status, result = post("/api/settings", body)
-            r.check(f"survives {body}", isinstance(result, dict), str(result)[:50])
+    if writes:
+        with guard(r, "rubbish in the settings body does not break it"):
+            for body in ({}, {"nonsense": 1}, {"humour": "loud"}):
+                status, result = post("/api/settings", body)
+                r.check(f"survives {body}", isinstance(result, dict), str(result)[:50])
 
     # ── control ─────────────────────────────────────────────────────────────
     r.head("The roster over the wire")
@@ -232,10 +245,15 @@ def run():
         r.check("refused", result.get("ok") is False, str(result)[:70])
 
     r.head("Control")
-    with guard(r, "interrupt and reset"):
-        for action in ("interrupt", "reset"):
-            _, result = post("/api/control", {"action": action})
-            r.check(f"{action} is accepted", result.get("ok"), str(result)[:50])
+    # Interrupting and resetting the running app cuts off and clears the
+    # person's live conversation, so this is opt-in too.
+    if writes:
+        with guard(r, "interrupt and reset"):
+            for action in ("interrupt", "reset"):
+                _, result = post("/api/control", {"action": action})
+                r.check(f"{action} is accepted", result.get("ok"), str(result)[:50])
+    else:
+        r.skip("interrupt and reset", "resets the live app; set DIABLO_TEST_WRITES_SETTINGS=1")
 
     with guard(r, "an unknown action is refused, not run"):
         _, result = post("/api/control", {"action": "self_destruct"})

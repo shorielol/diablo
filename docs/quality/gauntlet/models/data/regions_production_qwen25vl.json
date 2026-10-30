@@ -1,0 +1,156 @@
+{
+ "vision_model": "",
+ "summary": {
+  "prod": {
+   "n": 11,
+   "hits": 9,
+   "p50_ms": 2200.6,
+   "answered": 11
+  }
+ },
+ "records": [
+  {
+   "fixture": "diagram_app",
+   "region": "welfare loss",
+   "mode": "prod",
+   "hit": true,
+   "iou": 0.896,
+   "ms": 17082.1,
+   "note": "",
+   "centre": [
+    714.5,
+    550.0
+   ]
+  },
+  {
+   "fixture": "diagram_app",
+   "region": "consumer surplus",
+   "mode": "prod",
+   "hit": true,
+   "iou": 0.107,
+   "ms": 1753.8,
+   "note": "",
+   "centre": [
+    714.5,
+    550.0
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "consumer surplus",
+   "mode": "prod",
+   "hit": true,
+   "iou": 0.648,
+   "ms": 8376.2,
+   "note": "",
+   "centre": [
+    557.0,
+    416.5
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "producer surplus",
+   "mode": "prod",
+   "hit": true,
+   "iou": 0.643,
+   "ms": 1961.5,
+   "note": "",
+   "centre": [
+    557.0,
+    602.5
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "deadweight loss",
+   "mode": "prod",
+   "hit": true,
+   "iou": 0.851,
+   "ms": 1847.6,
+   "note": "",
+   "centre": [
+    688.0,
+    512.0
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "demand curve",
+   "mode": "prod",
+   "hit": true,
+   "iou": 0.186,
+   "ms": 12033.2,
+   "note": "",
+   "centre": [
+    538.2,
+    605.6
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "equilibrium",
+   "mode": "prod",
+   "hit": false,
+   "iou": 0.169,
+   "ms": 2200.6,
+   "note": "",
+   "centre": [
+    688.0,
+    512.0
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "highlighted bar",
+   "mode": "prod",
+   "hit": true,
+   "iou": 1.0,
+   "ms": 8154.6,
+   "note": "",
+   "centre": [
+    845.0,
+    594.0
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "tallest bar",
+   "mode": "prod",
+   "hit": true,
+   "iou": 1.0,
+   "ms": 1590.9,
+   "note": "",
+   "centre": [
+    845.0,
+    594.0
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "third bar",
+   "mode": "prod",
+   "hit": true,
+   "iou": 1.0,
+   "ms": 1483.7,
+   "note": "",
+   "centre": [
+    733.0,
+    673.0
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "arrow",
+   "mode": "prod",
+   "hit": false,
+   "iou": 0.006,
+   "ms": 11575.0,
+   "note": "",
+   "centre": [
+    878.4,
+    589.4
+   ]
+  }
+ ]
+}

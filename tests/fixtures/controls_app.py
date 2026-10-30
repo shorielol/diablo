@@ -74,9 +74,17 @@ def main() -> int:
     dark = "--dark" in sys.argv
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
+    # The appearance is pinned to the variant. Unpinned, a light fixture on a
+    # Mac in dark mode drew its button and checkbox titles white on its own
+    # white background: Accessibility still saw them, and OCR and every vision
+    # model were handed a picture with no Save button in it.
+    from AppKit import NSAppearance
+    app.setAppearance_(NSAppearance.appearanceNamed_(
+        "NSAppearanceNameDarkAqua" if dark else "NSAppearanceNameAqua"))
 
-    window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-        NSMakeRect(*WINDOW), NSWindowStyleMaskTitled, NSBackingStoreBuffered, False)
+    sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
+    import _layout as _place
+    window = _place.new_window(WINDOW, NSWindowStyleMaskTitled)
     window.setTitle_(TITLE + (" Dark" if dark else ""))
 
     ground = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, WINDOW[2], WINDOW[3]))

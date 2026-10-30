@@ -174,7 +174,8 @@ def run() -> int:
         r.check("every part is failed",
                 all(p["status"] == "failed" for p in job["parts"]), str(job["parts"]))
         r.check("the window is told it failed, not that it succeeded",
-                [e for e, _ in EVENTS if e.startswith("job_") and e != "job_started"]
+                [e for e, _ in EVENTS if e.startswith("job_")
+                 and e not in ("job_queued", "job_started")]
                 == ["job_failed"], str([e for e, _ in EVENTS]))
         r.check("he is told what failed, not a generic apology",
                 SAID and "could not finish" in SAID[-1], str(SAID[-1:]))

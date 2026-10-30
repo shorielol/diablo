@@ -7,10 +7,10 @@ A spoken task goes on a queue, a worker thread runs it through agent_core, and
 the result is spoken when it lands. Diablo carries on listening the whole time,
 so you can hand it a second job while the first is still running.
 
-Concurrency is one by default and that is deliberate. qwen3:14b is roughly 9 GB
-resident; running two at once on an M3 Pro means swapping, and a swapping model
-is slower than a queue. Raise DIABLO_MAX_CONCURRENT_AGENTS only if you have
-moved to a smaller model.
+Concurrency is one by default and that is deliberate. One model serves every
+turn, and two agents at once on one 4.3 GB qwen3.5:4b means each waits on the
+other anyway. Raise DIABLO_MAX_CONCURRENT_AGENTS only on a machine that can run
+Ollama with parallel requests.
 """
 
 import json
@@ -24,7 +24,7 @@ import sys
 import threading
 import time
 import uuid
-from typing import Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 # The skill registry loads this file by path, so its own folder is not
 # necessarily importable. Put it there before reaching for its siblings.
@@ -137,8 +137,9 @@ CLARIFY_STRICT = os.getenv("DIABLO_CLARIFY_STRICT", "1") not in ("0", "", "false
 # finished stays as it finished: a second completion, a late failure, or a
 # restart of something interrupted is refused rather than written over it.
 # Before this, finished work became "failed" when saying the result failed.
-_NEXT_STATUS = {"queued": ("running", "failed"), "running": ("done", "failed")}
-FINAL_STATUSES = ("done", "failed", "interrupted")
+_NEXT_STATUS = {"queued": ("running", "failed", "cancelled"),
+                "running": ("done", "failed", "cancelled")}
+FINAL_STATUSES = ("done", "failed", "interrupted", "cancelled")
 
 
 def _may_write(record: dict, fields: dict) -> bool:
@@ -155,6 +156,79 @@ def _refused(key: str, record: Optional[dict], fields: dict) -> None:
                 wanted=fields.get("status", "fields"))
 
 
+# What the store keeps of an answer, and for how long.
+#
+# jobs.json used to keep every answer in full, forever, including answers built
+# from reading the screen. Now: an answer that came from the screen is never
+# written to disk at all; any other answer is cut to 32 KB and dropped 24 hours
+# after the job finished. Status, timestamps, ids and the agent stay, so a
+# restart still knows what ran and how it ended.
+ANSWER_TTL_SECONDS = 24 * 3600
+ANSWER_MAX_BYTES = 32 * 1024
+# Held in memory for the session, never written.
+_MEMORY_ONLY = ("screen",)
+
+
+def _bounded(text: Any) -> str:
+    """At most ANSWER_MAX_BYTES of UTF-8, never a broken character."""
+    return str(text or "").encode("utf-8")[:ANSWER_MAX_BYTES].decode("utf-8", "ignore")
+
+
+def _with_answer_policy(fields: dict, now: float) -> dict:
+    """The fields of an update, with any answer bounded and given an expiry."""
+    if not fields.get("summary"):
+        return fields
+    return {**fields, "summary": _bounded(fields["summary"]),
+            "summary_expires_at": now + ANSWER_TTL_SECONDS}
+
+
+def _expire(record: dict, now: float, loading: bool = False) -> None:
+    """
+    Drop an answer past its expiry.
+
+    An answer read from disk with no expiry at all was written before this
+    policy, with no way to tell whether it came from the screen, so it goes.
+    """
+    if not record.get("summary"):
+        return
+    expires = record.get("summary_expires_at")
+    if expires is None and not loading:
+        return
+    if expires is not None and now < expires:
+        return
+    record.pop("summary", None)
+    record["summary_withheld"] = "legacy" if expires is None else "expired"
+
+
+def _record_for_disk(record: dict) -> dict:
+    out = {k: v for k, v in record.items() if k not in _MEMORY_ONLY}
+    if not out.get("summary"):
+        return out
+    if record.get("screen"):
+        out.pop("summary")
+        out["summary_withheld"] = "screen"
+    elif "summary_expires_at" not in record:
+        out.pop("summary")
+        out["summary_withheld"] = "legacy"
+    else:
+        out["summary"] = _bounded(out["summary"])
+    return out
+
+
+def _for_disk(job: dict) -> dict:
+    """A job as jobs.json holds it: no screen-derived answer, nothing memory-only."""
+    out = _record_for_disk(job)
+    if job.get("parts"):
+        out["parts"] = [_record_for_disk(p) for p in job["parts"]]
+    return out
+
+
+def _looked_at_screen(agent_id: Optional[str], working: list) -> bool:
+    """Whether an answer may repeat the screen: Vassago's, or any screen tool used."""
+    return agent_id == "vassago" or any(
+        (step or {}).get("tool") in roster.SCREEN_TOOLS for step in working or [])
+
+
 class JobStore:
     """Thread-safe, disk-backed record of every task."""
 
@@ -162,29 +236,64 @@ class JobStore:
         self.path = path
         self._lock = threading.Lock()
         self._jobs: List[dict] = self._load()
+        changed = False
         # Anything still marked running belongs to a dead process from a prior boot.
         for job in self._jobs:
             if job.get("status") in ("running", "queued"):
                 job["status"] = "interrupted"
+                changed = True
+            for part in job.get("parts") or []:
+                if part.get("status") in ("running", "queued"):
+                    part["status"] = "interrupted"
+                    changed = True
+        # Written back at once, so an expired or legacy answer leaves the disk
+        # when Diablo starts rather than at the next job.
+        if self._expire_all(time.time(), loading=True) or changed:
+            self._flush()
 
     def _load(self) -> List[dict]:
         try:
             with open(self.path) as f:
-                return json.load(f)
+                loaded = json.load(f)
         except Exception:
             return []
+        if not isinstance(loaded, list):
+            return []
+        return [j for j in loaded if isinstance(j, dict) and "id" in j]
+
+    def _expire_all(self, now: float, loading: bool = False) -> bool:
+        """Apply the answer expiry to every record. True if anything was dropped."""
+        dropped = False
+        for job in self._jobs:
+            for record in [job] + list(job.get("parts") or []):
+                had = bool(record.get("summary"))
+                _expire(record, now, loading=loading)
+                dropped = dropped or (had and not record.get("summary"))
+        return dropped
 
     def _flush(self) -> None:
+        self._expire_all(time.time())
+        tmp = self.path + ".partial"
         try:
             os.makedirs(os.path.dirname(self.path), exist_ok=True)
-            with open(self.path, "w") as f:
-                json.dump(self._jobs[-100:], f, indent=2)
+            # Written whole and then swapped in, so a crash mid-write cannot
+            # leave a file that loads as empty. Readable by this user only.
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                json.dump([_for_disk(j) for j in self._jobs[-100:]], f, indent=2)
+            os.replace(tmp, self.path)
         except Exception as e:
-            print(f"  [Tasks] Could not write job store: {e}")
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            print(f"  [Tasks] Could not write job store: {type(e).__name__}")
 
     def add(self, job: dict) -> None:
         with self._lock:
             self._jobs.append(job)
+            # The disk holds the last hundred, and so does memory.
+            del self._jobs[:-100]
             self._flush()
 
     def clear(self, keep_active: bool = True) -> int:
@@ -219,7 +328,7 @@ class JobStore:
             if job is None or not _may_write(job, fields):
                 _refused(job_id, job, fields)
                 return False
-            job.update(fields)
+            job.update(_with_answer_policy(fields, time.time()))
             self._flush()
             return True
 
@@ -232,7 +341,7 @@ class JobStore:
             if part is None or not _may_write(part, fields):
                 _refused(f"{job_id}:{index}", part, fields)
                 return False
-            part.update(fields)
+            part.update(_with_answer_policy(fields, time.time()))
             self._flush()
             return True
 
@@ -242,6 +351,9 @@ class JobStore:
 
     def recent(self, limit: int = 5) -> List[dict]:
         with self._lock:
+            # An answer past its 24 hours is not shown either, even before the
+            # next write takes it off the disk.
+            self._expire_all(time.time())
             return list(reversed(self._jobs[-limit:]))
 
 
@@ -251,6 +363,9 @@ store = JobStore(JOBS_PATH)
 # ─── Worker pool ─────────────────────────────────────────────────────────────
 
 _queue: "queue.Queue" = queue.Queue()
+# Jobs the person has asked to stop. Read by the running agent between steps.
+_cancel_lock = threading.Lock()
+_cancelled: set = set()
 _workers_started = False
 _workers_lock = threading.Lock()
 
@@ -273,7 +388,7 @@ def _push(event: str, **data) -> None:
 def _fan_out(job: dict, ask, confirm) -> tuple:
     """
     Several agents on one request, at the same time. Returns (summary,
-    every_part_failed).
+    every_part_failed, looked_at_screen).
 
     Every sub-agent gets a silent `speak` — four voices at once is noise — and
     they share one `Attention`, so only one of them can hold the microphone to
@@ -284,14 +399,21 @@ def _fan_out(job: dict, ask, confirm) -> tuple:
     pieces = [(p["task"], p["agent"]) for p in job["parts"]]
     index_of = {(t, a): i for i, (t, a) in enumerate(pieces)}
     attention = roster.Attention(ask, confirm)
+    # Which parts looked at the screen. Written by each runner for its own
+    # agent only, read once that agent has finished.
+    looked: Dict[str, bool] = {}
 
     def runner(subtask, agent_id, quiet, sub_ask, sub_confirm):
         # One list per agent, created here inside its own thread. Shared state
         # across sub-agents has bitten this project before: CONTEXT used to be
         # module-level and the last agent to start owned everyone's callbacks.
         working: list = []
-        answer = agent_core.run(subtask, quiet, ask=sub_ask,
-                                confirm=sub_confirm, working=working)
+        try:
+            answer = agent_core.run(subtask, quiet, ask=sub_ask,
+                                    confirm=sub_confirm, working=working,
+                                    should_stop=lambda: _cancel_requested(job["id"]))
+        finally:
+            looked[agent_id] = _looked_at_screen(agent_id, working)
         conversation.session.record_task(agent_id, subtask, working, answer,
                                          task_id=f"{job['id']}:{agent_id}",
                                          generation=job.get("generation"))
@@ -306,18 +428,27 @@ def _fan_out(job: dict, ask, confirm) -> tuple:
     def finished(agent_id, subtask, answer, ok=True):
         i = index_of.get((subtask, agent_id), 0)
         state = "done" if ok else "failed"
+        if _cancel_requested(job["id"]):
+            # Stopped, not broken: a part the person cancelled did not fail.
+            state = "cancelled"
         if not ok:
             failed.append(agent_id)
         store.update_part(job["id"], i, status=state, finished_at=time.time(),
-                          summary=answer[:400])
+                          summary=answer[:400],
+                          screen=looked.get(agent_id, agent_id == "vassago"))
         _push("agent_done", id=job["id"], agent=agent_id, summary=answer[:200], ok=ok)
-        trace.event("agent", agent=agent_id, state=state, summary=answer[:120])
+        # Sizes, not text: an agent's answer can quote the screen or a file,
+        # and the trace is a log on disk, not the conversation.
+        trace.event("agent", agent=agent_id, state=state, summary_chars=len(answer))
 
     started_at = time.time()
     results = roster.run_parallel(pieces, runner, attention, started, finished)
     trace.event("fan_out", agents=[a for _t, a in pieces], failed=failed,
                 elapsed_ms=int((time.time() - started_at) * 1000))
-    return roster.merge(results), len(failed) == len(pieces)
+    # The merged answer carries every part, so one part that read the screen
+    # makes all of it screen-derived.
+    screen = any(looked.values()) or any(a == "vassago" for _t, a in pieces)
+    return roster.merge(results), len(failed) == len(pieces), screen
 
 
 def _speak_with_metadata(speak, text: str, **metadata):
@@ -355,53 +486,112 @@ def _deliver(speak, job: dict, text: str, kind: str) -> None:
         _speak_with_metadata(speak, text, speech_id=f"job:{job['id']}:{kind}",
                              speech_kind="TASK_RESULT")
     except Exception as e:
+        # The class only: a speech error can carry the line it was saying.
         trace.event("job", id=job["id"], state="undelivered",
-                    error=f"{type(e).__name__}: {e}"[:160])
+                    error=type(e).__name__)
         print(f"  [Tasks] Job {job['id']} ended but could not be said: "
-              f"{type(e).__name__}: {e}")
+              f"{type(e).__name__}")
+
+
+def _cancel_requested(job_id: str) -> bool:
+    with _cancel_lock:
+        return job_id in _cancelled
+
+
+def _finish_cancelled(job: dict) -> None:
+    """Record a stopped job, and every part of it still going, as cancelled."""
+    now = time.time()
+    for i, part in enumerate(job.get("parts") or []):
+        if part.get("status") not in FINAL_STATUSES:
+            store.update_part(job["id"], i, status="cancelled", finished_at=now)
+    store.update(job["id"], status="cancelled", finished_at=now)
+    _push("job_cancelled", id=job["id"], agent=job.get("agent", "diablo"))
+    trace.event("job", id=job["id"], state="cancelled")
+    with _cancel_lock:
+        _cancelled.discard(job["id"])
+
+
+def cancel(job_id: str) -> dict:
+    """
+    Stop a queued or running job, from the window's Stop button.
+
+    A queued job never starts. A running one stops before its next step: the
+    tool or model call already under way finishes, nothing new begins, and
+    its result is not announced. Work that had already finished is left as
+    it finished.
+    """
+    job = next((j for j in store.active() if j["id"] == job_id), None)
+    if job is None:
+        return {"ok": False, "error": "that task is not running"}
+    with _cancel_lock:
+        _cancelled.add(job_id)
+    trace.event("job", id=job_id, state="cancel_requested")
+    if job.get("status") == "queued":
+        _finish_cancelled(job)
+    else:
+        _push("job_cancelling", id=job_id)
+    return {"ok": True}
 
 
 def _run_job(job: dict, speak, ask, confirm) -> None:
-    store.update(job["id"], status="running", started_at=time.time())
+    if not store.update(job["id"], status="running", started_at=time.time()):
+        # Cancelled while it waited in the queue. It never starts.
+        return
     _push("job_started", id=job["id"], task=job["task"],
           agent=job.get("agent", "diablo"), parts=job.get("parts") or [])
     try:
         if job.get("parts"):
-            summary, every_part_failed = _fan_out(job, ask, confirm)
+            summary, every_part_failed, screen = _fan_out(job, ask, confirm)
         else:
             # One agent is the common path, not the fan-out, so the working
             # has to be kept here too — a fix that only covered fan-outs
             # would miss almost every research request he actually makes.
             working: list = []
-            summary = agent_core.run(job["task"], speak, ask=ask,
-                                     confirm=confirm, working=working)
+            summary = agent_core.run(_with_app_in_use(job["task"]), speak, ask=ask,
+                                     confirm=confirm, working=working,
+                                     should_stop=lambda: _cancel_requested(job["id"]))
             every_part_failed = False
+            screen = _looked_at_screen(job.get("agent"), working)
             conversation.session.record_task(
                 job.get("agent") or "diablo", job["task"], working, summary,
                 task_id=job["id"], generation=job.get("generation"))
+    except agent_core.Cancelled:
+        _finish_cancelled(job)
+        return
     except Exception as e:
+        # The kind of failure, not its message: a message can carry whatever
+        # the tool was reading when it broke.
         store.update(job["id"], status="failed", finished_at=time.time(),
-                     summary=str(e))
+                     error=type(e).__name__)
         # A failure is an event like a success: without it the window and
         # the orb go on showing the job as running until something else
         # happens to refresh them.
         _push("job_failed", id=job["id"], agent=job.get("agent", "diablo"))
-        print(f"  [Tasks] Job {job['id']} failed: {type(e).__name__}: {e}")
+        print(f"  [Tasks] Job {job['id']} failed: {type(e).__name__}")
         _deliver(speak, job, "That one came apart on me, Sir. The details are in the log.",
                  "failure")
+        return
+
+    if _cancel_requested(job["id"]):
+        # Stopped while the last step was finishing. The person asked for it
+        # to stop, so its result is neither recorded as done nor announced.
+        _finish_cancelled(job)
         return
 
     if every_part_failed:
         # Each agent's failure is already in the merged sentence, by name. The
         # job did nothing, so it is not done.
         store.update(job["id"], status="failed", finished_at=time.time(),
-                     summary=summary)
+                     summary=summary, screen=screen)
         _push("job_failed", id=job["id"], agent=job.get("agent", "diablo"),
               summary=summary[:400])
         _deliver(speak, job, summary, "failure")
         return
 
-    store.update(job["id"], status="done", finished_at=time.time(), summary=summary)
+    store.update(job["id"], status="done", finished_at=time.time(), summary=summary,
+                 screen=screen)
+    with _cancel_lock:
+        _cancelled.discard(job["id"])     # a stop that arrived after the last step
     _push("job_done", id=job["id"], agent=job.get("agent", "diablo"),
           summary=summary[:400])
     try:
@@ -429,7 +619,7 @@ def _worker() -> None:
         except Exception as e:
             # Nothing a job does may stop the worker: there is usually only one,
             # and without it every later job waits on a queue nobody reads.
-            print(f"  [Tasks] Job {job['id']} left the worker: {type(e).__name__}: {e}")
+            print(f"  [Tasks] Job {job['id']} left the worker: {type(e).__name__}")
         finally:
             _queue.task_done()
 
@@ -475,6 +665,9 @@ def submit(
                    for t, a in pieces] if len(pieces) > 1 else []),
     }
     store.add(job)
+    # Shown at once, with its Stop button, rather than at the next poll: with
+    # one worker a second job waits in the queue, and waiting is still work.
+    _push("job_queued", id=job["id"], agent=job["agent"])
     _queue.put((job, speak, ask, confirm))
     return job
 
@@ -524,7 +717,7 @@ def handle(
     if route is not None:
         try:
             decision = route.classify(text, in_conversation=in_conversation)
-            verdict = {"action": {"escalate": "act"}.get(decision.route, decision.route),
+            verdict = {"action": decision.route,
                        "task": decision.goal,
                        "question": decision.question,
                        "reply": ""}
@@ -544,8 +737,13 @@ def handle(
     # anchors every step on printed words, which on a diagram is the legend.
     # A procedure ("show me how to save this") is never read as one of these,
     # so it still reaches the tutor below.
+    followed = _follow_up(text, speak, ask, confirm, generation)
+    if followed is not None:
+        return followed
+
     shown = _show(text, decision, speak, generation)
     if shown is not None:
+        _HOWTO.update(question=text, at=time.time())
         return shown
 
     # Being asked to be shown, rather than told.
@@ -558,7 +756,10 @@ def handle(
         trace.event("route", route="teach", task=text[:120])
         speak(persona.working())
         working: list = []
-        summary = tutor.walk(text, speak, ask=ask, working=working)
+        target, known = _teaching_context(text, speak)
+        summary = tutor.walk(text, speak, ask=ask, working=working, target=target,
+                             known=known)
+        _HOWTO.update(question=text, at=time.time())
         conversation.session.commit_turn(generation, text, summary)
         conversation.session.set_focus("vassago", generation=generation)
         # What was read off the screen and what sympy did with it, so "walk me
@@ -568,7 +769,7 @@ def handle(
             "vassago", text, working, summary,
             task_id=f"turn:{trace.current_turn()}:teach",
             generation=generation)
-        trace.event("done", route="teach", summary=summary[:120])
+        trace.event("done", route="teach", summary_chars=len(summary))
         return "taught"
 
     # A named agent takes the conversation, whatever kind of turn this is.
@@ -577,6 +778,23 @@ def handle(
         conversation.session.set_focus(
             None if named == "diablo" else named, generation=generation)
         trace.event("focus", agent=named)
+
+    # An explicit research request the intake called chat is research, decided
+    # here in code: the 4B called "can you research apprenticeships in Delhi
+    # NCR, India?" chat, the reply came from its memory, and nothing was looked
+    # up, because chat returns before any of the research checks below. A
+    # clarify on a research request is left to the clarify loop: asking which
+    # news, or which dates, is accepted behaviour (test_repeated_clarification).
+    if verdict["action"] == "chat":
+        research, cue = is_substantial_research(text)
+        asked, phrase = asks_for_an_agent(text)
+        unnamed = set(re.findall(r"[a-z']+", text.lower())) & agent_core.DANGLING
+        if (research and not unnamed) or asked:
+            trace.event("decide", route="act", via="rules",
+                        reason="explicit research or agent request overrides chat",
+                        matched=(cue or phrase)[:40])
+            verdict = {**verdict, "action": "act", "task": verdict.get("task") or text,
+                       "question": ""}
 
     if verdict["action"] == "chat":
         # Not the one-shot reply the classifier produced — a real conversational
@@ -641,26 +859,6 @@ def handle(
 
     task = verdict.get("task") or text
     depth = len(task.split())
-
-    # Escalation: not confident enough to let the small model act alone, but
-    # clear enough that another question would just be irritating.
-    if decision is not None and decision.route == "escalate":
-        trace.event("route", route="escalate", confidence=decision.confidence,
-                    reason=decision.reason)
-        speak("This one needs more thought, Sir. One moment.")
-        try:
-            summary = local_brain.with_model(
-                os.getenv("DIABLO_ESCALATE_MODEL", ""),
-                lambda: agent_core.run(task, speak, ask=ask, confirm=confirm))
-            conversation.session.commit_turn(generation, text, summary)
-            _speak_with_metadata(
-                speak, summary, speech_id=f"turn:{trace.current_turn()}:escalated",
-                speech_kind="USER_RESPONSE")
-            trace.event("done", route="escalate", summary=summary[:120])
-            return "escalated"
-        except Exception as e:
-            trace.event("route", route="escalate_failed", reason=str(e)[:100])
-            # Fall through and let the small model try rather than giving up.
 
     # ── The routing decision ─────────────────────────────────────────────
     # One call, one recorded reason. Nothing below re-derives it.
@@ -835,6 +1033,95 @@ def _chat(speak, text: str, generation: Optional[int],
     trace.event("speech", phase="complete")
 
 
+# The last how-to, so a correction of it is understood as one. After "how do
+# I color grade in Final Cut Pro", "no, I mean the actual color wheels" was
+# answered as a new question about nothing: "they aren't visible on your
+# screen". A follow-up of that shape goes back down the same path, with the
+# original question and the new detail together, so it keeps its app.
+_HOWTO = {"question": "", "at": 0.0}
+HOWTO_FOLLOW_SECONDS = 180.0
+_FOLLOW = re.compile(
+    r"^\s*(?:no[,.!]?\s+|nope[,.!]?\s+)?(?:i mean|i meant|not that|that'?s not|that is not|"
+    r"not what i|where(?:'s| is) (?:that|it)\b|show me (?:that|it)\b|which one|"
+    r"the other one|it'?s not there|i can'?t see (?:it|that))", re.I)
+
+
+def _follow_up(text: str, speak, ask, confirm, generation) -> Optional[str]:
+    """A correction or continuation of the last how-to, handled as that how-to."""
+    base = _HOWTO["question"]
+    if not base or not _FOLLOW.search(text or "") \
+            or time.time() - _HOWTO["at"] > HOWTO_FOLLOW_SECONDS:
+        return None
+    # Only inside the same conversation: a how-to from one that has ended
+    # does not capture a fresh "where is it?", which is still a question.
+    if not conversation.session.is_followup(generation=generation):
+        return None
+    trace.event("route", route="howto_followup", task=text[:120])
+    try:
+        return handle(f"{base} ({text.strip()})", speak, ask=ask, confirm=confirm,
+                      generation=generation)
+    finally:
+        # Corrections refine the same question; they do not pile up on it.
+        _HOWTO.update(question=base, at=time.time())
+
+
+def _with_app_in_use(task: str) -> str:
+    """
+    The task, with the app in use noted when the request names none.
+
+    "open a new tab" right after "open chrome" is about Chrome. The agent
+    sees each turn on its own, so it asked which browser, twice.
+    """
+    try:
+        from skills import apps
+        current = apps.in_use()
+        if current is None or apps.mentioned(task):
+            return task
+        return f"{task}\n(The app in use: {current.name}.)"
+    except Exception:              # a hint that fails is no hint, not a failure
+        return task
+
+
+def _teaching_context(text: str, speak) -> tuple:
+    """
+    What a walkthrough is about, put on screen, and what the app says about it.
+
+    Returns (target, known) for tutor.walk. The walkthrough used to teach
+    whatever window was in front: the browser, for a Final Cut Pro question;
+    Voicebox, for a Bluetooth one. The app or System Settings pane the request
+    names is opened or brought forward (reversible, nothing inside it is
+    touched), and the app's own menu command for the task, if it has one, is
+    handed over as fact rather than left to be guessed from pixels.
+    """
+    try:
+        from skills import app_menus, task_context
+        context = task_context.about(text)
+    except Exception as e:          # no context is the old behaviour, not a failure
+        trace.event("teach", phase="context_failed", reason=f"{type(e).__name__}: {e}"[:120])
+        return "", ""
+    if context.app is None or context.source == task_context.FRONT:
+        return "", ""
+    window = task_context.bring_up(context)
+    trace.event("teach", phase="context", source=context.source, app=context.app.name,
+                pane=(context.pane.name if context.pane else ""), up=window is not None)
+    if window is None:
+        speak(f"I couldn't bring {context.app.name} up on screen, so I'll explain "
+              f"without pointing.")
+        return "", ""
+    if context.pane is not None:
+        return context.app.name, (f"System Settings is open at the {context.pane.name} "
+                                  f"pane, which is where this is done.")
+    try:
+        route = task_context.find_route(context.app, text)
+    except Exception:
+        route = None
+    if route is None:
+        return context.app.name, ""
+    hedge = "" if route.method != task_context.INFERRED else " (a likely match, not certain)"
+    return context.app.name, (f"its menu command for this is "
+                              f"{app_menus.route(route.item)}{hedge}.")
+
+
 def _show(text: str, decision, speak, generation: Optional[int]) -> Optional[str]:
     """
     Show what was asked to be shown, through the existing point_at.
@@ -872,7 +1159,7 @@ def _show(text: str, decision, speak, generation: Optional[int]) -> Optional[str
     _speak_with_metadata(
         speak, summary, speech_id=f"turn:{trace.current_turn()}:show",
         speech_kind="USER_RESPONSE")
-    trace.event("done", route="show", summary=summary[:120])
+    trace.event("done", route="show", summary_chars=len(summary))
     return "shown"
 
 
@@ -905,9 +1192,9 @@ def _run_inline(task: str, text: str, speak, ask, confirm,
     # which is most of them, and every "point at the Save button" — left no
     # evidence at all. "Where did you get that?" had nothing to answer from.
     working: list = []
-    summary = agent_core.run(task, speak, ask=ask, confirm=confirm,
-                             decision=decision, working=working)
-    trace.event("done", route="inline", summary=summary[:120])
+    summary = agent_core.run(_with_app_in_use(task), speak, ask=ask, confirm=confirm,
+                             decision=decision, working=working, request=text)
+    trace.event("done", route="inline", summary_chars=len(summary))
     conversation.session.commit_turn(generation, text, summary)
     if working:
         # Recorded against Diablo rather than an agent: an inline action is not
@@ -1341,7 +1628,9 @@ def status_report() -> str:
 
     finished = [j for j in store.recent(4) if j.get("status") == "done"]
     if finished:
-        return f"Nothing running, Sir. The last thing I finished: {finished[0].get('summary', 'a task')}"
+        # The answer may have been withheld or expired; the task is still known.
+        last = finished[0].get("summary") or finished[0].get("task") or "a task"
+        return f"Nothing running, Sir. The last thing I finished: {last}"
     return "Nothing on my plate at the moment, Sir."
 
 

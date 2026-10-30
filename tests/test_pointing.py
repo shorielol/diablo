@@ -47,6 +47,10 @@ def run():
         ("save", "Cancel"),
         ("continue", "Preferences"),
         ("search", "Research Question"),
+        # A lone word of a long request is not a match for it. Found on the
+        # real screen: this request marked the word "not" on a web page.
+        ("zzqqxxvv not a real thing at all", "not"),
+        ("zzqqxxvv not a real thing at all", "All"),
     ]
     for query, fragment in rejects:
         with guard(r, f"{query!r} does not match {fragment!r}"):

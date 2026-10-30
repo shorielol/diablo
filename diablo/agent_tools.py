@@ -338,11 +338,38 @@ def append_file(path: str, content: str) -> str:
         return _failed("append to", target, e)
 
 
-def find_files(name: str, path: str = "desktop") -> str:
+def find_files(name: str, path: str = "desktop", changed_within_days: int = 0) -> str:
+    """
+    Files by name beneath a folder. With changed_within_days, only files
+    changed in that many days, newest first, with when: the only real evidence
+    of what someone has been working on, since Diablo keeps no record of it.
+    Names and dates only; nothing is opened.
+    """
     root = _resolve(path)
     pattern = name if any(c in name for c in "*?[") else f"*{name}*"
     hits = globlib.glob(os.path.join(root, "**", pattern), recursive=True)
-    hits = [h for h in hits if "/." not in h][:60]
+    hits = [h for h in hits if "/." not in h]
+    try:
+        days = max(0, int(changed_within_days or 0))
+    except (TypeError, ValueError):
+        days = 0
+    if days:
+        since = time.time() - days * 86400
+        dated = []
+        for hit in hits:
+            try:
+                if os.path.isfile(hit) and os.path.getmtime(hit) >= since:
+                    dated.append((os.path.getmtime(hit), hit))
+            except OSError:
+                continue
+        dated.sort(reverse=True)
+        if not dated:
+            return f"No file under {root} changed in the last {days} day(s)."
+        lines = [f"{time.strftime('%a %d %b %H:%M', time.localtime(when))}  {hit}"
+                 for when, hit in dated[:60]]
+        return (f"{len(dated)} file(s) changed in the last {days} day(s), newest first:\n"
+                + "\n".join(lines))
+    hits = hits[:60]
     if not hits:
         return f"Nothing matching '{name}' under {root}."
     return f"{len(hits)} match(es):\n" + "\n".join(hits)
@@ -769,10 +796,44 @@ def python_snippet(code: str) -> str:
 # ─── macOS control ───────────────────────────────────────────────────────────
 
 def open_app(name: str) -> str:
-    proc = subprocess.run(["open", "-a", name], capture_output=True, text=True)
-    if proc.returncode != 0:
-        return f"Error: could not open '{name}'. {proc.stderr.strip()}"
-    return f"Opened {name}."
+    """
+    Open an application by whatever the person called it. The name used to go
+    to `open -a` as spoken, so "chrome" failed with Google Chrome installed:
+    apps.open_app resolves it to the installed application first, asks when
+    two apps fit, and says "Opened" only once the app is running.
+    """
+    from skills import apps
+    return apps.open_app(name)
+
+
+def find_in_menus(app: str, command: str) -> str:
+    """
+    Where a command lives in an application's own menu bar, with its shortcut.
+    Read-only. Asked how to open settings in Zen, Diablo looked for a gear and
+    gave up; Zen › Settings… (⌘,) was in its menus the whole time.
+    """
+    from skills import app_menus, apps
+    named = apps.resolve(app)
+    if named.status != apps.RESOLVED:
+        return apps.describe(named)
+    if not named.running:
+        return (f"{named.app.name} isn't open, and its menus can only be read while it "
+                f"runs. Open it first, then ask again.")
+    found = app_menus.find(named.app, command)
+    if not found:
+        return (f"{named.app.name}'s menus have no command like “{command}”. It may be "
+                f"a button or panel in the window instead, or not exist in this app.")
+    lines = [app_menus.route(item) + ("" if item.enabled else " (greyed out right now)")
+             for item in found[:3]]
+    return f"In {named.app.name}: " + "; or ".join(lines)
+
+
+def choose_menu(app: str, command: str) -> str:
+    """Carry out one of an application's own menu commands, after asking."""
+    from skills import computer_use
+    # No task id: an agent turn's permission is asked per action.
+    result = computer_use.choose_menu(app, command, confirm=CONTEXT.get("confirm"))
+    return result.spoken
 
 
 def open_url(url: str) -> str:
@@ -782,17 +843,80 @@ def open_url(url: str) -> str:
     return f"Opened {url}."
 
 
+# Saving a screenshot is something a person asks for, never something Diablo
+# does on the way to an answer. Looking at the screen goes through read_screen
+# and friends, which capture, read and delete; a saved screenshot is a file of
+# everything on every display, so it is only written when the request itself
+# says to take or save one.
+_SHOT = r"(?:screen\s?shots?|screen\s?grabs?|screen\s?captures?)"
+_SAVE_VERB = r"(?:take|grab|save|capture|make|snap|get|keep|export)"
+# A new screenshot is asked for with "a", "another", "a quick" or nothing in
+# front of it. "the screenshot", "this screenshot", "the screenshots folder"
+# are about one that already exists, and used to match: "take a look at the
+# screenshot on my desktop" put a capture of every display on the Desktop.
+_NEW_SHOT = (r"(?:\s+(?:me|us|a|an|another|one|some|new|quick|fresh|full|"
+             r"full-screen|whole|single|\d+))*")
+_WANTS_SHOT = (
+    re.compile(rf"\b{_SAVE_VERB}\b{_NEW_SHOT}\s+{_SHOT}\b"),
+    re.compile(rf"^\s*(?:please\s+|can you\s+|could you\s+)?{_SHOT}"
+               rf"(?!\s+(?:folder|file|files|from|i\b|is\b|are\b|in\b))\b"),
+    re.compile(r"\b(?:save|keep|export)\b[^.?!]{0,30}\b(?:picture|image|copy|capture)\b"
+               r"[^.?!]{0,20}\b(?:screen|display|window)s?\b"),
+)
+_REFUSES_SHOT = re.compile(
+    rf"\b(?:don'?t|do not|never|without|no need to)\b[^.?!]{{0,25}}"
+    rf"(?:\b{_SAVE_VERB}\b|\b{_SHOT}\b)")
+# Where a requested screenshot may go. The Desktop unless the request names
+# one of these. Read at call time, so DESKTOP can be pointed elsewhere.
+_SHOT_FOLDERS = ("downloads", "documents", "pictures")
+
+
+def wants_saved_screenshot(text: str) -> bool:
+    """Did the person ask for a screenshot to be taken or saved?"""
+    lower = (text or "").lower().replace("’", "'")
+    if not lower.strip() or _REFUSES_SHOT.search(lower):
+        return False
+    return any(p.search(lower) for p in _WANTS_SHOT)
+
+
+def _screenshot_folder(text: str) -> str:
+    lower = (text or "").lower()
+    for name in _SHOT_FOLDERS:
+        if re.search(rf"\b(?:to|in|into)\s+(?:my\s+|the\s+)?{name}\b", lower):
+            return os.path.join(HOME, name.capitalize())
+    return DESKTOP
+
+
 def take_screenshot() -> str:
     """
-    A screenshot of every display, not just one.
+    The model's tool. Saves only when this run's request asked for a screenshot.
+
+    The request is the person's own words, set by agent_core.run; the model
+    cannot supply it. Anything else — "what's on my screen", "read this" — gets
+    a refusal and no file, because those are answered by looking, not saving.
+    """
+    request = CONTEXT.get("request") or ""
+    if not wants_saved_screenshot(request):
+        return ("Not saved. I only save a screenshot when you ask for one. "
+                "To see what is on screen, use read_screen, which keeps nothing.")
+    return save_screenshot(request)
+
+
+def save_screenshot(request: str) -> str:
+    """
+    A screenshot of every display, not just one, into the folder asked for.
 
     The previous version ran bare `screencapture`, which on a multi-display
     machine captures the main display alone and reports success. Someone asking
     for a screenshot of what is on their second monitor got a picture of their
     first and no indication anything was missing.
+
+    Callers must have checked wants_saved_screenshot(request) first.
     """
     import shutil
     import time
+    folder = _screenshot_folder(request)
+    where = "the Desktop" if folder == DESKTOP else f"your {os.path.basename(folder)} folder"
     try:
         display = _skill("display")
         if display is None:
@@ -805,15 +929,24 @@ def take_screenshot() -> str:
             if not captured:
                 continue
             suffix = "" if len(screens) == 1 else f"_{one.describe().split(' ')[0]}"
-            destination = os.path.join(DESKTOP, f"DIABLO_Screenshot_{stamp}{suffix}.png")
-            shutil.move(captured, destination)
+            destination = os.path.join(folder, f"DIABLO_Screenshot_{stamp}{suffix}.png")
+            try:
+                shutil.move(captured, destination)
+            except OSError:
+                # The capture is a private temp file; it does not outlive a
+                # failed move.
+                try:
+                    os.unlink(captured)
+                except OSError:
+                    pass
+                raise
             saved.append(os.path.basename(destination))
         if not saved:
             return "I could not capture the screen. Diablo needs Screen Recording " \
                    "permission in System Settings."
         if len(saved) == 1:
-            return f"Screenshot saved to the Desktop as {saved[0]}."
-        return (f"Saved {len(saved)} screenshots to the Desktop, one per display: "
+            return f"Screenshot saved to {where} as {saved[0]}."
+        return (f"Saved {len(saved)} screenshots to {where}, one per display: "
                 + ", ".join(saved) + ".")
     except Exception as e:
         return _failed("take a screenshot", "", e)
@@ -1128,7 +1261,7 @@ def list_windows() -> str:
 
 
 def describe_visually(question: str, target: str = "") -> str:
-    """Ask a local vision model about a window, for what text alone cannot answer."""
+    """Ask the model, which reads images, about a window, for what text alone cannot answer."""
     try:
         screen_context = _skill("screen_context")
         if screen_context is None:
@@ -1552,9 +1685,14 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
           "write save create file draft note output"),
     _tool("append_file", append_file, "Add text to the end of a file.",
           {"path": _S, "content": _S}, ["path", "content"], "append add log note memory"),
-    _tool("find_files", find_files, "Find files by name or pattern beneath a folder.",
-          {"name": dict(_S, description="Name or glob, e.g. 'econ' or '*.xlsx'"), "path": _S},
-          ["name"], "find search locate file where missing"),
+    _tool("find_files", find_files,
+          "Find files by name or pattern beneath a folder. With changed_within_days, "
+          "only files changed recently, newest first: use name '*' and it for "
+          "'what have I been working on'. Names and dates only.",
+          {"name": dict(_S, description="Name or glob, e.g. 'econ' or '*.xlsx'"), "path": _S,
+           "changed_within_days": {"type": "integer"}},
+          ["name"], "find search locate file where missing recent recently changed "
+                    "working lately week days yesterday"),
     _tool("search_text", search_text, "Find which files contain a phrase.",
           {"query": _S, "path": _S}, ["query"], "search grep contains inside text find"),
     _tool("make_folder", make_folder,
@@ -1720,11 +1858,29 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
                                      "Leave empty for the frontmost window."}},
           ["description"],
           "find locate where search screen visible"),
-    _tool("open_app", open_app, "Open a Mac application by name.", {"name": _S},
-          ["name"], "open launch app application start"),
+    _tool("open_app", open_app,
+          "Open (launch) a Mac application by any name the person uses: "
+          "'chrome', 'final cut', 'settings'. Says if the name fits two apps.",
+          {"name": _S}, ["name"], "open launch app application start"),
+    _tool("find_in_menus", find_in_menus,
+          "Where a command is in an app's own menu bar, with its keyboard shortcut. "
+          "Read-only. Use it for 'how do I' and 'where is' questions about an app's "
+          "features (settings, new tab, history, export, captions) before looking "
+          "for an icon on screen. command is what the person wants, in plain words.",
+          {"app": _S, "command": _S}, ["app", "command"],
+          "how where menu menus settings preferences shortcut tab history downloads "
+          "export new find option feature"),
+    _tool("choose_menu", choose_menu,
+          "Carry out a command from an app's own menu bar, e.g. app 'Zen', command "
+          "'new tab'; app 'Notes', command 'new note'. Asks the person first. Use it "
+          "when they ask you to do it, not when they ask how.",
+          {"app": _S, "command": _S}, ["app", "command"],
+          "new tab window note open settings preferences menu choose do"),
     _tool("open_url", open_url, "Open a website in the browser.", {"url": _S},
           ["url"], "open website url browser site link"),
-    _tool("take_screenshot", take_screenshot, "Capture the screen to the Desktop.",
+    _tool("take_screenshot", take_screenshot,
+          "Save a screenshot file. Only when the person asked for a screenshot; "
+          "to look at the screen use read_screen.",
           {}, [], "screenshot capture screen picture"),
     _tool("set_volume", set_volume, "Set output volume, 0 to 100.", {"level": _I},
           ["level"], "volume sound loud quiet mute audio"),
@@ -1752,9 +1908,9 @@ TOOLS: Dict[str, dict] = {t["name"]: t for t in [
           "read_screen when you are not sure what the user is looking at.",
           {}, [], "windows open apps screen what running tabs"),
     _tool("describe_visually", describe_visually,
-          "Ask a local vision model what a window looks like — layout, images, "
-          "charts, which control is greyed out. Only for what plain text cannot "
-          "answer; read_screen is faster and needs no extra model.",
+          "Look at a picture of a window — layout, images, charts, which control "
+          "is greyed out. Only for what plain text cannot answer; read_screen is "
+          "faster.",
           {"question": _S, "target": _S}, ["question"],
           "look see image picture chart diagram graph visual colour layout"),
     _tool("search_contact", search_contact, "Look someone up in the address book.",

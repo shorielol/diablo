@@ -88,8 +88,12 @@ AGENTS: List[Dict[str, Any]] = [
         "id": "vassago", "name": "Vassago", "role": "Watches the screen",
         "accent": "#3DA9FC", "eye": "#8FD3FF", "mouth": "calm",
         "blurb": "Reads the glass, points at things, and walks you through them.",
+        # No take_screenshot. Every tool here reads the screen and lets the
+        # capture go; that one saves a picture of every display to the
+        # Desktop, which delegated work should never do on its own. A person
+        # who says "take a screenshot" is answered directly, not by an agent.
         "tools": ["read_screen", "explain_screen", "describe_visually", "list_windows",
-                  "take_screenshot", "point_at", "find_on_screen",
+                  "point_at", "find_on_screen",
                   "walk_me_through", "whats_under_cursor", "what_changed",
                   "look_near_cursor", "screen_layout", "screen_privacy",
                   "whole_document", "research_whats_on_screen"],
@@ -167,6 +171,12 @@ _TOOL_OWNER: Dict[str, str] = {}
 for _agent in AGENTS:
     for _tool in _agent["tools"]:
         _TOOL_OWNER[_tool] = _agent["id"]
+
+# Every tool that looks at the screen: Vassago's, and the screenshot. An answer
+# built on any of them can repeat what was on the glass, so the job store keeps
+# the fact that it finished and not the answer.
+SCREEN_TOOLS = frozenset(
+    next(a for a in AGENTS if a["id"] == "vassago")["tools"]) | {"take_screenshot"}
 
 
 def voice_of(agent_id: str) -> str:

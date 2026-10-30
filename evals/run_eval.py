@@ -19,7 +19,7 @@ never from asking the model whether it was honest. The whole failure mode is
 that it is confident when it is wrong, so its own account is worthless here.
 
     python3 evals/run_eval.py
-    python3 evals/run_eval.py --model qwen3:14b
+    python3 evals/run_eval.py --model qwen3.5:4b
     python3 evals/run_eval.py --only ambiguous --json report.json
 """
 

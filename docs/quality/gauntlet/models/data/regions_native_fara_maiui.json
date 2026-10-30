@@ -1,0 +1,312 @@
+{
+ "vision_model": "",
+ "summary": {
+  "prod": {
+   "n": 11,
+   "hits": 6,
+   "p50_ms": 13993.5,
+   "answered": 6
+  },
+  "fara": {
+   "n": 11,
+   "hits": 9,
+   "p50_ms": 11536.7,
+   "answered": 11
+  },
+  "maiui": {
+   "n": 11,
+   "hits": 5,
+   "p50_ms": 5913.8,
+   "answered": 11
+  }
+ },
+ "records": [
+  {
+   "fixture": "diagram_app",
+   "region": "welfare loss",
+   "mode": "fara",
+   "hit": false,
+   "iou": null,
+   "ms": 13078.6,
+   "note": "",
+   "centre": [
+    1103.1,
+    535.8
+   ]
+  },
+  {
+   "fixture": "diagram_app",
+   "region": "welfare loss",
+   "mode": "maiui",
+   "hit": false,
+   "iou": null,
+   "ms": 6001.3,
+   "note": "",
+   "centre": [
+    1102.0,
+    536.1
+   ]
+  },
+  {
+   "fixture": "diagram_app",
+   "region": "consumer surplus",
+   "mode": "fara",
+   "hit": false,
+   "iou": null,
+   "ms": 11978.3,
+   "note": "",
+   "centre": [
+    1120.2,
+    580.0
+   ]
+  },
+  {
+   "fixture": "diagram_app",
+   "region": "consumer surplus",
+   "mode": "maiui",
+   "hit": false,
+   "iou": null,
+   "ms": 5913.8,
+   "note": "",
+   "centre": [
+    1116.4,
+    582.9
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "consumer surplus",
+   "mode": "fara",
+   "hit": true,
+   "iou": null,
+   "ms": 11465.6,
+   "note": "",
+   "centre": [
+    549.2,
+    416.8
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "consumer surplus",
+   "mode": "maiui",
+   "hit": false,
+   "iou": null,
+   "ms": 7566.2,
+   "note": "",
+   "centre": [
+    539.5,
+    567.6
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "producer surplus",
+   "mode": "fara",
+   "hit": true,
+   "iou": null,
+   "ms": 3939.9,
+   "note": "",
+   "centre": [
+    553.7,
+    515.4
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "producer surplus",
+   "mode": "maiui",
+   "hit": false,
+   "iou": null,
+   "ms": 3906.5,
+   "note": "",
+   "centre": [
+    786.3,
+    611.2
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "deadweight loss",
+   "mode": "fara",
+   "hit": true,
+   "iou": null,
+   "ms": 4016.8,
+   "note": "",
+   "centre": [
+    664.4,
+    488.2
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "deadweight loss",
+   "mode": "maiui",
+   "hit": false,
+   "iou": null,
+   "ms": 3843.4,
+   "note": "",
+   "centre": [
+    1081.8,
+    515.1
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "demand curve",
+   "mode": "fara",
+   "hit": true,
+   "iou": null,
+   "ms": 3831.1,
+   "note": "",
+   "centre": [
+    736.4,
+    510.3
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "demand curve",
+   "mode": "maiui",
+   "hit": false,
+   "iou": null,
+   "ms": 3761.2,
+   "note": "",
+   "centre": [
+    1007.9,
+    702.3
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "equilibrium",
+   "mode": "fara",
+   "hit": true,
+   "iou": null,
+   "ms": 4177.8,
+   "note": "",
+   "centre": [
+    740.9,
+    503.4
+   ]
+  },
+  {
+   "fixture": "market_app",
+   "region": "equilibrium",
+   "mode": "maiui",
+   "hit": true,
+   "iou": null,
+   "ms": 4250.7,
+   "note": "",
+   "centre": [
+    732.3,
+    508.7
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "highlighted bar",
+   "mode": "fara",
+   "hit": true,
+   "iou": null,
+   "ms": 12714.0,
+   "note": "",
+   "centre": [
+    843.4,
+    589.3
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "highlighted bar",
+   "mode": "maiui",
+   "hit": true,
+   "iou": null,
+   "ms": 5779.9,
+   "note": "",
+   "centre": [
+    841.2,
+    546.0
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "tallest bar",
+   "mode": "fara",
+   "hit": true,
+   "iou": null,
+   "ms": 12308.1,
+   "note": "",
+   "centre": [
+    843.4,
+    589.3
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "tallest bar",
+   "mode": "maiui",
+   "hit": true,
+   "iou": null,
+   "ms": 6701.8,
+   "note": "",
+   "centre": [
+    839.5,
+    549.8
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "third bar",
+   "mode": "fara",
+   "hit": true,
+   "iou": null,
+   "ms": 11919.9,
+   "note": "",
+   "centre": [
+    731.6,
+    668.3
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "third bar",
+   "mode": "maiui",
+   "hit": true,
+   "iou": null,
+   "ms": 6635.1,
+   "note": "",
+   "centre": [
+    727.6,
+    685.1
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "arrow",
+   "mode": "fara",
+   "hit": true,
+   "iou": null,
+   "ms": 11536.7,
+   "note": "",
+   "centre": [
+    963.0,
+    426.2
+   ]
+  },
+  {
+   "fixture": "chart_app",
+   "region": "arrow",
+   "mode": "maiui",
+   "hit": true,
+   "iou": null,
+   "ms": 7976.6,
+   "note": "",
+   "centre": [
+    912.6,
+    432.1
+   ]
+  }
+ ],
+ "note": "prod rows dropped: the fixture window was occluded during this run; see regions_production_qwen25vl.json"
+}

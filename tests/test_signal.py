@@ -11,6 +11,7 @@ icon draw in light and dark; and no face is left anywhere.
 
 import math
 import os
+import shutil
 import sys
 import tempfile
 
@@ -223,8 +224,13 @@ def run():
         r.check("and it is announced as a button", view.accessibilityRole() == "AXButton")
 
     with guard(r, "the icon and the menu bar glyph"):
-        out = os.path.join(tempfile.mkdtemp(), "icon.png")
-        ok = all(os.path.getsize(make_icon.render(size, out)) > 0 for size in (16, 32, 128, 1024))
+        folder = tempfile.mkdtemp(prefix="diablo-icon-test-")
+        try:
+            out = os.path.join(folder, "icon.png")
+            ok = all(os.path.getsize(make_icon.render(size, out)) > 0
+                     for size in (16, 32, 128, 1024))
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)   # it used to stay behind
         r.check("the app icon renders at every size asked for", ok)
         r.check("the menu bar glyph is a template image, so the bar tints it",
                 app_shell._status_icon().isTemplate())

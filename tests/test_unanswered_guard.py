@@ -20,7 +20,6 @@ import os
 import sys
 import tempfile
 import time
-from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from harness import Results, guard  # noqa: E402
@@ -207,30 +206,17 @@ def run():
         results.check("the job still records its summary",
                       (stored.get("summary") or "").strip() == UNANSWERED_1.strip())
 
-    results.head("F. unanswered question, escalated")
-    with guard(results, "escalation caller"):
-        model = _Model(UNANSWERED_1, "must not be generated")
-        voice = _Voice(reply="")
-        saved = (local_brain.available, local_brain.with_model,
-                 delegation_tool.route, delegation_tool.tutor.wants_teaching)
-        decision = SimpleNamespace(route="escalate", goal="research OpenAI news",
-                                   question="", confidence=0.6, risk="none",
-                                   kind="action", reason="test escalation")
-        try:
-            local_brain.available = lambda: True
-            local_brain.with_model = lambda _model, work: work()
-            delegation_tool.route = SimpleNamespace(classify=lambda *_a, **_k: decision)
-            delegation_tool.tutor.wants_teaching = lambda _text: False
-            with _Patched(model):
-                outcome = delegation_tool.handle("research OpenAI news", voice.speak,
-                                                 ask=voice.ask)
-        finally:
-            (local_brain.available, local_brain.with_model,
-             delegation_tool.route, delegation_tool.tutor.wants_teaching) = saved
-        results.check("the escalated route ran", outcome == "escalated", repr(outcome))
-        results.check("spoken once, never repeated", voice.times(UNANSWERED_1) == 1,
-                      f"times={voice.times(UNANSWERED_1)}")
-        results.check("no second model call", model.calls == 1, f"calls={model.calls}")
+    results.head("F. there is no escalated caller any more")
+    with guard(results, "escalation is gone"):
+        # This section used to drive the escalation route, a second caller of
+        # the agent loop that swapped in the 14B. The 14B and the route were
+        # removed on 2026-10-05, so the only thing left to pin is that neither
+        # comes back.
+        import inspect
+        source = inspect.getsource(delegation_tool) + inspect.getsource(delegation_tool.route)
+        results.check("no escalated outcome", '"escalated"' not in source)
+        results.check("no model swap", "with_model" not in source
+                      and not hasattr(local_brain, "with_model"))
 
     results.head("I2. screen answer: no second model call, no second answer")
     with guard(results, "screen answer"):

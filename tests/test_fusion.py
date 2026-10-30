@@ -347,7 +347,10 @@ def main() -> int:
         r.check("no click/type/press tool exists",
                 not {n for n in names
                      if any(k in n for k in ("click", "type_", "press", "keystroke"))})
-        r.check("the tool count is unchanged at 48", len(names) == 48, str(len(names)))
+        # 48, plus find_in_menus and choose_menu, reviewed 2026-10-06.
+        r.check("the tool count is 48 plus the reviewed menu pair",
+                len(names) == 50 and {"find_in_menus", "choose_menu"} <= set(names),
+                str(len(names)))
         from skills import computer_use
         r.check("computer use is still off by default",
                 computer_use.ENABLED is False)

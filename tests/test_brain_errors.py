@@ -62,8 +62,11 @@ def main():
     r.head("The context window")
     r.check("is bigger than the turn that overflowed it",
             local_brain.NUM_CTX > 4168, f"NUM_CTX={local_brain.NUM_CTX}")
+    # 32768 on qwen3.5:4b measured 4.27 GB resident on this 18 GB machine
+    # (2026-10-05): one layer in four keeps a full KV cache. The old ceiling,
+    # 16384, came from qwen3:4b, where it cost 5.1 GB beside a 6 GB vision model.
     r.check("and is still a size this machine can hold",
-            local_brain.NUM_CTX <= 16384, f"NUM_CTX={local_brain.NUM_CTX}")
+            local_brain.NUM_CTX <= 32768, f"NUM_CTX={local_brain.NUM_CTX}")
 
     # ── 2. The refusal that started this ─────────────────────────────────
     r.head("The refusal it read out loud")

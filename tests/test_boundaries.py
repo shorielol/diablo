@@ -181,7 +181,7 @@ def main() -> int:
         if seen:
             ev = seen[0]
             for field, expected, label in (
-                    ("label", "Save", "candidate identity"),
+                    ("labelled", True, "that the candidate had a label"),
                     ("confidence", 0.93, "confidence"),
                     ("sources", "accessibility", "source"),
                     ("role", "AXButton", "role"),
@@ -191,8 +191,20 @@ def main() -> int:
             ):
                 r.check(f"  {label} survives", ev.get(field) == expected,
                         f"{field}={ev.get(field)!r}")
-            r.check("  evidence survives", "accessibility calls it" in (ev.get("evidence") or ""),
-                    (ev.get("evidence") or "")[:40])
+            r.check("  how much evidence there was survives", ev.get("evidence_items") == 1,
+                    str(ev.get("evidence_items")))
+            # The screen's words stay out of the trace (the zero-persistence
+            # requirement): not the label, not the evidence quoting it, not
+            # the window title. Measurements carry the diagnosis instead.
+            # `intent` is excluded: it is what the user asked for, in their
+            # words, not something read off the screen.
+            written = json.dumps({k: v for k, v in ev.items() if k != "intent"})
+            r.check("  the control's text is not written down",
+                    "Save" not in written and "label" not in ev, written[:80])
+            r.check("  nor the evidence quoting it",
+                    "accessibility calls it" not in written and "evidence" not in ev)
+            r.check("  nor the window title",
+                    "window" not in ev and "A Window" not in written)
             r.check("  bounds survive",
                     (ev.get("x"), ev.get("y"), ev.get("width"), ev.get("height"))
                     == (100.0, 200.0, 90.0, 30.0),
@@ -327,7 +339,23 @@ def main() -> int:
         forbidden = {n for n in names
                      if any(k in n for k in ("click", "type_", "press", "keystroke"))}
         r.check("no click/type/press tool exists", not forbidden, str(forbidden))
-        r.check("the tool count is unchanged at 48", len(names) == 48, str(len(names)))
+        # A tripwire, so a new tool is reviewed rather than slipped in. Two were
+        # added on 2026-10-06 and reviewed: find_in_menus reads an app's menu
+        # bar; choose_menu presses only a command the app itself publishes,
+        # through computer_use.choose_menu, off unless computer use is on and
+        # never without a yes (tests/test_app_menus.py).
+        reviewed = {"find_in_menus", "choose_menu"}
+        r.check("the tool count is 48, plus the two reviewed menu tools",
+                len(names) == 50 and reviewed <= names, str(len(names)))
+        from skills import computer_use as _cu
+        was = _cu.ENABLED
+        try:
+            _cu.ENABLED = False
+            said = agent_tools.choose_menu("Finder", "new window")
+        finally:
+            _cu.ENABLED = was
+        r.check("choose_menu does nothing while computer use is off",
+                "not allowed" in said.lower(), said)
 
     with guard(r, "computer use is still off by default"):
         from skills import computer_use
@@ -338,15 +366,26 @@ def main() -> int:
                 str(computer_use.NEEDED[computer_use.HIGH]))
 
     with guard(r, "do_engine still has no production consumer"):
-        import subprocess as sp
-        out = sp.run(["grep", "-rn", "do_engine", "--include=*.py",
-                      os.path.join(REPO, "diablo")],
-                     capture_output=True, text=True).stdout
-        callers = [ln for ln in out.splitlines()
-                   if "do_engine.py:" not in ln and "# " not in ln.split(":", 2)[-1][:3]]
-        real = [ln for ln in callers if "import" in ln or "do_engine." in ln]
+        # Read as Python, not as text. A grep for "do_engine." also matched
+        # the filename `do_engine.py` in a docstring, so prose about the
+        # engine was reported as a caller of it.
+        import ast
+        real = []
+        package = os.path.join(REPO, "diablo")
+        for name in sorted(os.listdir(package)):
+            if not name.endswith(".py") or name == "do_engine.py":
+                continue
+            for node in ast.walk(ast.parse(open(os.path.join(package, name)).read())):
+                if isinstance(node, ast.Import):
+                    modules = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    modules = [node.module or ""] + [alias.name for alias in node.names]
+                else:
+                    continue
+                if any(m.split(".")[-1] == "do_engine" for m in modules):
+                    real.append(f"{name}:{node.lineno}")
         r.check("no production module imports do_engine", not real,
-                "; ".join(r.split(REPO + "/")[-1] for r in real[:2]))
+                "; ".join(real[:2]))
 
     return r.report("boundaries")
 

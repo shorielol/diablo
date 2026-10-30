@@ -22,10 +22,10 @@ screenshot:
 
 Everything here is local. Nothing is uploaded.
 
-Optional fourth layer: if you install a vision model in Ollama
-(`ollama pull qwen2.5vl:7b`), `describe_visually` sends the window image to it
-for questions text alone cannot answer — layout, charts, images, "which button
-is greyed out".
+Fourth layer: `describe_visually` sends the window image to the brain model
+itself, qwen3.5:4b, which reads pictures as well as text, for questions text
+alone cannot answer — layout, charts, images, "which button is greyed out".
+There is no separate vision model to install or to fall back to.
 """
 
 import base64
@@ -65,7 +65,6 @@ except Exception:
     pass
 from skills import local_brain  # noqa: E402
 
-VISION_MODEL = os.getenv("DIABLO_VISION_MODEL", "qwen2.5vl:7b")
 MAX_OCR_CHARS = 6000
 
 # Windows that are never what you mean by "what I'm looking at".
@@ -393,6 +392,20 @@ def find_window(query: str) -> Optional[Dict[str, Any]]:
     def hit(window, term):
         return term in window["app"].lower() or term in window["title"].lower()
 
+    # A name that is an installed application means that application's
+    # windows and no other. "chrome" used to fall through to the alias table
+    # and land on a Zen window; with Google Chrome installed it means Chrome,
+    # and Chrome with no window open means no window, not a different browser.
+    from skills import apps
+    named = apps.resolve(needle)
+    if named.status == apps.RESOLVED:
+        own = [w for w in windows
+               if apps.normalise(w["app"]) in {apps.normalise(n) for n in named.app.names()}]
+        if own:
+            return own[0]
+        if named.method in ("exact", "alias", "initials"):
+            return None
+
     for window in windows:
         if hit(window, needle):
             return window
@@ -421,6 +434,21 @@ def find_window(query: str) -> Optional[Dict[str, Any]]:
             if pattern.search(window["app"]) or pattern.search(window["title"]):
                 return window
     return None
+
+
+def why_no_window(query: str) -> str:
+    """
+    Why find_window found nothing, in the person's terms: the app is not
+    installed, is installed but not open, is open with no window, or the name
+    could be two apps. Never "not installed" on the strength of a window list.
+    """
+    from skills import apps
+    named = apps.resolve(query)
+    if named.status == apps.RESOLVED and named.running:
+        return f"{named.app.name} is open, but it has no window I can see."
+    if named.status == apps.UNKNOWN:
+        return f"I can't find a window called “{query.strip()}”."
+    return apps.describe(named)
 
 
 # ─── Capture ─────────────────────────────────────────────────────────────────
@@ -874,9 +902,9 @@ def look_everything() -> str:
 
 
 def vision_available() -> bool:
-    """Whether the vision model is actually pulled, not just configured."""
+    """Whether the model that reads images, the brain itself, is pulled."""
     try:
-        return VISION_MODEL in local_brain.installed_models()
+        return local_brain.CHAT_MODEL in local_brain.installed_models()
     except Exception:
         return False
 
@@ -954,7 +982,7 @@ def read_image(path: str, instruction: str, num_predict: int = 300,
         # answer nobody can audit.
         message = local_brain.chat(
             [{"role": "user", "content": instruction, "images": [encoded]}],
-            model=VISION_MODEL, num_predict=num_predict,
+            model=local_brain.CHAT_MODEL, num_predict=num_predict,
             **({"fmt": schema} if schema else {}),
         )
         return (message.get("content") or "").strip()
@@ -970,9 +998,10 @@ def describe_visually(question: str, target: str = "") -> str:
     disabled, what an image shows. Needs a vision model pulled into Ollama —
     the text path above covers everything else and needs nothing.
     """
-    if VISION_MODEL not in local_brain.installed_models():
-        return (f"Error: no vision model installed. Run: ollama pull {VISION_MODEL} "
-                f"— until then I can read the text on screen but not describe images.")
+    if not vision_available():
+        return (f"Error: {local_brain.CHAT_MODEL} is not installed. Run: ollama pull "
+                f"{local_brain.CHAT_MODEL} — until then I can read the text on screen but "
+                f"not describe images.")
 
     window = find_window(target) if target else frontmost_window()
     if not window:
@@ -999,7 +1028,7 @@ def describe_visually(question: str, target: str = "") -> str:
             [{"role": "user",
               "content": f"This is a screenshot of {window['app']}. {question}",
               "images": [encoded]}],
-            model=VISION_MODEL, num_predict=600,
+            model=local_brain.CHAT_MODEL, num_predict=600,
         )
         return (message.get("content") or "").strip() or "The vision model returned nothing."
     except local_brain.BrainOffline as e:
@@ -1090,28 +1119,69 @@ def structured(target: str = "") -> Dict[str, Any]:
     except Exception:
         pass
 
-    regions = ocr_regions(path, window)
+    try:
+        regions = ocr_regions(path, window)
+        if isinstance(regions, str):
+            # OCR itself failed. The capture is of no further use and nothing
+            # downstream will pop it, so it goes now rather than sitting in /tmp.
+            _discard(path)
+            info["error"] = regions
+            return info
+        info["regions"] = regions
+        info["headings"] = [h for r in regions for h in r.get("headings", [])][:8]
+        info["problems"] = salient_lines(regions)
+    except BaseException:
+        # Anything raised between capture and hand-over used to leave the
+        # picture of his window in the temp folder for good.
+        _discard(path)
+        raise
     # Kept, not deleted, so a question the text cannot answer can be put to the
     # vision model against THIS capture. Re-capturing for the second attempt
     # would ask about a screen a second older than the one just described.
     # Whoever pops it owns deleting it; explain() always does.
     info["_capture"] = path
-
-    if isinstance(regions, str):
-        # OCR itself failed. The capture is of no further use and nothing
-        # downstream will pop it, so it goes now rather than sitting in /tmp.
-        info.pop("_capture", None)
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-        info["error"] = regions
-        return info
-
-    info["regions"] = regions
-    info["headings"] = [h for r in regions for h in r.get("headings", [])][:8]
-    info["problems"] = salient_lines(regions)
     return info
+
+
+def _discard(path: Optional[str]) -> None:
+    """Delete a capture, quietly. A capture that is already gone is fine."""
+    if not path:
+        return
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+# Every capture and every image derived from one (enlarged, sheet, resized)
+# is a `diablo_*.png` at the top of the temp folder, and every reader is done
+# with it within seconds. One still there after ten minutes belongs to no live
+# request: a crash or a kill landed between capture and clean-up. Found on
+# this machine: a window capture two days old.
+STALE_CAPTURE_SECONDS = 600
+
+
+def sweep_stale_captures(older_than: float = STALE_CAPTURE_SECONDS) -> int:
+    """Delete Diablo's own orphaned captures from the temp folder; say how many."""
+    folder = tempfile.gettempdir()
+    cutoff = time.time() - older_than
+    removed = 0
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return 0
+    for name in names:
+        if not (name.startswith("diablo_") and name.lower().endswith(".png")):
+            continue
+        path = os.path.join(folder, name)
+        try:
+            if (os.path.isfile(path) and not os.path.islink(path)
+                    and os.path.getmtime(path) < cutoff):
+                os.unlink(path)
+                removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 def _as_prompt(info: Dict[str, Any], budget: int = 2200) -> str:
@@ -1217,30 +1287,23 @@ def explain(question: str = "", target: str = "") -> str:
     # where it applies. The vision model is not a better version of it — it is
     # a different instrument, and it is the only one that can answer a question
     # about a picture.
-    if needs_vision(question, info) and vision_available():
-        capture = info.pop("_capture", None)
-        if capture and os.path.exists(capture):
-            try:
-                context = _as_prompt(info, budget=600)
-                seen = read_image(
-                    capture,
-                    f"{VISION_EXPLAIN}\n\nThis is {info['app']}"
-                    + (f", showing {info['title'][:80]}" if info.get("title") else "")
-                    + f".\n\nQuestion: {question.strip() or 'What am I looking at?'}",
-                    num_predict=320)
-            finally:
-                try:
-                    os.unlink(capture)
-                except OSError:
-                    pass
+    #
+    # The capture is taken out once and deleted in one place, whichever way
+    # this ends — including a vision check that raises before it is used.
+    capture = info.pop("_capture", None)
+    try:
+        if (capture and os.path.exists(capture)
+                and needs_vision(question, info) and vision_available()):
+            seen = read_image(
+                capture,
+                f"{VISION_EXPLAIN}\n\nThis is {info['app']}"
+                + (f", showing {info['title'][:80]}" if info.get("title") else "")
+                + f".\n\nQuestion: {question.strip() or 'What am I looking at?'}",
+                num_predict=320)
             if seen and not seen.startswith("Error:"):
                 return seen
-    capture = info.pop("_capture", None)
-    if capture:
-        try:
-            os.unlink(capture)
-        except OSError:
-            pass
+    finally:
+        _discard(capture)
 
     ask = question.strip() or "What is on this screen? Say what he is looking at and what matters about it."
     try:

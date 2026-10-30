@@ -150,9 +150,7 @@ def main() -> int:
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
 
-    window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-        NSMakeRect(*_origin(420.0, 220.0), 900, 600), NSWindowStyleMaskTitled,
-        NSBackingStoreBuffered, False)
+    window = _layout.new_window((*_origin(420.0, 220.0), 900, 600), NSWindowStyleMaskTitled)
     window.setTitle_(TITLE)
 
     view = Diagram.alloc().initWithFrame_(NSMakeRect(0, 0, 900, 600))

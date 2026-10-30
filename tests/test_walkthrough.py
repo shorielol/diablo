@@ -458,7 +458,8 @@ def main() -> int:
 
     with guard(r, "the walkthrough stops rather than guessing"):
         import inspect
-        source = inspect.getsource(tutor.walk)
+        # The body is _walk; walk() is the wrapper that owns the capture.
+        source = inspect.getsource(tutor._walk)
         r.check("it checks the window is still there before each marker",
                 "has_moved(window)" in source,
                 "a drag mid-lesson invalidates every later coordinate")

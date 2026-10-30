@@ -283,15 +283,53 @@ const TopBar = memo(({ children, tools }) => html`
    without any code here. */
 function Menu({ items, onToggle }) {
   const ref = useRef(null);
+  const entries = () => [...(ref.current?.querySelectorAll('[role="menuitem"]') || [])];
+  /* The keys a Mac menu answers to. Down and Up move and wrap, Home and End
+     go to the ends, and Down or Up on the closed button opens it. Escape is
+     the window's, which closes the menu and puts focus back on its button. */
+  const onKeyDown = (event) => {
+    const menu = ref.current;
+    if (!menu) return;
+    const moving = ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key);
+    if (!moving) return;
+    event.preventDefault();
+    if (!menu.open) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') menu.open = true;
+      return;
+    }
+    const list = entries();
+    if (!list.length) return;
+    const at = list.indexOf(document.activeElement);
+    const next = event.key === 'Home' ? 0
+      : event.key === 'End' ? list.length - 1
+      : event.key === 'ArrowDown' ? (at + 1) % list.length
+      : (at <= 0 ? list.length - 1 : at - 1);
+    list[next].focus();
+  };
+  const onMenuToggle = (event) => {
+    const open = event.currentTarget.open;
+    onToggle && onToggle(open);
+    // Opened: the first item has focus, so the arrows work at once. The
+    // toggle event fires after the list is shown, so it can take focus now;
+    // waiting for a frame never came in a window that was not key.
+    if (open) entries()[0]?.focus();
+  };
+  const pick = (item) => {
+    if (ref.current) {
+      ref.current.open = false;
+      ref.current.querySelector('summary')?.focus();
+    }
+    item.onPick();
+  };
   return html`
-    <details class="menu" ref=${ref}
-             onToggle=${e => onToggle && onToggle(e.currentTarget.open)}>
-      <summary class="tool" title="More" aria-label="More"><${Icon} name="more" /></summary>
-      <div class="menulist" role="menu">
+    <details class="menu" ref=${ref} onToggle=${onMenuToggle} onKeyDown=${onKeyDown}>
+      <summary class="tool" title="More" aria-label="More" aria-haspopup="menu">
+        <${Icon} name="more" /></summary>
+      <div class="menulist" role="menu" aria-label="More">
         ${items.map(item => html`
           <button key=${item.id} role="menuitem" data-active=${!!item.active}
-                  aria-pressed=${!!item.active}
-                  onClick=${() => { if (ref.current) ref.current.open = false; item.onPick(); }}>
+                  aria-current=${item.active ? 'page' : undefined}
+                  onClick=${() => pick(item)}>
             ${item.label}</button>`)}
       </div>
     </details>`;
@@ -436,7 +474,7 @@ function Command({ agent, state, kind, target, speaking, onSend, onInterrupt, on
    dragged from, and it holds the two ways out of it — larger, or more. */
 
 function Interaction({ exchange, kind, line, source, consent, onAnswer,
-                       permissions, onPermissions, menu,
+                       permissions, onPermissions, menu, jobs, roster, onCancel,
                        onExpand, command, bodyRef }) {
   return html`
     <div class="stage" data-level="interaction">
@@ -446,6 +484,7 @@ function Interaction({ exchange, kind, line, source, consent, onAnswer,
         ${menu}`} />
       <div class="body" ref=${bodyRef}>
         <${Needs} perms=${permissions || {}} onPermissions=${onPermissions} />
+        <${Running} jobs=${jobs || []} roster=${roster} onCancel=${onCancel} />
         <${Exchange} ask=${exchange.ask} answer=${exchange.answer} kind=${kind}
                      line=${consent ? '' : line} source=${source} />
         ${consent ? html`<${Consent} question=${consent} onAnswer=${onAnswer} />` : null}
@@ -460,7 +499,8 @@ function Interaction({ exchange, kind, line, source, consent, onAnswer,
    brings it back to one exchange is the first one in its title row. */
 
 function Work({ turns, agent, jobs, liveAgents, roster, permissions, onPermissions,
-               menu, onCollapse, onReset, onHome, line, source, kind, command }) {
+               menu, onCollapse, onReset, onHome, line, source, kind, command,
+               onCancel }) {
   const endRef = useRef(null);
   useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [turns.length]);
 
@@ -520,7 +560,8 @@ function Work({ turns, agent, jobs, liveAgents, roster, permissions, onPermissio
           : null}
         ${menu}`}>Diablo<//>
       <${Needs} perms=${permissions || {}} onPermissions=${onPermissions} />
-      <${Running} jobs=${jobs} roster=${roster.length ? indexRoster(roster) : byId} />
+      <${Running} jobs=${jobs} roster=${roster.length ? indexRoster(roster) : byId}
+                  onCancel=${onCancel} />
       ${turns.length === 0
         ? html`<${Empty} />`
         : html`
@@ -559,7 +600,7 @@ function Section({ title, setView, menu, children }) {
    errands, three states, all moving at once — and it disappears the moment the
    last one lands, because a queue with nothing in it is not worth a row. */
 
-const Running = memo(({ jobs, roster }) => {
+const Running = memo(({ jobs, roster, onCancel }) => {
   const live = jobs.filter(j => j.status === 'running' || j.status === 'queued');
   if (!live.length) return null;
   return html`
@@ -579,7 +620,14 @@ const Running = memo(({ jobs, roster }) => {
                   <span class="runtask">${part.task}</span>
                 </div>`;
             })}
-            <span class="runrule" aria-hidden="true"><i /></span>
+            <div class="runfoot">
+              <span class="runrule" aria-hidden="true"><i /></span>
+              ${onCancel ? html`
+                <button class="runstop" disabled=${!!job.stopping}
+                        onClick=${() => onCancel(job.id)}
+                        aria-label=${`Stop: ${job.task}`}>
+                  ${job.stopping ? 'Stopping\u2026' : 'Stop'}</button>` : null}
+            </div>
           </div>`;
       })}
     </div>`;
@@ -715,6 +763,9 @@ function Health({ state, onPermissions }) {
     onPermissions?.();
   }, [onPermissions]);
 
+  // Permissions in three states, as Needs reads them: null is macOS not
+  // having said, which is not a denial and earns no Grant button. It used to
+  // read "denied", which told someone something untrue about their Mac.
   return html`
     <div class="pane">
       <div class="grid two">
@@ -743,9 +794,11 @@ function Health({ state, onPermissions }) {
           <div class="row" key=${name}>
             <span class="k">${PERM_LABELS[name] || name}</span>
             <span class="perm">
-              <span class="pill" data-tone=${granted ? 'ok' : 'bad'}>
-                ${granted ? 'granted' : 'denied'}</span>
-              ${granted ? null : html`
+              <span class="pill" data-tone=${granted === true ? 'ok'
+                                            : granted === false ? 'bad' : null}>
+                ${granted === true ? 'granted'
+                  : granted === false ? 'denied' : 'not asked yet'}</span>
+              ${granted !== false ? null : html`
                 <button class="ghost sm" disabled=${asking === name}
                         onClick=${() => grant(name)}>
                   ${asking === name ? 'Asking...' : 'Grant'}</button>`}
@@ -958,6 +1011,11 @@ function App() {
         } else if (payload.event === 'job_started') {
           setLiveAgents(a => ({ ...a, [payload.agent || 'diablo']: payload.task }));
           refresh();
+        } else if (payload.event === 'job_queued') {
+          refresh();
+        } else if (payload.event === 'job_cancelled') {
+          setLiveAgents({});
+          refresh();
         } else if (payload.event === 'job_done' || payload.event === 'job_failed') {
           setLiveAgents({});
           setFlash({ kind: payload.event === 'job_done' ? 'success' : 'failed',
@@ -999,6 +1057,16 @@ function App() {
   }, []);
 
   const interrupt = useCallback(() => api.post('/api/control', { action: 'interrupt' }), []);
+  /* Stop one task. The row says "Stopping…" until the backend confirms,
+     because a running agent stops at its next step, not mid-call. */
+  const cancelJob = useCallback(async (id) => {
+    setJobs(all => all.map(j => (j.id === id ? { ...j, stopping: true } : j)));
+    try {
+      await api.post('/api/control', { action: `cancel_job:${id}` });
+    } finally {
+      refresh();
+    }
+  }, [refresh]);
   const reset = useCallback(async () => {
     await api.post('/api/control', { action: 'reset' });
     setTurns([]);
@@ -1112,9 +1180,20 @@ function App() {
   // out of the larger surface, and finally back into him. ⌘W folds it away.
   useEffect(() => {
     const onKey = (event) => {
+      // Escape during IME composition cancels the composition, nothing more.
+      // Without this, cancelling a Chinese or Japanese candidate folded the
+      // whole surface away.
+      if (event.isComposing || event.keyCode === 229) return;
       if (event.key === 'Escape') {
-        const open = document.querySelectorAll('details[open]');
-        if (open.length) { open.forEach(d => { d.open = false; }); return; }
+        const open = [...document.querySelectorAll('details[open]')];
+        if (open.length) {
+          // Focus goes back to the button that opened it, not to the page,
+          // so the keyboard is where it was before the menu.
+          open.forEach(d => { d.open = false; });
+          open[open.length - 1].querySelector('summary')?.focus();
+          event.preventDefault();
+          return;
+        }
         if (view !== 'home') setView('home');
         else if (other) onPick(null);
         else if (level === WORK) setPinned(INTERACTION);
@@ -1150,6 +1229,8 @@ function App() {
       <${Interaction} exchange=${exchange} kind=${kind} line=${line} source=${source}
          consent=${consent} onAnswer=${answer}
          permissions=${state.permissions} onPermissions=${refresh}
+         jobs=${jobs} roster=${roster.length ? indexRoster(roster) : byId}
+         onCancel=${cancelJob}
          menu=${menu} onExpand=${() => setPinned(WORK)} command=${command}
          bodyRef=${bodyRef} />`;
   } else if (view === 'home') {
@@ -1158,7 +1239,7 @@ function App() {
          roster=${roster} permissions=${state.permissions} onPermissions=${refresh}
          menu=${menu} onCollapse=${() => setPinned(INTERACTION)} onReset=${reset}
          onHome=${() => onPick(null)} line=${line} source=${source} kind=${kind}
-         command=${command} />`;
+         command=${command} onCancel=${cancelJob} />`;
   } else {
     main = html`
       <${Section} title=${SECTION_TITLES[view] || 'Tasks'} setView=${setView} menu=${menu}>

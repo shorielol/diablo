@@ -1,0 +1,54 @@
+[
+ {
+  "target_fill": 0.7,
+  "turns": 22,
+  "summarised": false,
+  "prompt_tokens": 6862,
+  "num_ctx": 8192,
+  "actual_fill": 0.838,
+  "seconds": 18.57,
+  "has_fact": true,
+  "answer_chars": 30,
+  "error": null,
+  "done_reason": "stop"
+ },
+ {
+  "target_fill": 0.85,
+  "turns": 24,
+  "summarised": false,
+  "prompt_tokens": 7455,
+  "num_ctx": 8192,
+  "actual_fill": 0.91,
+  "seconds": 2.53,
+  "has_fact": true,
+  "answer_chars": 30,
+  "error": null,
+  "done_reason": "stop"
+ },
+ {
+  "target_fill": 0.95,
+  "turns": 28,
+  "summarised": false,
+  "prompt_tokens": 8125,
+  "num_ctx": 8192,
+  "actual_fill": 0.992,
+  "seconds": 21.32,
+  "has_fact": true,
+  "answer_chars": 5,
+  "error": null,
+  "done_reason": "stop"
+ },
+ {
+  "target_fill": 1.1,
+  "turns": 30,
+  "summarised": false,
+  "prompt_tokens": 8106,
+  "num_ctx": 8192,
+  "actual_fill": 0.99,
+  "seconds": 21.96,
+  "has_fact": true,
+  "answer_chars": 5,
+  "error": null,
+  "done_reason": "stop"
+ }
+]

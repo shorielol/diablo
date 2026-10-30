@@ -2,15 +2,15 @@
 
 A voice assistant for macOS that does the work, and never phones home.
 
-Diablo listens for "Hey Diablo", works out what you meant, and then actually does it — reads the file, runs the numbers, moves the folder, reads the window you are looking at. The model is a 14B running in Ollama on your own machine. No API keys, no account, no request leaving the laptop.
+Hold Control+Option, say what you want, let go. Diablo works out what you meant and then actually does it: reads the file, runs the numbers, moves the folder, reads the window you are looking at. The models run in Ollama on your own machine (Qwen3 4B Instruct by default, Qwen3 14B when the 4B is out of its depth, and a 7B vision model for questions the text on screen cannot answer). No API keys, no account, no request leaving the laptop apart from the web searches you ask for.
 
-It is built around one idea: an assistant that only talks is a toy. Diablo has 33 tools and an MCP client, so when you ask it to total a spreadsheet it opens the spreadsheet.
+It is built around one idea: an assistant that only talks is a toy. Diablo has 48 tools and an MCP client, so when you ask it to total a spreadsheet it opens the spreadsheet.
 
 ```
-you    > hey diablo, what youtube video am i watching
+you    > what youtube video am i watching
 diablo > The video is "How a Minecraft SMP Drove Me Insane".
 
-you    > hey diablo, total the revenue in sales.csv and put it in total.txt
+you    > total the revenue in sales.csv and put it in total.txt
          [read_file]       item,units,price / pens,10,2 / books,3,15 / bags,2,25
          [python_snippet]  115
          [write_file]      Wrote total.txt
@@ -19,31 +19,30 @@ diablo > That comes to 115. It's in total.txt in the same folder.
 
 ## Why local
 
-Running a 14B on a laptop is slower than calling a frontier model, and the trade is worth making for this particular job. A voice assistant hears everything said near it. Mine sees my coursework, my business files and whatever is on my screen at the time. That is not data I want to post to a third party in exchange for a better paraphrase.
+Running models on a laptop is slower than calling a frontier model, and the trade is worth making for this particular job. A voice assistant hears everything said near it. Mine sees my coursework, my business files and whatever is on my screen at the time. That is not data I want to post to a third party in exchange for a better paraphrase.
 
-The practical cost is about 1.9 seconds for a warm tool-calling turn and 9.3 GB of memory while the model is resident. Ollama releases it after ten idle minutes, and Diablo starts reloading the moment the wake word fires, which hides most of the cold start behind the time you spend talking.
+The practical cost, measured end to end on an 18 GB M3 Pro in October 2026: a direct request such as a calculation or opening an app is decided in under a tenth of a second and answered in about a second, most of which is the voice rendering the reply (the app launch itself was stubbed in the measurement). A three-step file task takes 11 to 18 seconds warm and about 21 cold, and a delegated research job about 20 seconds warm. Ollama releases the model after ten idle minutes, and the next request pays a cold load of 1.2 to 2.5 seconds. A question that needs the vision model takes about 40 seconds, because only one model fits in memory at a time. The timings are in `docs/quality/gauntlet/perf/`. The 4B's memory, about 3.9 GB resident at an 8,192-token context, was measured separately in September and is recorded in the `.env` comments.
 
 ## Requirements
 
 - macOS 13 or later, Apple silicon
 - Python 3.10+ (3.14 recommended; the MCP client needs 3.10 for its typing)
-- [Ollama](https://ollama.com) with `qwen3:14b` pulled
-- [Voicebox](https://voicebox.dev) for speech, optional — without it Diablo falls back to the macOS system voice
+- [Ollama](https://ollama.com) with `qwen3.5:4b` pulled. It is the only general model: it reasons, plans and reads images. `tools/install.sh` pulls it if it is missing.
+- GoClick-Large (0.8B), the GUI grounding specialist, optional: `tools/install.sh --grounder` fetches its pinned weights into `~/.diablo/models/goclick-large`, checks their sha256, and installs `mlx-vlm` to run them. Without it, Diablo grounds controls through accessibility, on-screen text and qwen3.5.
+- [Voicebox](https://voicebox.dev) for speech, optional; without it Diablo falls back to the macOS system voice
 - Node 18+ if you want the MCP servers
 
-Smaller models were tested and did not work. `qwen3:4b` took 9.97 seconds and emitted no tool call at all, so it was both slower and less capable than the 14B on the only task that matters here.
+The brain has a history (until 2026-10-05 it was `qwen3:4b-instruct-2507`, with a 14B for escalation and Qwen2.5-VL for vision; all three are gone). The first 4B tried, `qwen3:4b` with thinking on, took 9.97 seconds and emitted no tool call at all. The instruct build of the same size is three times faster than the 14B with the same tool accuracy on this machine, and the things it gets wrong (picking one of two files, reporting a change it never made) are caught by guards in code rather than by prompting; see "Why it does not make things up" below.
 
 ## Install
 
+**Not yet packaged for a clean Mac.** `tools/install.sh` predates the current layout: it expects an existing `~/.diablo`, copies modules from the wrong folder and patches a bridge that no longer exists. Until it is rewritten, Diablo runs from an existing install at `~/.diablo`, and `diablo/make_app.py` builds `Diablo.app` around it:
+
 ```bash
-git clone https://github.com/YOUR_USERNAME/diablo.git
-cd diablo
-./install.sh
+~/.diablo/venv/bin/python3 diablo/make_app.py    # writes ~/Applications/Diablo.app
 ```
 
-The installer builds a venv at `~/.diablo/venv`, copies the modules into `~/.diablo`, writes `~/bin/diablo`, and builds `Diablo.app`.
-
-That last part matters more than it looks. macOS grants microphone access to the *responsible process*, and for a shell command that is your terminal — which is why access appears to come and go depending on which terminal you used, and vanishes entirely when permissions are reset. Launched as an app, Diablo owns the grant itself.
+Building the app matters more than it looks. macOS grants microphone access to the *responsible process*, and for a shell command that is your terminal — which is why access appears to come and go depending on which terminal you used, and vanishes entirely when permissions are reset. Launched as an app, Diablo owns the grant itself.
 
 Start it from Finder the first time so macOS has somewhere to show the prompt:
 
@@ -63,7 +62,9 @@ diablo doctor     find what is broken, and fix what can be fixed
 diablo mic        re-probe the microphone and pick a working device
 ```
 
-Say "Hey Diablo" and then your request, or say the whole thing in one breath. One breath is faster: the wake word is detected by transcription rather than by a trained model, so the sentence arrives whole and there is no second round of listening.
+Hold Control+Option while you speak and let go when you are done. The microphone belongs to that hotkey: nothing you say reaches Diablo unless the keys are held, and there is no always-on listening (the old wake-word mode is still in the code as a rollback, off unless `DIABLO_PTT_ONLY=0`). You can also type into the window from the menu bar.
+
+Long work runs in the background and shows in the window with a Stop button; a stopped task stops before its next step and its result is not read out.
 
 ## What it can do
 
@@ -91,6 +92,20 @@ Diablo acts on speech, and speech is misheard. "Delete the old drafts" and "dele
 
 Deletes go to the Trash so a misheard sentence stays recoverable.
 
+## What it keeps
+
+Being local only helps if the machine itself does not fill up with what Diablo has seen and said. So, by default:
+
+| What | Kept |
+|---|---|
+| Screen captures | Never. A capture is read and deleted by the code that took it, and anything orphaned by a crash is removed the next time the screen starts. |
+| Screenshots | Only when you ask for one ("take a screenshot", "save a screenshot to my Downloads"), and only in the folder you named, or the Desktop. |
+| Spoken answers | Deleted once played. A line nobody heard is kept up to ten minutes for a retry. Only Diablo's fixed phrases ("On it, Sir.") are kept as audio. |
+| Task results (`jobs.json`) | What ran, when, and how it ended. An answer read off the screen is never written; any other answer is cut to 32 KB and deleted after 24 hours. Readable by your user only. |
+| `trace.jsonl`, `diablo.log` | Decisions, sizes, timings and errors (only the kind of error where a message could carry content). Never the text read off the screen, a tool's output or arguments, or an answer; the log shows a spoken line's length, and the words only when Diablo runs in a terminal. The trace does record what you said to Diablo. So does the log if you turn the old wake word back on, and a failed file operation names the file. |
+
+The checks behind each line are in `tests/test_retention.py`, `tests/test_capture_lifetime.py` and `tests/test_trace_privacy.py`, and they read the files Diablo actually writes.
+
 ## Who does the work
 
 Diablo does not do the work itself. It listens, decides, and hands the job to
@@ -106,7 +121,7 @@ actually said to do rather than for sounding sinister.
 | **Levi** | The deep one | wakes the larger model when the 4B is out of its depth |
 
 Ownership decides whose face goes on a job and who gets handed which half of a
-split. It does not decide capability — every agent reaches all 35 tools through
+split. It does not decide capability — every agent reaches all 48 tools through
 the same permission gate, so a misassignment shows the wrong name on a card, not
 a job that cannot be done.
 
@@ -147,14 +162,14 @@ It will also never tell you it has done something it has not done. That sounds o
 ## Tests
 
 ```bash
-diablo test        # 27 suites
+diablo test        # 70 suites; --fast skips the ones that use the model
 diablo eval        # score it on clear, ambiguous, risky and impossible asks
 diablo bench       # latency, throughput and memory, per model
 diablo trace       # why it decided what it decided, turn by turn
 diablo state       # what every subsystem is doing right now
 ```
 
-Twenty-seven suites, 1,071 checks. They use the real model, the real filesystem and a real Trash rather than mocks, because the failures worth catching are the ones a 14B produces and a scripted stand-in never will: narrating a plan instead of running it, calling the same tool forever, or reporting success having done nothing.
+Seventy suites and a little over 4,100 checks. They use the real model, the real filesystem and a real Trash rather than mocks, because the failures worth catching are the ones a small local model produces and a scripted stand-in never will: narrating a plan instead of running it, calling the same tool forever, or reporting success having done nothing. Three suites need something running outside them: `test_voice` needs Voicebox, `test_app` needs Diablo itself on its UI port, and `test_scenarios` reaches Wikipedia. When one of those is down, the suite fails rather than skipping, which is deliberate.
 
 Every agent test checks the disk afterwards, not what Diablo said about the disk.
 
@@ -167,7 +182,7 @@ forbidden-phrase list, never by asking the model whether it was honest: the
 whole failure mode is confidence while wrong, so its own account is worthless.
 
 ```
-qwen3:4b-instruct-2507-q4_K_M
+qwen3:4b-instruct-2507-q4_K_M      (September 2026, before qwen3.5)
 passed 15/15   hallucinations 0   median 4.09s
 ```
 
@@ -200,12 +215,12 @@ defensive.
 
 ```
 companion_manager.py the state machine: owns every subsystem, one health view
-voice_bridge.py      the service: audio in, wake detection, dispatch
+voice_bridge.py      the service: push-to-talk capture, reflexes, dispatch
 diablo/
-  wake_word.py       rolling-window detection by transcription
+  wake_word.py       wake word by transcription (rollback only; off by default)
   mic.py             device selection by evidence, endpointed capture
   agent_core.py      understand, plan, ReAct loop, clarify
-  agent_tools.py     the 33 tools, path confinement, denylist
+  agent_tools.py     the 48 tools, path confinement, denylist
   local_brain.py     Ollama client, stdlib only
   mcp_client.py      JSON-RPC 2.0 over stdio, no SDK
   screen_context.py  per-window OCR, column detection, vision routing

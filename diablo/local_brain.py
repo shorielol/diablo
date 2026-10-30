@@ -5,11 +5,12 @@ The only thing in the stack that talks to a language model, and it never leaves
 localhost. Ollama's HTTP API, spoken to with `requests` so nothing new has to be
 installed into the venv.
 
-Measured on this machine (M3 Pro, 2026-09-10):
-  qwen3:14b  ~7s per tool-calling turn, honours think=false, emits clean
-             tool_calls. This is the one.
-  qwen3:4b   ignores think=false, leaks its reasoning into content and returns
-             no tool_calls at all. Do not use it for the agent loop.
+One model, qwen3.5:4b, is the brain and the eyes: conversation, intake, the
+agent loop, the planner, and every question about a picture. Measured on this
+machine (M3 Pro, 2026-10-05): it honours think=false, emits clean tool calls,
+follows a JSON schema, and reads button labels from an image. There is no
+second, larger model to escalate to and no separate vision model; GUI
+grounding is GoClick's job (goclick.py), behind grounding_gate.
 """
 
 import json
@@ -19,6 +20,7 @@ from skills import config  # noqa: E402
 import threading
 import re
 import socket
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -29,16 +31,26 @@ from typing import Any, Dict, List, Optional
 # stack can be tested without activating anything.
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-CHAT_MODEL = os.getenv("DIABLO_MODEL", "qwen3:14b")
-FAST_MODEL = os.getenv("DIABLO_FAST_MODEL", CHAT_MODEL)
+
+# The brain a Diablo with no configuration runs, and the one place it is named:
+# doctor reads it through CHAT_MODEL and tools/install.sh reads this line.
+# It used to be qwen3:14b, so an install without a .env ran a 10 GB model for
+# every turn on an 18 GB machine and nothing said so. tests/test_default_model.py
+# fails if this ever names a 14B, a Qwen2.5-VL or any other model again.
+DEFAULT_BRAIN_MODEL = "qwen3.5:4b"
+
+# A blank value is no value: the settings page writes DIABLO_MODEL= when its
+# field is cleared, and that used to make the model name an empty string.
+CHAT_MODEL = os.getenv("DIABLO_MODEL", "").strip() or DEFAULT_BRAIN_MODEL
+FAST_MODEL = os.getenv("DIABLO_FAST_MODEL", "").strip() or CHAT_MODEL
 REQUEST_TIMEOUT = config.env_int("DIABLO_LLM_TIMEOUT", 180)
 
 # Ollama unloads an idle model after five minutes by default, and reloading
-# qwen3:14b costs several seconds on the very command you were waiting on.
-# Holding it resident trades ~9 GB of RAM for that delay never happening.
-# 30m pinned 9 GB whether Diablo was in use or not. 10m keeps it resident
-# through a working session and gives the memory back when you walk away; the
-# wake word starts the reload, so the cost of that is mostly hidden.
+# qwen3.5:4b costs about twelve seconds cold (measured 2026-10-05, with its
+# vision projector) on the very command you were waiting on. Holding it
+# resident trades 4.3 GB of RAM for that delay never happening. 10m keeps it
+# resident through a working session and gives the memory back when you walk
+# away; the wake word starts the reload, so the cost of that is mostly hidden.
 # LOW_MEMORY releases it after every single command instead.
 LOW_MEMORY = os.getenv("DIABLO_LOW_MEMORY", "0") not in ("0", "", "false", "False")
 KEEP_ALIVE = os.getenv("DIABLO_KEEP_ALIVE", "0s" if LOW_MEMORY else "10m")
@@ -53,16 +65,19 @@ KEEP_ALIVE = os.getenv("DIABLO_KEEP_ALIVE", "0s" if LOW_MEMORY else "10m")
 # as JSON. The system prompt and 37 tool schemas are most of that before a
 # single word is said.
 #
-# Measured on this machine, resident size of qwen3:4b-instruct:
+# Measured on this machine for qwen3.5:4b, resident size and the same
+# 2,736-token agent turn (2026-10-05):
 #
-#      4096   3.2 GB
-#      8192   3.9 GB
-#     16384   5.1 GB
+#      8192   3.41 GB   P50 1.28 s
+#     16384   3.71 GB   P50 1.31 s
+#     32768   4.27 GB   P50 0.94 s
 #
-# 8192 for 0.7 GB. 16384 was rejected rather than unsupported: the vision model
-# is another 6 GB, and 5.1 + 6 leaves too little of 18 GB for the editor and a
-# browser. DIABLO_NUM_CTX raises it on a machine with more to spare.
-NUM_CTX = config.env_int("DIABLO_NUM_CTX", 8192)
+# Only one layer in four keeps a full KV cache, so a larger window costs far
+# less than it did for qwen3. At 8192 a 12,539-token prompt was not refused:
+# Ollama silently kept 4,098 tokens of it and answered anyway. 32768 for
+# 0.86 GB, and `truncate: false` below so an overflow is an error, not a
+# shorter question.
+NUM_CTX = config.env_int("DIABLO_NUM_CTX", 32768)
 
 # How much the model may say in one turn. Everything here is read aloud, so a
 # long answer is a long wait with a speaker talking at you.
@@ -99,6 +114,10 @@ class BrainOffline(Exception):
     # came from here; the explanation of it was invented.
     SPOKEN = "I couldn't finish that, Sir. The model on this Mac didn't give me an answer."
 
+    # What the trace's "model" row calls this failure. Set per instance where
+    # one class covers several (a refusal, an unreadable body, unusable JSON).
+    outcome = "unreachable"
+
     def __init__(self, detail: str, spoken: Optional[str] = None):
         super().__init__(detail)
         self.spoken = spoken or self.SPOKEN
@@ -117,6 +136,7 @@ class ModelTimeout(BrainOffline):
 
     SPOKEN = ("I couldn't finish that, Sir. The model on this Mac took too long "
               "to answer, so I stopped waiting.")
+    outcome = "timeout"
 
     def __init__(self, detail: str, seconds: Optional[float] = None):
         super().__init__(detail, self.SPOKEN)
@@ -130,6 +150,7 @@ class ContextFull(BrainOffline):
     # the second is not, and advice that does not work is worse than none.
     SPOKEN = ("My short-term memory is full, Sir. Say \"start over\" and "
               "I'll clear it.")
+    outcome = "context_full"
 
     def __init__(self, detail: str, used: int = 0, limit: int = 0):
         super().__init__(detail, self.SPOKEN)
@@ -170,8 +191,10 @@ def _transport_failure(e: BaseException, timeout: float) -> BrainOffline:
         return ModelTimeout(f"Ollama at {OLLAMA_HOST} did not answer within "
                             f"{timeout}s: {e}", seconds=timeout)
     if isinstance(e, ValueError):
-        return BrainOffline(f"Ollama at {OLLAMA_HOST} answered with an "
-                            f"unreadable body: {type(e).__name__}: {e}")
+        failure = BrainOffline(f"Ollama at {OLLAMA_HOST} answered with an "
+                               f"unreadable body: {type(e).__name__}: {e}")
+        failure.outcome = "unreadable"
+        return failure
     return BrainOffline(f"Ollama unreachable at {OLLAMA_HOST}: "
                         f"{type(e).__name__}: {e}")
 
@@ -186,7 +209,43 @@ def _refusal(code: int, body: str) -> BrainOffline:
         used = counts[0] if counts else 0
         limit = counts[1] if len(counts) > 1 else 0
         return ContextFull(f"Ollama returned {code}: {body[:200]}", used, limit)
-    return BrainOffline(f"Ollama returned {code}: {body[:200]}")
+    refused = BrainOffline(f"Ollama returned {code}: {body[:200]}")
+    refused.outcome = "refused"
+    return refused
+
+
+# ─── One row per model call ──────────────────────────────────────────────────
+#
+# Real use showed turns where "the model did not run" and the trace could not
+# say why: the classifier's failure was recorded as the class name BrainOffline
+# and nothing else, so a timeout, a refusal and an answer that was not JSON all
+# looked the same. Every call now leaves one "model" row saying which call it
+# was, whether it came back, how long it took and how many tokens it cost.
+# Never the prompt or the answer.
+
+def _purpose() -> str:
+    """The function outside this module that asked for the model."""
+    frame = sys._getframe(1)
+    while frame is not None and frame.f_globals.get("__name__", "").endswith("local_brain"):
+        frame = frame.f_back
+    return frame.f_code.co_name if frame is not None else ""
+
+
+def _report(purpose: str, model: str, began: float, outcome: str,
+            body: Optional[dict] = None, first_ms: Optional[float] = None) -> None:
+    try:
+        from skills import trace
+        fields: Dict[str, Any] = {"purpose": purpose, "model": model, "outcome": outcome,
+                                  "call_ms": round((time.time() - began) * 1000, 1)}
+        if body:
+            fields["load_ms"] = round((body.get("load_duration") or 0) / 1e6, 1)
+            fields["prompt_tokens"] = body.get("prompt_eval_count")
+            fields["output_tokens"] = body.get("eval_count")
+        if first_ms is not None:
+            fields["first_token_ms"] = first_ms
+        trace.event("model", **fields)
+    except Exception:
+        pass                              # telemetry never breaks a turn
 
 
 def _get_json(path: str, timeout: int) -> Any:
@@ -248,25 +307,33 @@ def chat(
             "num_ctx": NUM_CTX if num_ctx is None else num_ctx,
         },
         "keep_alive": KEEP_ALIVE,
+        # Refuse rather than truncate. Left to itself Ollama drops the front
+        # of a prompt that does not fit and answers what is left.
+        "truncate": False,
     }
     if tools:
         payload["tools"] = tools
     if fmt:
         payload["format"] = fmt
 
+    purpose, began = _purpose(), time.time()
     try:
-        body = _post_json("/api/chat", payload, timeout or REQUEST_TIMEOUT)
-    except urllib.error.HTTPError as e:
         try:
-            detail = e.read().decode("utf-8", "replace")
-        except Exception:
-            detail = ""
-        raise _refusal(e.code, detail)
-    except Exception as e:
-        raise _transport_failure(e, timeout or REQUEST_TIMEOUT)
-
-    if "error" in body:
-        raise _refusal(200, str(body["error"]))
+            body = _post_json("/api/chat", payload, timeout or REQUEST_TIMEOUT)
+        except urllib.error.HTTPError as e:
+            try:
+                detail = e.read().decode("utf-8", "replace")
+            except Exception:
+                detail = ""
+            raise _refusal(e.code, detail)
+        except Exception as e:
+            raise _transport_failure(e, timeout or REQUEST_TIMEOUT)
+        if "error" in body:
+            raise _refusal(200, str(body["error"]))
+    except BrainOffline as failure:
+        _report(purpose, payload["model"], began, failure.outcome)
+        raise
+    _report(purpose, payload["model"], began, "ok", body=body)
     return body.get("message", {"role": "assistant", "content": ""})
 
 
@@ -313,38 +380,57 @@ def chat_stream(
             "num_ctx": NUM_CTX if num_ctx is None else num_ctx,
         },
         "keep_alive": KEEP_ALIVE,
+        # Refuse rather than truncate. Left to itself Ollama drops the front
+        # of a prompt that does not fit and answers what is left.
+        "truncate": False,
     }
 
     request = urllib.request.Request(
         f"{OLLAMA_HOST}/api/chat", data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"}, method="POST")
 
+    purpose, began = _purpose(), time.time()
+    first_ms, outcome, last = None, "stopped", None
     try:
-        response = urllib.request.urlopen(request, timeout=timeout or REQUEST_TIMEOUT)
-    except urllib.error.HTTPError as e:
         try:
-            detail = e.read().decode("utf-8", "replace")
-        except Exception:
-            detail = ""
-        raise _refusal(e.code, detail)
-    except Exception as e:
-        raise _transport_failure(e, timeout or REQUEST_TIMEOUT)
-
-    with response:
-        for raw in response:
-            if not raw.strip():
-                continue
+            response = urllib.request.urlopen(request, timeout=timeout or REQUEST_TIMEOUT)
+        except urllib.error.HTTPError as e:
             try:
-                chunk = json.loads(raw)
-            except ValueError:
-                continue
-            if "error" in chunk:
-                raise _refusal(200, str(chunk["error"]))
-            piece = (chunk.get("message") or {}).get("content") or ""
-            if piece:
-                yield piece
-            if chunk.get("done"):
-                return
+                detail = e.read().decode("utf-8", "replace")
+            except Exception:
+                detail = ""
+            raise _refusal(e.code, detail)
+        except Exception as e:
+            raise _transport_failure(e, timeout or REQUEST_TIMEOUT)
+
+        with response:
+            for raw in response:
+                if not raw.strip():
+                    continue
+                try:
+                    chunk = json.loads(raw)
+                except ValueError:
+                    continue
+                if "error" in chunk:
+                    raise _refusal(200, str(chunk["error"]))
+                piece = (chunk.get("message") or {}).get("content") or ""
+                if piece:
+                    if first_ms is None:
+                        first_ms = round((time.time() - began) * 1000, 1)
+                    yield piece
+                if chunk.get("done"):
+                    outcome, last = "ok", chunk
+                    return
+        outcome = "ok"
+    except BrainOffline as failure:
+        outcome = failure.outcome
+        raise
+    except Exception:
+        outcome = "broken"                # the connection failed mid-answer
+        raise
+    finally:
+        # "stopped" when the caller closed the stream early (barge-in).
+        _report(purpose, payload["model"], began, outcome, body=last, first_ms=first_ms)
 
 
 def stream_sentences(messages: List[Dict[str, Any]], should_stop=None, **kwargs):
@@ -393,7 +479,12 @@ def chat_json(
                 return json.loads(content[start:end + 1])
             except Exception:
                 pass
-        raise BrainOffline(f"Model did not return usable JSON: {content[:200]}")
+        # A second row for the same call: it came back (the "ok" above), and
+        # what came back could not be used.
+        _report(_purpose(), model or FAST_MODEL, time.time(), "invalid_json")
+        unusable = BrainOffline(f"Model did not return usable JSON: {content[:200]}")
+        unusable.outcome = "invalid_json"
+        raise unusable
 
 
 def warm(model: Optional[str] = None) -> float:
@@ -411,66 +502,6 @@ def warm(model: Optional[str] = None) -> float:
 
 
 # ─── Escalation ──────────────────────────────────────────────────────────────
-
-def unload(model: Optional[str] = None) -> bool:
-    """
-    Drop a model from memory now, rather than waiting out keep_alive.
-
-    Necessary rather than tidy: qwen3:4b-instruct is 3.18 GB resident and
-    qwen3:14b is 9.64 GB. On an 18 GB machine already running an IDE and a
-    browser, holding both is not an option, so escalating means evicting.
-    """
-    target = model or CHAT_MODEL
-    try:
-        _post_json("/api/generate", {"model": target, "keep_alive": 0}, 30)
-        return True
-    except Exception:
-        return False
-
-
-def resident() -> List[str]:
-    """Which models Ollama is holding right now."""
-    try:
-        body = _get_json("/api/ps", 3)
-        return [m.get("name", "") for m in (body or {}).get("models", [])]
-    except Exception:
-        return []
-
-
-def with_model(model: str, work):
-    """
-    Run `work()` against a different model, then put things back.
-
-    The swap is a module global rather than a parameter because the call sites
-    are three layers down inside the agent loop, and threading a model name
-    through all of them to change it twice a day is not worth the churn.
-
-    The small model is evicted first. Without that, Ollama loads the second
-    model alongside the first and the machine starts swapping, which is far
-    slower than the 8.18s cold start this is trying to manage.
-    """
-    global CHAT_MODEL
-    if not model or model == CHAT_MODEL:
-        return work()
-
-    previous = CHAT_MODEL
-    unload(previous)
-    CHAT_MODEL = model
-    try:
-        return work()
-    finally:
-        CHAT_MODEL = previous
-        # Evict the big one. Leaving it resident would mean the next ordinary
-        # request finds 9.6 GB already spoken for.
-        unload(model)
-        # ...and bring the small one back in the background, because otherwise
-        # the next thing said pays a 2.71s cold start for a swap it had no part
-        # in. The user is usually still listening to the escalated answer while
-        # this happens.
-        try:
-            threading.Thread(target=lambda: warm(previous), daemon=True).start()
-        except Exception:
-            pass
 
 def speech_summary(text: str, limit_words: int = 25) -> str:
     """

@@ -1143,7 +1143,32 @@ class Marker:
 def walk(question: str, speak: Callable[[str], None], target: str = "",
          should_stop: Optional[Callable[[], bool]] = None,
          ask: Optional[Callable[[str], str]] = None,
-         working: Optional[List[Dict[str, str]]] = None) -> str:
+         working: Optional[List[Dict[str, str]]] = None, known: str = "") -> str:
+    """
+    Teach him how, pointing at the screen as it goes. See `_walk`.
+
+    The window capture taken at the start is owned here and deleted however
+    the walkthrough ends. Its own clean-up only began once the steps started,
+    and six returns before that — no readable text, a maths line it could not
+    read, no instructions found — plus any exception or the wait for an
+    answer, left the picture of his window in the temp folder.
+    """
+    owned: List[str] = []
+    try:
+        return _walk(question, speak, target, should_stop, ask, working, owned, known)
+    finally:
+        for path in owned:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+
+def _walk(question: str, speak: Callable[[str], None], target: str,
+          should_stop: Optional[Callable[[], bool]],
+          ask: Optional[Callable[[str], str]],
+          working: Optional[List[Dict[str, str]]],
+          owned: List[str], known: str = "") -> str:
     """
     Teach him how, pointing at the screen as it goes.
 
@@ -1159,8 +1184,8 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
             # Pointing at the wrong window wastes a second; teaching a
             # five-step lesson about the wrong application wastes a minute and
             # sounds authoritative while doing it.
-            return (f"I can't find a window called '{target}', Sir. "
-                    "Bring it to the front and ask me again.")
+            return (f"{screen_context.why_no_window(target)} "
+                    "Open it and ask me again.")
     else:
         window = screen_context.frontmost_window()
     if not window:
@@ -1174,11 +1199,12 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
     # seconds in which focus can move.
     menus = menu_bar_targets(window.get("app", ""))
     if menus:
-        print(f"  [Tutor] menu bar: {', '.join(m['text'] for m in menus)}")
+        print(f"  [Tutor] menu bar: {len(menus)} items")
 
     capture = screen_context.capture_window(window["id"])
     if not capture:
         return "I couldn't capture that window, Sir."
+    owned.append(capture)
     # Kept until the walkthrough finishes: each step samples it to decide
     # whether its caption should be dark on light or light on dark.
     fragments = screen_context._ocr_fragments(capture, window)
@@ -1193,6 +1219,12 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
     if menus:
         screen_text = ("Menu bar: " + "  ".join(m["text"] for m in menus)
                        + "\n" + screen_text)
+    # What the application itself publishes, from its menus or the pane that
+    # was opened: fact, not something read off the pixels. The steps used to
+    # come from the screen alone, and asked how to color grade in Final Cut
+    # Pro with a browser in front, they were steps for the browser.
+    if known:
+        screen_text = f"From {window.get('app', 'the app')} itself: {known}\n{screen_text}"
 
     # Say what was read, before teaching anything from it.
     #
@@ -1200,7 +1232,11 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
     # wrong silently — a misread "+" produces a confident, coherent, useless
     # explanation. One sentence up front turns that into something he can
     # catch in two seconds.
-    shaky = shaky_readings(fragments)
+    #
+    # Only for a problem to solve. On a video editor's timecode or a Settings
+    # sidebar, "I'm reading '00-'01:45:t)O' and I'm not confident of the
+    # symbols" was noise before a how-to that never used those symbols.
+    shaky = shaky_readings(fragments) if asks_about_a_problem(question) else []
     if shaky:
         worst = sorted(shaky, key=lambda f: f["confidence"])[:2]
         reading = " and ".join(f'"{f["text"]}"' for f in worst)
@@ -1224,7 +1260,7 @@ def walk(question: str, speak: Callable[[str], None], target: str = "",
                 # One reading, unconfirmed. He is the second opinion.
                 speak(f"I'm reading that as {read_as}, Sir. Stop me if that's "
                       "not it.")
-            print(f"  [Tutor] read {read_as!r} "
+            print(f"  [Tutor] read {len(read_as)} chars off the screen "
                   f"(corroborated={seen['corroborated']})")
             # Kept so "walk me through your maths" can be answered afterwards
             # with what was really read and really solved, rather than the

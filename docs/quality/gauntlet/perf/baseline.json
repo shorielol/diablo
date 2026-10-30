@@ -1,0 +1,757 @@
+{
+  "when": "2026-10-04 21:22:48",
+  "voicebox": false,
+  "first_audio_path": "macOS say (fallback)",
+  "model": {
+    "chat_model": "qwen3:4b-instruct-2507-q4_K_M",
+    "cold_load_s": 2.453
+  },
+  "tasks": {
+    "app": {
+      "label": "direct application launch",
+      "request": "open calculator",
+      "cold": {
+        "first_text_s": 0.002,
+        "first_audio_s": 1.567,
+        "complete_s": 1.567,
+        "returned_s": 1.567,
+        "spoken_lines": 1,
+        "status": "inline",
+        "blocked": [
+          "open -a Calculator"
+        ],
+        "error": null,
+        "stages_ms": {}
+      },
+      "warm_runs": [
+        {
+          "first_text_s": 0.0,
+          "first_audio_s": 1.031,
+          "complete_s": 1.031,
+          "returned_s": 1.031,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [
+            "open -a Calculator"
+          ],
+          "error": null,
+          "stages_ms": {}
+        },
+        {
+          "first_text_s": 0.0,
+          "first_audio_s": 1.047,
+          "complete_s": 1.047,
+          "returned_s": 1.047,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [
+            "open -a Calculator"
+          ],
+          "error": null,
+          "stages_ms": {}
+        },
+        {
+          "first_text_s": 0.0,
+          "first_audio_s": 1.039,
+          "complete_s": 1.039,
+          "returned_s": 1.039,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [
+            "open -a Calculator"
+          ],
+          "error": null,
+          "stages_ms": {}
+        },
+        {
+          "first_text_s": 0.0,
+          "first_audio_s": 1.041,
+          "complete_s": 1.041,
+          "returned_s": 1.041,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [
+            "open -a Calculator"
+          ],
+          "error": null,
+          "stages_ms": {}
+        },
+        {
+          "first_text_s": 0.0,
+          "first_audio_s": 1.039,
+          "complete_s": 1.039,
+          "returned_s": 1.039,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [
+            "open -a Calculator"
+          ],
+          "error": null,
+          "stages_ms": {}
+        }
+      ],
+      "warm": {
+        "first_text_s": {
+          "p50": 0.0,
+          "p95": 0.0,
+          "n": 5
+        },
+        "first_audio_s": {
+          "p50": 1.039,
+          "p95": 1.047,
+          "n": 5
+        },
+        "complete_s": {
+          "p50": 1.039,
+          "p95": 1.047,
+          "n": 5
+        }
+      }
+    },
+    "tab": {
+      "label": "open a new browser tab",
+      "request": "open a new browser tab",
+      "cold": {
+        "first_text_s": 2.128,
+        "first_audio_s": 3.156,
+        "complete_s": 8.635,
+        "returned_s": 8.635,
+        "spoken_lines": 1,
+        "status": "inline",
+        "blocked": [
+          "open -a Safari"
+        ],
+        "error": null,
+        "stages_ms": {
+          "turn_start": 0.0,
+          "heard": 0.9,
+          "decide": 0.8,
+          "route:inline": 2126.5,
+          "carry": 3155.5,
+          "tool": 7880.6,
+          "guard": 8629.2,
+          "done": 8633.3,
+          "recorded": 8633.7
+        }
+      },
+      "warm_runs": [
+        {
+          "first_text_s": 0.244,
+          "first_audio_s": 1.316,
+          "complete_s": 2.602,
+          "returned_s": 2.602,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [
+            "open -a Safari"
+          ],
+          "error": null,
+          "stages_ms": {
+            "guard": 2625.5,
+            "done": 2626.1,
+            "recorded": 2626.3,
+            "turn_start": 0.0,
+            "heard": 0.1,
+            "decide": 0.2,
+            "route:inline": 242.6,
+            "carry": 1315.3,
+            "tool": 1898.4
+          }
+        },
+        {
+          "first_text_s": 0.237,
+          "first_audio_s": 1.495,
+          "complete_s": 2.815,
+          "returned_s": 2.815,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [
+            "open -a Safari"
+          ],
+          "error": null,
+          "stages_ms": {
+            "guard": 2599.9,
+            "done": 2601.0,
+            "recorded": 2601.4,
+            "turn_start": 0.0,
+            "heard": 0.3,
+            "decide": 0.3,
+            "route:inline": 235.7,
+            "carry": 1494.6,
+            "tool": 2074.7
+          }
+        },
+        {
+          "first_text_s": 0.233,
+          "first_audio_s": 1.244,
+          "complete_s": 2.593,
+          "returned_s": 2.593,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [
+            "open -a Safari"
+          ],
+          "error": null,
+          "stages_ms": {
+            "guard": 2812.0,
+            "done": 2813.9,
+            "recorded": 2814.6,
+            "turn_start": 0.0,
+            "heard": 0.4,
+            "decide": 0.3,
+            "route:inline": 231.9,
+            "carry": 1243.9,
+            "tool": 1840.2
+          }
+        },
+        {
+          "first_text_s": 0.25,
+          "first_audio_s": 1.278,
+          "complete_s": 2.607,
+          "returned_s": 2.607,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [
+            "open -a Safari"
+          ],
+          "error": null,
+          "stages_ms": {
+            "guard": 2590.6,
+            "done": 2591.5,
+            "recorded": 2592.0,
+            "turn_start": 0.0,
+            "heard": 0.3,
+            "decide": 0.3,
+            "route:inline": 248.8,
+            "carry": 1277.4,
+            "tool": 1880.9
+          }
+        },
+        {
+          "first_text_s": 0.232,
+          "first_audio_s": 1.259,
+          "complete_s": 2.575,
+          "returned_s": 2.575,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [
+            "open -a Safari"
+          ],
+          "error": null,
+          "stages_ms": {
+            "guard": 2603.9,
+            "done": 2605.6,
+            "recorded": 2606.3,
+            "turn_start": 0.0,
+            "heard": 0.4,
+            "decide": 0.3,
+            "route:inline": 230.9,
+            "carry": 1258.9,
+            "tool": 1850.9
+          }
+        }
+      ],
+      "warm": {
+        "first_text_s": {
+          "p50": 0.237,
+          "p95": 0.25,
+          "n": 5
+        },
+        "first_audio_s": {
+          "p50": 1.278,
+          "p95": 1.495,
+          "n": 5
+        },
+        "complete_s": {
+          "p50": 2.602,
+          "p95": 2.815,
+          "n": 5
+        }
+      }
+    },
+    "calc": {
+      "label": "deterministic calculation",
+      "request": "what is 17 times 23",
+      "cold": {
+        "first_text_s": 0.286,
+        "first_audio_s": 1.305,
+        "complete_s": 1.305,
+        "returned_s": 1.305,
+        "spoken_lines": 1,
+        "status": "inline",
+        "blocked": [],
+        "error": null,
+        "stages_ms": {
+          "turn_start": 0.0,
+          "heard": 1.1,
+          "decide": 268.4,
+          "route:instant": 284.9
+        }
+      },
+      "warm_runs": [
+        {
+          "first_text_s": 0.012,
+          "first_audio_s": 1.03,
+          "complete_s": 1.03,
+          "returned_s": 1.03,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "turn_start": 0.0,
+            "heard": 0.3,
+            "decide": 1.3,
+            "route:instant": 11.8
+          }
+        },
+        {
+          "first_text_s": 0.015,
+          "first_audio_s": 1.037,
+          "complete_s": 1.038,
+          "returned_s": 1.038,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "turn_start": 0.0,
+            "heard": 0.3,
+            "decide": 1.4,
+            "route:instant": 14.3
+          }
+        },
+        {
+          "first_text_s": 0.016,
+          "first_audio_s": 1.035,
+          "complete_s": 1.035,
+          "returned_s": 1.035,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "turn_start": 0.0,
+            "heard": 0.3,
+            "decide": 1.5,
+            "route:instant": 15.4
+          }
+        },
+        {
+          "first_text_s": 0.016,
+          "first_audio_s": 1.03,
+          "complete_s": 1.031,
+          "returned_s": 1.031,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "turn_start": 0.0,
+            "heard": 0.3,
+            "decide": 1.4,
+            "route:instant": 15.1
+          }
+        },
+        {
+          "first_text_s": 0.013,
+          "first_audio_s": 1.034,
+          "complete_s": 1.034,
+          "returned_s": 1.034,
+          "spoken_lines": 1,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "turn_start": 0.0,
+            "heard": 0.3,
+            "decide": 1.2,
+            "route:instant": 12.2
+          }
+        }
+      ],
+      "warm": {
+        "first_text_s": {
+          "p50": 0.015,
+          "p95": 0.016,
+          "n": 5
+        },
+        "first_audio_s": {
+          "p50": 1.034,
+          "p95": 1.037,
+          "n": 5
+        },
+        "complete_s": {
+          "p50": 1.034,
+          "p95": 1.038,
+          "n": 5
+        }
+      }
+    },
+    "screen": {
+      "label": "simple screen question",
+      "request": "what app am I looking at right now",
+      "cold": {
+        "first_text_s": 4.115,
+        "first_audio_s": 5.192,
+        "complete_s": 40.215,
+        "returned_s": 40.215,
+        "spoken_lines": 2,
+        "status": "inline",
+        "blocked": [],
+        "error": null,
+        "stages_ms": {
+          "turn_start": 0.1,
+          "heard": 1.3,
+          "decide": 0.9,
+          "route:inline": 4114.1,
+          "carry": 5191.4,
+          "tool": 13587.7,
+          "done": 40211.3,
+          "recorded": 40212.8
+        }
+      },
+      "warm_runs": [
+        {
+          "first_text_s": 3.107,
+          "first_audio_s": 4.442,
+          "complete_s": 38.287,
+          "returned_s": 38.287,
+          "spoken_lines": 2,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 40234.0,
+            "recorded": 40235.0,
+            "turn_start": 0.0,
+            "heard": 0.1,
+            "decide": 0.4,
+            "route:inline": 3106.2,
+            "carry": 4441.7,
+            "tool": 12582.3
+          }
+        },
+        {
+          "first_text_s": 3.132,
+          "first_audio_s": 4.304,
+          "complete_s": 41.102,
+          "returned_s": 41.102,
+          "spoken_lines": 2,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 38286.3,
+            "recorded": 38286.8,
+            "turn_start": 0.0,
+            "heard": 0.1,
+            "decide": 0.3,
+            "route:inline": 3131.7,
+            "carry": 4303.6,
+            "tool": 12396.0
+          }
+        },
+        {
+          "first_text_s": 3.238,
+          "first_audio_s": 4.878,
+          "complete_s": 39.929,
+          "returned_s": 39.929,
+          "spoken_lines": 2,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 41098.9,
+            "recorded": 41100.3,
+            "turn_start": 0.0,
+            "heard": 0.6,
+            "decide": 0.5,
+            "route:inline": 3236.8,
+            "carry": 4877.6,
+            "tool": 13252.0
+          }
+        },
+        {
+          "first_text_s": 3.178,
+          "first_audio_s": 4.482,
+          "complete_s": 37.676,
+          "returned_s": 37.676,
+          "spoken_lines": 2,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 39925.3,
+            "recorded": 39927.0,
+            "turn_start": 0.0,
+            "heard": 0.6,
+            "decide": 0.7,
+            "route:inline": 3176.8,
+            "carry": 4481.4,
+            "tool": 11271.5
+          }
+        },
+        {
+          "first_text_s": 3.103,
+          "first_audio_s": 4.365,
+          "complete_s": 39.647,
+          "returned_s": 39.647,
+          "spoken_lines": 2,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 37672.6,
+            "recorded": 37674.2,
+            "turn_start": 0.0,
+            "heard": 0.4,
+            "decide": 0.7,
+            "route:inline": 3101.6,
+            "carry": 4364.5,
+            "tool": 12624.0
+          }
+        }
+      ],
+      "warm": {
+        "first_text_s": {
+          "p50": 3.132,
+          "p95": 3.238,
+          "n": 5
+        },
+        "first_audio_s": {
+          "p50": 4.442,
+          "p95": 4.878,
+          "n": 5
+        },
+        "complete_s": {
+          "p50": 39.647,
+          "p95": 41.102,
+          "n": 5
+        }
+      }
+    },
+    "multi": {
+      "label": "multi-step file task",
+      "request": "make a folder called bench-notes on my desktop and put a file called todo.txt in it that says buy milk",
+      "cold": {
+        "first_text_s": 4.834,
+        "first_audio_s": 6.675,
+        "complete_s": 18.894,
+        "returned_s": 18.894,
+        "spoken_lines": 2,
+        "status": "inline",
+        "blocked": [],
+        "error": null,
+        "stages_ms": {
+          "turn_start": 0.0,
+          "heard": 1.2,
+          "decide": 0.7,
+          "route:inline": 4832.3,
+          "carry": 6674.0,
+          "tool": 14634.4,
+          "done": 18891.0,
+          "recorded": 18892.5
+        }
+      },
+      "warm_runs": [
+        {
+          "first_text_s": 1.864,
+          "first_audio_s": 2.872,
+          "complete_s": 14.022,
+          "returned_s": 14.022,
+          "spoken_lines": 2,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 16742.7,
+            "recorded": 16743.4,
+            "turn_start": 0.0,
+            "heard": 0.4,
+            "decide": 0.2,
+            "route:inline": 1863.6,
+            "carry": 2871.8,
+            "tool": 9550.6
+          }
+        },
+        {
+          "first_text_s": 1.796,
+          "first_audio_s": 2.812,
+          "complete_s": 14.769,
+          "returned_s": 14.769,
+          "spoken_lines": 3,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 14019.8,
+            "recorded": 14020.8,
+            "turn_start": 0.0,
+            "heard": 0.3,
+            "decide": 0.3,
+            "route:inline": 1795.5,
+            "carry": 2812.3,
+            "tool": 9322.5,
+            "guard": 13487.3
+          }
+        },
+        {
+          "first_text_s": 1.827,
+          "first_audio_s": 2.889,
+          "complete_s": 11.924,
+          "returned_s": 11.924,
+          "spoken_lines": 3,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 14766.7,
+            "recorded": 14768.1,
+            "turn_start": 0.0,
+            "heard": 0.5,
+            "decide": 0.2,
+            "route:inline": 1825.8,
+            "carry": 2888.8,
+            "tool": 6237.9,
+            "guard": 10395.3
+          }
+        },
+        {
+          "first_text_s": 1.825,
+          "first_audio_s": 2.835,
+          "complete_s": 15.505,
+          "returned_s": 15.505,
+          "spoken_lines": 3,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 11921.1,
+            "recorded": 11922.6,
+            "turn_start": 0.0,
+            "heard": 0.3,
+            "decide": 0.3,
+            "route:inline": 1824.7,
+            "carry": 2834.4,
+            "tool": 8023.7,
+            "guard": 12361.6
+          }
+        },
+        {
+          "first_text_s": 1.84,
+          "first_audio_s": 2.898,
+          "complete_s": 14.939,
+          "returned_s": 14.939,
+          "spoken_lines": 3,
+          "status": "inline",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "done": 15502.9,
+            "recorded": 15504.3,
+            "turn_start": 0.0,
+            "heard": 0.4,
+            "decide": 0.3,
+            "route:inline": 1839.3,
+            "carry": 2897.8,
+            "tool": 9451.2,
+            "guard": 13654.9
+          }
+        }
+      ],
+      "warm": {
+        "first_text_s": {
+          "p50": 1.827,
+          "p95": 1.864,
+          "n": 5
+        },
+        "first_audio_s": {
+          "p50": 2.872,
+          "p95": 2.898,
+          "n": 5
+        },
+        "complete_s": {
+          "p50": 14.769,
+          "p95": 15.505,
+          "n": 5
+        }
+      }
+    },
+    "research": {
+      "label": "delegated research",
+      "request": "research the best budget mechanical keyboards under 100 dollars",
+      "cold": {
+        "first_text_s": 9.935,
+        "first_audio_s": 10.964,
+        "complete_s": 38.856,
+        "returned_s": 10.966,
+        "spoken_lines": 1,
+        "status": "done",
+        "blocked": [],
+        "error": null,
+        "stages_ms": {
+          "turn_start": 0.0,
+          "heard": 1.3,
+          "decide": 0.7,
+          "split": 9933.9,
+          "route:queued": 9934.4
+        }
+      },
+      "warm_runs": [
+        {
+          "first_text_s": 7.857,
+          "first_audio_s": 8.896,
+          "complete_s": 24.829,
+          "returned_s": 8.897,
+          "spoken_lines": 2,
+          "status": "done",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "turn_start": 0.0,
+            "heard": 0.8,
+            "decide": 0.4,
+            "split": 7856.7,
+            "route:queued": 7857.0
+          }
+        },
+        {
+          "first_text_s": 7.786,
+          "first_audio_s": 8.981,
+          "complete_s": 25.661,
+          "returned_s": 8.982,
+          "spoken_lines": 2,
+          "status": "done",
+          "blocked": [],
+          "error": null,
+          "stages_ms": {
+            "turn_start": 0.0,
+            "heard": 0.8,
+            "decide": 0.4,
+            "split": 7785.8,
+            "route:queued": 7786.0
+          }
+        }
+      ],
+      "warm": {
+        "first_text_s": {
+          "p50": 7.786,
+          "p95": 7.857,
+          "n": 2
+        },
+        "first_audio_s": {
+          "p50": 8.896,
+          "p95": 8.981,
+          "n": 2
+        },
+        "complete_s": {
+          "p50": 24.829,
+          "p95": 25.661,
+          "n": 2
+        }
+      }
+    }
+  },
+  "multi_step_file_written": true
+}

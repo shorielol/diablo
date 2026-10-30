@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-End-to-end check against the real qwen3:14b, doing real work on disk.
+End-to-end check against the real model (qwen3.5:4b), doing real work on disk.
 
-This is the test that matters. test_diablo.py proves the plumbing; this proves a
-14B model can actually drive it — that it picks the right tool, reads what came
+This is the test that matters. test_diablo.py proves the plumbing; this proves the
+local model can actually drive it — that it picks the right tool, reads what came
 back, and finishes. Everything happens inside a scratch folder on the Desktop
 which is removed at the end.
 

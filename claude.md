@@ -1,7 +1,8 @@
 # Diablo — project instructions
 
-Offline voice assistant for macOS. Wake word, local 4B (qwen3:4b-instruct,
-14B on escalation), 39 tools, MCP client, per-window screen reading. Parent workstation: `~/Desktop/30 Code/`.
+Offline voice assistant for macOS. Wake word, one local model (qwen3.5:4b, brain
+and vision), GoClick-Large for GUI grounding behind grounding_gate, 39 tools, MCP
+client, per-window screen reading. Parent workstation: `~/Desktop/30 Code/`.
 
 ## Where things live
 

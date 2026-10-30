@@ -1,0 +1,1196 @@
+{
+  "model": "qwen3:4b-instruct-2507-q4_K_M",
+  "repeats": 3,
+  "cases": 39,
+  "passed": "106 of 117",
+  "unnecessary_clarification": "5 of 60",
+  "false_action": "3 of 57",
+  "errors": 0,
+  "seconds_p50": 0.885,
+  "seconds_p95": 2.382,
+  "groups": {
+    "broad_but_clear": "39 of 42",
+    "points_at_the_screen": "16 of 18",
+    "missing_target": "15 of 21",
+    "fragment_or_overheard": "21 of 21",
+    "ambiguous_command": "15 of 15"
+  },
+  "failing": [
+    "broad-3",
+    "screen-6",
+    "target-6",
+    "target-7"
+  ],
+  "runs": [
+    {
+      "id": "broad-1",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 2.069,
+      "passed": true
+    },
+    {
+      "id": "broad-2",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.935,
+      "passed": true
+    },
+    {
+      "id": "broad-3",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.992,
+      "passed": false
+    },
+    {
+      "id": "broad-4",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.857,
+      "passed": true
+    },
+    {
+      "id": "broad-5",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 2.966,
+      "passed": true
+    },
+    {
+      "id": "broad-6",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.0,
+      "passed": true
+    },
+    {
+      "id": "broad-7",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.005,
+      "passed": true
+    },
+    {
+      "id": "broad-8",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 2.41,
+      "passed": true
+    },
+    {
+      "id": "broad-9",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.001,
+      "passed": true
+    },
+    {
+      "id": "broad-10",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 2.251,
+      "passed": true
+    },
+    {
+      "id": "broad-11",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.753,
+      "passed": true
+    },
+    {
+      "id": "broad-12",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.266,
+      "passed": true
+    },
+    {
+      "id": "broad-13",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.827,
+      "passed": true
+    },
+    {
+      "id": "broad-14",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.842,
+      "passed": true
+    },
+    {
+      "id": "screen-1",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.0,
+      "passed": true
+    },
+    {
+      "id": "screen-2",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.885,
+      "passed": true
+    },
+    {
+      "id": "screen-3",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.001,
+      "passed": true
+    },
+    {
+      "id": "screen-4",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.883,
+      "passed": true
+    },
+    {
+      "id": "screen-5",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.955,
+      "passed": true
+    },
+    {
+      "id": "screen-6",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.886,
+      "passed": true
+    },
+    {
+      "id": "target-1",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.662,
+      "passed": true
+    },
+    {
+      "id": "target-2",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.649,
+      "passed": true
+    },
+    {
+      "id": "target-3",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.658,
+      "passed": true
+    },
+    {
+      "id": "target-4",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.688,
+      "passed": true
+    },
+    {
+      "id": "target-5",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.906,
+      "passed": true
+    },
+    {
+      "id": "target-6",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.715,
+      "passed": false
+    },
+    {
+      "id": "target-7",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.607,
+      "passed": false
+    },
+    {
+      "id": "noise-1",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.287,
+      "passed": true
+    },
+    {
+      "id": "noise-2",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.979,
+      "passed": true
+    },
+    {
+      "id": "noise-3",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.708,
+      "passed": true
+    },
+    {
+      "id": "noise-4",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.046,
+      "passed": true
+    },
+    {
+      "id": "noise-5",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.103,
+      "passed": true
+    },
+    {
+      "id": "noise-6",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.808,
+      "passed": true
+    },
+    {
+      "id": "noise-7",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.936,
+      "passed": true
+    },
+    {
+      "id": "vague-1",
+      "group": "ambiguous_command",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.053,
+      "passed": true
+    },
+    {
+      "id": "vague-2",
+      "group": "ambiguous_command",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.79,
+      "passed": true
+    },
+    {
+      "id": "vague-3",
+      "group": "ambiguous_command",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.807,
+      "passed": true
+    },
+    {
+      "id": "vague-4",
+      "group": "ambiguous_command",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.036,
+      "passed": true
+    },
+    {
+      "id": "vague-5",
+      "group": "ambiguous_command",
+      "pass_rule": "look_ok",
+      "route": "clarify",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.702,
+      "passed": true
+    },
+    {
+      "id": "broad-1",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.818,
+      "passed": true
+    },
+    {
+      "id": "broad-2",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.808,
+      "passed": true
+    },
+    {
+      "id": "broad-3",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.975,
+      "passed": false
+    },
+    {
+      "id": "broad-4",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.869,
+      "passed": true
+    },
+    {
+      "id": "broad-5",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 2.963,
+      "passed": true
+    },
+    {
+      "id": "broad-6",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.0,
+      "passed": true
+    },
+    {
+      "id": "broad-7",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.013,
+      "passed": true
+    },
+    {
+      "id": "broad-8",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 2.39,
+      "passed": true
+    },
+    {
+      "id": "broad-9",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.001,
+      "passed": true
+    },
+    {
+      "id": "broad-10",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 2.259,
+      "passed": true
+    },
+    {
+      "id": "broad-11",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.681,
+      "passed": true
+    },
+    {
+      "id": "broad-12",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.204,
+      "passed": true
+    },
+    {
+      "id": "broad-13",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.862,
+      "passed": true
+    },
+    {
+      "id": "broad-14",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.862,
+      "passed": true
+    },
+    {
+      "id": "screen-1",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.001,
+      "passed": true
+    },
+    {
+      "id": "screen-2",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.914,
+      "passed": true
+    },
+    {
+      "id": "screen-3",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.001,
+      "passed": true
+    },
+    {
+      "id": "screen-4",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.883,
+      "passed": true
+    },
+    {
+      "id": "screen-5",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.961,
+      "passed": true
+    },
+    {
+      "id": "screen-6",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.889,
+      "passed": false
+    },
+    {
+      "id": "target-1",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.634,
+      "passed": true
+    },
+    {
+      "id": "target-2",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.642,
+      "passed": true
+    },
+    {
+      "id": "target-3",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.632,
+      "passed": true
+    },
+    {
+      "id": "target-4",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.685,
+      "passed": true
+    },
+    {
+      "id": "target-5",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.009,
+      "passed": true
+    },
+    {
+      "id": "target-6",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.839,
+      "passed": false
+    },
+    {
+      "id": "target-7",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.744,
+      "passed": false
+    },
+    {
+      "id": "noise-1",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.442,
+      "passed": true
+    },
+    {
+      "id": "noise-2",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.15,
+      "passed": true
+    },
+    {
+      "id": "noise-3",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.86,
+      "passed": true
+    },
+    {
+      "id": "noise-4",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.221,
+      "passed": true
+    },
+    {
+      "id": "noise-5",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.17,
+      "passed": true
+    },
+    {
+      "id": "noise-6",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.794,
+      "passed": true
+    },
+    {
+      "id": "noise-7",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.019,
+      "passed": true
+    },
+    {
+      "id": "vague-1",
+      "group": "ambiguous_command",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.085,
+      "passed": true
+    },
+    {
+      "id": "vague-2",
+      "group": "ambiguous_command",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.78,
+      "passed": true
+    },
+    {
+      "id": "vague-3",
+      "group": "ambiguous_command",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.832,
+      "passed": true
+    },
+    {
+      "id": "vague-4",
+      "group": "ambiguous_command",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.971,
+      "passed": true
+    },
+    {
+      "id": "vague-5",
+      "group": "ambiguous_command",
+      "pass_rule": "look_ok",
+      "route": "clarify",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.721,
+      "passed": true
+    },
+    {
+      "id": "broad-1",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.836,
+      "passed": true
+    },
+    {
+      "id": "broad-2",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.858,
+      "passed": true
+    },
+    {
+      "id": "broad-3",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.834,
+      "passed": false
+    },
+    {
+      "id": "broad-4",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.877,
+      "passed": true
+    },
+    {
+      "id": "broad-5",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 2.953,
+      "passed": true
+    },
+    {
+      "id": "broad-6",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.0,
+      "passed": true
+    },
+    {
+      "id": "broad-7",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.018,
+      "passed": true
+    },
+    {
+      "id": "broad-8",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 2.382,
+      "passed": true
+    },
+    {
+      "id": "broad-9",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.001,
+      "passed": true
+    },
+    {
+      "id": "broad-10",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 2.216,
+      "passed": true
+    },
+    {
+      "id": "broad-11",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.845,
+      "passed": true
+    },
+    {
+      "id": "broad-12",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.346,
+      "passed": true
+    },
+    {
+      "id": "broad-13",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.845,
+      "passed": true
+    },
+    {
+      "id": "broad-14",
+      "group": "broad_but_clear",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.995,
+      "passed": true
+    },
+    {
+      "id": "screen-1",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.001,
+      "passed": true
+    },
+    {
+      "id": "screen-2",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.895,
+      "passed": true
+    },
+    {
+      "id": "screen-3",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.0,
+      "passed": true
+    },
+    {
+      "id": "screen-4",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.901,
+      "passed": true
+    },
+    {
+      "id": "screen-5",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "act",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 1.026,
+      "passed": true
+    },
+    {
+      "id": "screen-6",
+      "group": "points_at_the_screen",
+      "pass_rule": "not_clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.912,
+      "passed": false
+    },
+    {
+      "id": "target-1",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.64,
+      "passed": true
+    },
+    {
+      "id": "target-2",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.64,
+      "passed": true
+    },
+    {
+      "id": "target-3",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.64,
+      "passed": true
+    },
+    {
+      "id": "target-4",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.677,
+      "passed": true
+    },
+    {
+      "id": "target-5",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.883,
+      "passed": true
+    },
+    {
+      "id": "target-6",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "chat",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.713,
+      "passed": false
+    },
+    {
+      "id": "target-7",
+      "group": "missing_target",
+      "pass_rule": "clarify",
+      "route": "act",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.623,
+      "passed": false
+    },
+    {
+      "id": "noise-1",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.031,
+      "passed": true
+    },
+    {
+      "id": "noise-2",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.004,
+      "passed": true
+    },
+    {
+      "id": "noise-3",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.738,
+      "passed": true
+    },
+    {
+      "id": "noise-4",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.888,
+      "passed": true
+    },
+    {
+      "id": "noise-5",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.331,
+      "passed": true
+    },
+    {
+      "id": "noise-6",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.013,
+      "passed": true
+    },
+    {
+      "id": "noise-7",
+      "group": "fragment_or_overheard",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.436,
+      "passed": true
+    },
+    {
+      "id": "vague-1",
+      "group": "ambiguous_command",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.245,
+      "passed": true
+    },
+    {
+      "id": "vague-2",
+      "group": "ambiguous_command",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.948,
+      "passed": true
+    },
+    {
+      "id": "vague-3",
+      "group": "ambiguous_command",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 0.975,
+      "passed": true
+    },
+    {
+      "id": "vague-4",
+      "group": "ambiguous_command",
+      "pass_rule": "not_act",
+      "route": "clarify",
+      "needs_screen": false,
+      "error": null,
+      "seconds": 1.166,
+      "passed": true
+    },
+    {
+      "id": "vague-5",
+      "group": "ambiguous_command",
+      "pass_rule": "look_ok",
+      "route": "clarify",
+      "needs_screen": true,
+      "error": null,
+      "seconds": 0.791,
+      "passed": true
+    }
+  ]
+}

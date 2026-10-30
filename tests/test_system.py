@@ -14,8 +14,10 @@ eventually get wrong".
 """
 
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -98,32 +100,58 @@ def run():
 
     # ── screenshot ──────────────────────────────────────────────────────────
     r.head("Screenshot")
-    before = set(os.listdir(os.path.expanduser("~/Desktop")))
+    # Into a private folder, not the real Desktop. This used to write a real
+    # capture of every display onto the Desktop and delete only the first, so
+    # on a two-display Mac each run left a picture of the other screen behind.
+    real_desktop = os.path.expanduser("~/Desktop")
+    on_desktop = set(os.listdir(real_desktop))
+    landing = tempfile.mkdtemp(prefix="diablo-screenshot-test-")
+    saved_desktop = T.DESKTOP
+    T.DESKTOP = landing
+    with guard(r, "take_screenshot without being asked"):
+        # An ordinary question about the screen reaches the tool and saves
+        # nothing: it is answered by looking, not by keeping a picture.
+        T.CONTEXT["request"] = "what's on my screen"
+        try:
+            out = T.execute("take_screenshot", {})
+        finally:
+            T.CONTEXT["request"] = None
+        r.check("refuses without a request for one", out.startswith("Not saved"), out[:60])
+        r.check("and writes no file", not os.listdir(landing), ", ".join(os.listdir(landing)))
     with guard(r, "take_screenshot"):
-        out = T.execute("take_screenshot", {})
-        time.sleep(1.5)
-        after = set(os.listdir(os.path.expanduser("~/Desktop")))
-        new = [f for f in (after - before) if f.lower().endswith(".png")]
-        r.check("reports success", isinstance(out, str) and "Error" not in out, out[:60])
-        if r.check("a PNG landed on the Desktop", bool(new), ", ".join(new) or "nothing new"):
-            path = os.path.join(os.path.expanduser("~/Desktop"), new[0])
-            r.check("and it is not empty", os.path.getsize(path) > 1000,
-                    f"{os.path.getsize(path)} bytes")
-            os.unlink(path)
-            r.ok("test screenshot cleaned up")
+        T.CONTEXT["request"] = "take a screenshot"
+        try:
+            out = T.execute("take_screenshot", {})
+            time.sleep(1.5)
+            new = [f for f in os.listdir(landing) if f.lower().endswith(".png")]
+            r.check("reports success", isinstance(out, str) and "Error" not in out, out[:60])
+            if r.check("a PNG landed where the tool was pointed", bool(new),
+                       ", ".join(new) or "nothing new"):
+                sizes = [os.path.getsize(os.path.join(landing, f)) for f in new]
+                r.check("and none of them is empty", min(sizes) > 1000, f"{sizes} bytes")
+        finally:
+            T.CONTEXT["request"] = None
+            T.DESKTOP = saved_desktop
+            shutil.rmtree(landing, ignore_errors=True)
+        r.check("every test screenshot was removed", not os.path.exists(landing))
+        stray = [f for f in set(os.listdir(real_desktop)) - on_desktop
+                 if f.startswith("DIABLO_Screenshot_")]
+        r.check("and nothing was written to the real Desktop", not stray, ", ".join(stray))
 
     # ── window sight ────────────────────────────────────────────────────────
     r.head("Seeing the screen")
     with guard(r, "list_windows"):
         out = T.execute("list_windows", {})
         r.check("lists real windows",
-                isinstance(out, str) and "Error" not in out and "window" in out.lower(),
+                # A tool failure starts with "Error"; a window title or the text
+                # read off the screen may contain the word anywhere.
+                isinstance(out, str) and not out.startswith("Error") and "window" in out.lower(),
                 out[:70].replace("\n", " "))
 
     with guard(r, "read_screen on the frontmost window"):
         out = T.execute("read_screen", {"target": ""})
         r.check("returns window context",
-                isinstance(out, str) and "Error" not in out and "Window" in out,
+                isinstance(out, str) and not out.startswith("Error") and "Window" in out,
                 out[:60].replace("\n", " "))
 
     with guard(r, "read_screen with a nonsense target"):

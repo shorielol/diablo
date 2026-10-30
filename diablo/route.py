@@ -42,10 +42,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from skills import agent_core, agent_tools, screen_context, trace  # noqa: E402
 
-# Below this, ask rather than act.
+# Below this, ask rather than act. There is no band above it that hands the
+# request to a bigger model: there is one model. Measured 2026-10-05 before the
+# 14B was removed, turning escalation off left 106 of 117 intake runs passing
+# against 107 with it, and changed no false action.
 CLARIFY_BELOW = config.env_float("DIABLO_CONFIDENCE_CLARIFY", 0.45)
-# Below this on a task that touches files, hand it to the stronger model.
-ESCALATE_BELOW = config.env_float("DIABLO_CONFIDENCE_ESCALATE", 0.70)
 
 
 class Kind:
@@ -92,7 +93,7 @@ class Decision:
     text: str
     goal: str = ""
     kind: str = Kind.CONVERSATIONAL
-    route: str = "chat"                    # chat | act | clarify | escalate
+    route: str = "chat"                    # chat | act | clarify
     confidence: float = 0.5
     risk: str = Risk.NONE
     needs_screen: bool = False
@@ -304,13 +305,6 @@ def classify(text: str, in_conversation: bool = False) -> Decision:
     if action == "act" and confidence < CLARIFY_BELOW:
         route = "clarify"
         reason = f"only {confidence:.0%} sure — {reason}"
-    elif (action == "act" and needs_tools
-          and confidence < ESCALATE_BELOW
-          and os.getenv("DIABLO_ESCALATE_MODEL")):
-        # Not sure enough to act alone, but clear enough that a question would
-        # be annoying. This is the band a bigger model is for.
-        route = "escalate"
-        reason = f"{confidence:.0%} sure on a task that touches things — {reason}"
 
     decision = Decision(
         text=text,
@@ -348,7 +342,7 @@ if __name__ == "__main__":
         "make a folder called reports",
         "read budget.csv and then email me a summary and also back it up",
     ]
-    print(f"\n  clarify below {CLARIFY_BELOW}   escalate below {ESCALATE_BELOW}\n")
+    print(f"\n  clarify below {CLARIFY_BELOW}\n")
     print(f"  {'request':52} {'route':9} {'kind':15} {'conf':>5} {'risk':7} scr")
     print("  " + "-" * 100)
     for probe in probes:

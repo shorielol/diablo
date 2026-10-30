@@ -87,7 +87,8 @@ STUB_IMAGE = (1000, 1000)
 
 
 def region_reply(box=None, found=True, confidence=0.86, what="shaded triangle"):
-    """What the vision model says: bbox_2d, in the image's own pixels."""
+    """What the vision model says: bbox_2d on its 0..1000 grid. The stub image is
+    1000 x 1000, so its pixels and that grid are the same numbers."""
     corners = ({"left": 0.0, "top": 0.0, "right": 1.0, "bottom": 1.0}
                if box is None else box)
     return {"found": found, "what": what, "confidence": confidence,
@@ -111,6 +112,11 @@ def grounded(question, hits=None, reply=None, crop_used=None, frame=None,
     originals = (pointing.locate, display.capture_region, display.cursor,
                  grounding._ask_region, grounding._frame_for,
                  grounding._sized_for_model)
+    # The box space comes from the model in use, so the model is pinned to
+    # the one Diablo ships: these checks must not depend on what .env says.
+    from skills import local_brain
+    saved_model = local_brain.CHAT_MODEL
+    local_brain.CHAT_MODEL = "qwen3.5:4b"
     try:
         pointing.locate = lambda *a, **k: list(hits if hits is not None else [anchor()])
         def capture(x, y, w, h):
@@ -133,6 +139,7 @@ def grounded(question, hits=None, reply=None, crop_used=None, frame=None,
         (pointing.locate, display.capture_region, display.cursor,
          grounding._ask_region, grounding._frame_for,
          grounding._sized_for_model) = originals
+        local_brain.CHAT_MODEL = saved_model
 
 
 def run():
@@ -244,7 +251,7 @@ def run():
             if (crop[0] <= region[0] and region[0] + region[2] <= crop[0] + crop[2]
                     and crop[1] <= region[1] and region[1] + region[3] <= crop[1] + crop[3]):
                 covered = True
-                break
+            break          # the FIRST crop formed is the one under test
         r.check("the first crop that is formed contains the region",
                 covered, "the caption is 979 points from the thing it names")
 
@@ -561,58 +568,59 @@ def run():
     # absolute pixels of the image they were handed. Measured on the fixture,
     # same model, same crop, same wording: median IoU went from 0.01 to 0.59
     # on welfare loss and the median latency from 4.0s to 1.5s.
-    r.head("bbox_2d, in whichever space it arrives")
+    r.head("bbox_2d, in the space the model declares")
     with guard(r, "the normaliser"):
+        from skills import local_brain
+        saved_model = local_brain.CHAT_MODEL
         image = (1280, 898)
-        # B.4 measured where qwen2.5vl's pixels are: in the picture as the
-        # model resized it (multiples of 28, scaled up below 1024 x 28 x 28),
-        # not the one it was sent. For this size that is 1288 x 896.
-        saved_coords = os.environ.get("DIABLO_VISION_COORDS")
         try:
-            os.environ["DIABLO_VISION_COORDS"] = "pixels"
-            px = grounding._box_in_crop([366, 354, 518, 510], image)
-            r.check("absolute pixels are divided by the image it was sent, when "
-                    "the model answers in the image's pixels",
-                    px is not None and abs(px[0] - 366 / 1280) < 1e-9
-                    and abs(px[1] - 354 / 898) < 1e-9, str(px))
-            os.environ["DIABLO_VISION_COORDS"] = "canvas"
-            cw, ch = grounding.model_canvas(*image)
-            px = grounding._box_in_crop([366, 354, 518, 510], image)
-            r.check("and by the model's own canvas, when it answers in that",
-                    px is not None and (cw, ch) == (1288, 896)
-                    and abs(px[0] - 366 / cw) < 1e-9 and abs(px[1] - 354 / ch) < 1e-9,
-                    str(px))
-        finally:
-            if saved_coords is None:
-                os.environ.pop("DIABLO_VISION_COORDS", None)
+            local_brain.CHAT_MODEL = "qwen3.5:4b"
+            mille = grounding._box_in_crop([250, 500, 750, 1000], image)
+            r.check("qwen3.5 boxes are read on the 0..1000 grid, whatever the image size",
+                    mille is not None and abs(mille[0] - 0.25) < 1e-9
+                    and abs(mille[3] - 1.0) < 1e-9, str(mille))
+            r.check("and never as the image's pixels",
+                    grounding._box_in_crop([366, 354, 518, 510], image)
+                    == (0.366, 0.354, 0.518, 0.51))
+            r.check("fractions are not silently accepted on that grid",
+                    grounding._box_in_crop([0.25, 0.5, 0.75, 1.0], image) is None)
+            r.check("the fraction shape is read on its own declared scale",
+                    grounding._box_in_crop([0.25, 0.5, 0.75, 1.0], image, scale=1.0)
+                    == (0.25, 0.5, 0.75, 1.0))
+            local_brain.CHAT_MODEL = "some-model:7b"
+            r.check("a model with no declared space gets no box at all",
+                    grounding._box_in_crop([250, 500, 750, 1000], image) is None)
+            local_brain.CHAT_MODEL = "qwen3.5:4b"
+            for bad, why in (([518, 354, 366, 510], "inverted"),
+                             ([0, 0, 0, 0], "no area"),
+                             ([-40, 10, 900, 400], "off the left edge"),
+                             ([10, 10, 1200, 400], "beyond the grid"),
+                             ([1, 2, 3], "too few numbers"),
+                             (["a", "b", "c", "d"], "not numbers"),
+                             ([float("nan")] * 4, "NaN"),
+                             (None, "nothing at all")):
+                if grounding._box_in_crop(bad, image) is not None:
+                    r.bad("an impossible box is refused", why)
+                    break
             else:
-                os.environ["DIABLO_VISION_COORDS"] = saved_coords
-        fr = grounding._box_in_crop([0.25, 0.5, 0.75, 1.0], image)
-        r.check("a model that answers in fractions still works",
-                fr is not None and abs(fr[0] - 0.25) < 1e-9, str(fr))
-        mille = grounding._box_in_crop([250, 500, 750, 1000], (400, 300))
-        r.check("and one that answers in per-mille is recognised",
-                mille is not None and abs(mille[0] - 0.25) < 1e-9, str(mille))
-        for bad, why in (([518, 354, 366, 510], "inverted"),
-                         ([0, 0, 0, 0], "no area"),
-                         ([-40, 10, 900, 400], "off the left edge"),
-                         ([1, 2, 3], "too few numbers"),
-                         (["a", "b", "c", "d"], "not numbers"),
-                         ([float("nan")] * 4, "NaN"),
-                         (None, "nothing at all")):
-            if grounding._box_in_crop(bad, image) is not None:
-                r.bad("an impossible box is refused in every space", why)
-                break
-        else:
-            r.ok("an impossible box is refused in every space", "7 shapes")
+                r.ok("an impossible box is refused", "8 shapes")
+        finally:
+            local_brain.CHAT_MODEL = saved_model
 
-    with guard(r, "the fixture's own numbers, through the real normaliser"):
-        # The model's measured answer for the grey triangle, and the
-        # rectangle the fixture chose. Both known, neither computed here.
-        crop = (420.0, 130.0, 900.0, 632.0)
-        rect = grounding._rect_from(
-            {"found": True, "confidence": 0.9, "where": "the grey triangle",
-             "bbox_2d": [366, 354, 518, 510]}, crop, (1280, 898))
+    with guard(r, "the fixture's own region, through the real normaliser"):
+        # The grey triangle's fixture rectangle starts at (676, 380) in a crop
+        # at (420, 130) that is 900 x 632 points. On the 0..1000 grid that is
+        # (284.44, 395.57); the box must come back where the fixture put it.
+        from skills import local_brain
+        saved_model = local_brain.CHAT_MODEL
+        try:
+            local_brain.CHAT_MODEL = "qwen3.5:4b"
+            crop = (420.0, 130.0, 900.0, 632.0)
+            rect = grounding._rect_from(
+                {"found": True, "confidence": 0.9, "where": "the grey triangle",
+                 "bbox_2d": [284.44, 395.57, 453.33, 642.41]}, crop, (1280, 898))
+        finally:
+            local_brain.CHAT_MODEL = saved_model
         r.check("it becomes a rectangle", rect is not None)
         if rect:
             r.check("whose origin is the fixture's region to within two points",

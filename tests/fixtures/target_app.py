@@ -26,10 +26,17 @@ TITLE = "Diablo Target"
 def main() -> int:
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
+    # The appearance is pinned to the variant. Unpinned, a light fixture on a
+    # Mac in dark mode drew its button and checkbox titles white on its own
+    # white background: Accessibility still saw them, and OCR and every vision
+    # model were handed a picture with no Save button in it.
+    from AppKit import NSAppearance
+    app.setAppearance_(NSAppearance.appearanceNamed_(
+        "NSAppearanceNameDarkAqua" if False else "NSAppearanceNameAqua"))
 
-    window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-        NSMakeRect(500, 420, 420, 240), NSWindowStyleMaskTitled,
-        NSBackingStoreBuffered, False)
+    sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
+    import _layout as _place
+    window = _place.new_window((500, 420, 420, 240), NSWindowStyleMaskTitled)
     window.setTitle_(TITLE)
 
     status = NSTextField.alloc().initWithFrame_(NSMakeRect(24, 36, 372, 30))

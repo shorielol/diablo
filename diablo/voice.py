@@ -4,16 +4,21 @@ D.I.A.B.L.O. Voice (Voicebox Edition)
 How Diablo sounds.
 
 This module routes TTS requests to a local Voicebox server instead of ElevenLabs.
-It streams the generated WAV audio directly and caches it to disk.
+It streams the generated WAV audio directly to a file and plays that file.
 
-  1. **Cache everything.** Every line synthesised is written to disk.
-  2. **Pre-warm the common lines.** Synthesised once at install and played from disk forever.
-  3. **Degrade, never fail.** Cache, then Voicebox API, then macOS `say`.
+  1. **Keep only the stock lines.** The fixed phrases in COMMON_LINES are
+     synthesised once and kept. Everything else Diablo says — answers, which
+     can repeat what was on the screen — is written to a transient file and
+     deleted as soon as it has been played, or after ten minutes at most if
+     playback failed and a retry may still use it.
+  2. **Pre-warm the common lines.** Synthesised once and played from disk.
+  3. **Degrade, never fail.** Stock line, then Voicebox API, then macOS `say`.
 """
 
 import hashlib
 import contextvars
 import os
+import re
 import queue
 import subprocess
 import time
@@ -204,28 +209,131 @@ def _cache_key(text: str) -> str:
     return hashlib.sha256(fingerprint.encode()).hexdigest()[:32]
 
 
+# Where audio lives, and for how long.
+#
+# Every line used to be cached forever, keyed by its text: 704 files and 214 MB
+# on this machine, most of them answers — and an answer can read the screen
+# back. Only the fixed phrases are kept now. Anything else is transient: it is
+# deleted once played, and a file whose playback failed is kept for a retry no
+# longer than RETRY_SECONDS. Read at call time so a test can point CACHE_DIR
+# somewhere else.
+RETRY_SECONDS = 600
+_DIABLO_AUDIO = re.compile(r"^[0-9a-f]{32}(\.\d+wpm)?\.wav(\.partial)?$")
+
+
+def _stock_dir() -> str:
+    return os.path.join(CACHE_DIR, "stock")
+
+
+def _transient_dir() -> str:
+    return os.path.join(CACHE_DIR, "transient")
+
+
+def _is_stock(text: str) -> bool:
+    return (text or "").strip() in _STOCK_LINES
+
+
+def _is_transient(path: Optional[str]) -> bool:
+    return bool(path) and (os.path.dirname(os.path.abspath(path))
+                           == os.path.abspath(_transient_dir()))
+
+
+def _usable(path: str) -> bool:
+    return os.path.exists(path) and os.path.getsize(path) > 512
+
+
+def _release(paths, outcome: str) -> None:
+    """
+    Delete the transient audio behind a line once it is finished with.
+
+    A failed playback leaves it in place for a retry; sweep_transient removes it
+    when RETRY_SECONDS have passed. Every pace variant of the same line goes too.
+    """
+    if outcome == "failed":
+        return
+    folder = _transient_dir()
+    for path in paths:
+        if not _is_transient(path):
+            continue
+        key = os.path.basename(path).split(".")[0]
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            return
+        for name in names:
+            if name.startswith(key + "."):
+                try:
+                    os.unlink(os.path.join(folder, name))
+                except OSError:
+                    pass
+
+
+def sweep_transient(older_than: float = RETRY_SECONDS) -> int:
+    """
+    Remove transient audio past its retry window, and the old unbounded cache.
+
+    The old cache sat at the top of voice_cache with no expiry. Only files named
+    the way Diablo names them are touched. Returns how many were removed.
+    """
+    cutoff = time.time() - older_than
+    removed = 0
+    for folder in (_transient_dir(), CACHE_DIR):
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            continue
+        for name in names:
+            path = os.path.join(folder, name)
+            if not _DIABLO_AUDIO.match(name) or not os.path.isfile(path):
+                continue
+            try:
+                if os.path.getmtime(path) < cutoff:
+                    os.unlink(path)
+                    removed += 1
+            except OSError:
+                pass
+    return removed
+
+
 def cached_path(text: str) -> Optional[str]:
-    path = os.path.join(CACHE_DIR, _cache_key(text) + ".wav")
-    return path if os.path.exists(path) and os.path.getsize(path) > 512 else None
+    """A file that can be played for this line: a stock clip, or one awaiting a retry."""
+    key = _cache_key(text) + ".wav"
+    stock = os.path.join(_stock_dir(), key)
+    if _usable(stock):
+        return stock
+    held = os.path.join(_transient_dir(), key)
+    try:
+        if _usable(held) and time.time() - os.path.getmtime(held) < RETRY_SECONDS:
+            return held
+    except OSError:
+        pass
+    return None
 
 
 def cache_size() -> int:
+    """How many stock lines are on disk."""
     try:
-        return len([f for f in os.listdir(CACHE_DIR) if f.endswith(".wav")])
+        return len([f for f in os.listdir(_stock_dir()) if f.endswith(".wav")])
     except OSError:
         return 0
 
 
 # ─── Synthesis ───────────────────────────────────────────────────────────────
 
-def synthesize(text: str, force: bool = False) -> Optional[str]:
+def synthesize(text: str, force: bool = False,
+               keep: Optional[bool] = None) -> Optional[str]:
     """
-    Produce a wav of `text` in the cache and return its path, or None.
+    Produce a wav of `text` and return its path, or None.
     Hits the local Voicebox server.
+
+    `keep` decides where it goes: the stock folder, kept, or the transient one,
+    deleted after playback. Left as None, only a stock line is kept.
     """
     text = (text or "").strip()
     if not text:
         return None
+    if keep is None:
+        keep = _is_stock(text)
 
     if not force:
         hit = cached_path(text)
@@ -268,12 +376,20 @@ def synthesize(text: str, force: bool = False) -> Optional[str]:
     if not data:
         return None
 
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    path = os.path.join(CACHE_DIR, _cache_key(text) + ".wav")
+    folder = _stock_dir() if keep else _transient_dir()
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, _cache_key(text) + ".wav")
     tmp = path + ".partial"
-    with open(tmp, "wb") as f:
-        f.write(data)
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return None
     return path
 
 
@@ -508,6 +624,15 @@ def _say_locally(text: str, pace: Optional[int] = None, generation=None) -> str:
     return _run_playback(command, generation=generation)
 
 
+def _user_safe(text: str) -> str:
+    """Every spoken line, in the person's terms: speech.user_safe, never skipped."""
+    try:
+        from skills import speech
+        return speech.user_safe(text)
+    except Exception:              # a translator that fails must not silence speech
+        return text
+
+
 def speak(text: str, pace: Optional[int] = None, generation=None,
           speech_id=None, speech_kind="USER_RESPONSE") -> str:
     """
@@ -517,7 +642,7 @@ def speak(text: str, pace: Optional[int] = None, generation=None,
     one-line acknowledgement does not need slowing down and would sound
     laboured if it were.
     """
-    text = (text or "").strip()
+    text = _user_safe((text or "").strip())
     if not text:
         return "empty"
 
@@ -527,10 +652,25 @@ def speak(text: str, pace: Optional[int] = None, generation=None,
     if not admitted:
         return reason
 
+    # Every transient file this line touched. Deleted once the line is over,
+    # however it ended, unless nothing at all was heard.
+    held: List[str] = []
+    outcome = "failed"
+    try:
+        outcome = _speak_admitted(text, pace, generation, held)
+        return outcome
+    finally:
+        _release(held, outcome)
+        sweep_transient()
+
+
+def _speak_admitted(text: str, pace: Optional[int], generation, held: List[str]) -> str:
     hit = cached_path(text)
     if hit:
+        held.append(hit)
         if pace:
             hit = repace(hit, text, pace)
+            held.append(hit)
         route = _play(hit, generation=generation)
         if route == "played":
             return "cache"
@@ -538,8 +678,11 @@ def speak(text: str, pace: Optional[int] = None, generation=None,
             return route
 
     path = synthesize(text)
+    if path:
+        held.append(path)
     if path and pace:
         path = repace(path, text, pace)
+        held.append(path)
     if not is_current_generation(generation):
         return "stale"
     if path:
@@ -636,7 +779,7 @@ def speak_stream(pieces, should_stop=None, pace: Optional[int] = None,
             for piece in pieces:
                 if abandoned():
                     break
-                piece = (piece or "").strip()
+                piece = _user_safe((piece or "").strip())
                 if not piece:
                     continue
                 path = None
@@ -646,7 +789,10 @@ def speak_stream(pieces, should_stop=None, pace: Optional[int] = None,
                         path = repace(path, piece, pace)
                 except BaseException as e:
                     failed.append(e)
-                if not offer((piece, path)):
+                # Rendered for a turn nobody is listening to any more: it will
+                # never be played, so it is not kept either.
+                if abandoned() or not offer((piece, path)):
+                    _release([path], "interrupted")
                     break
         except BaseException as e:
             failed.append(e)
@@ -676,21 +822,34 @@ def speak_stream(pieces, should_stop=None, pace: Optional[int] = None,
                 return route
             piece, path = item
             if not is_current_generation(generation) or STOP.is_set():
+                _release([path], "interrupted")
                 return "interrupted"
             playback = _play(path, generation=generation) if path else "failed"
             if playback == "played":
                 route = "voicebox"
+                _release([path], playback)
             elif playback in ("interrupted", "stale"):
+                _release([path], playback)
                 return playback
             else:
                 # Whatever went wrong with this segment, say it some other way
                 # rather than dropping a sentence out of the middle of an answer.
+                # speak() finds the same file for its retry and releases it.
                 route = speak(piece, pace=pace, generation=generation)
     finally:
         STOP.set()          # unblock the renderer if it is mid-queue
         if is_current_generation(generation):
             SPEAKING.clear()
         worker.join(timeout=2)
+        # Anything rendered ahead and never played.
+        while True:
+            try:
+                left = ahead.get_nowait()
+            except queue.Empty:
+                break
+            if left is not None:
+                _release([left[1]], "interrupted")
+        sweep_transient()
         if is_current_generation(generation):
             STOP.clear()
 
@@ -760,9 +919,13 @@ COMMON_LINES = [
     "Good evening, Sir.",
 ]
 
+# The only lines whose audio is kept. Fixed phrases, never an answer.
+_STOCK_LINES = frozenset(line.strip() for line in COMMON_LINES)
+
 
 def prewarm(lines=None, verbose: bool = True) -> int:
-    lines = lines or COMMON_LINES
+    """Synthesise the stock lines ahead of time. Only stock lines are kept."""
+    lines = [line for line in (lines or COMMON_LINES) if _is_stock(line)]
     if not available():
         if verbose:
             print("  Cannot pre-warm: offline mode.")
@@ -772,7 +935,7 @@ def prewarm(lines=None, verbose: bool = True) -> int:
     for line in lines:
         if cached_path(line):
             continue
-        if synthesize(line):
+        if synthesize(line, keep=True):
             made += 1
             if verbose:
                 print(f"    ✓ {line[:58]}")

@@ -89,8 +89,15 @@ def run():
                 voice.cached_path(f"never said {time.time()}") is None)
 
     with guard(r, "the cache has real content"):
+        # Only stock phrases are kept now; the self-test phrase above is a
+        # transient line and no longer counts, so a stock line is prewarmed
+        # here rather than relying on whatever an earlier run left behind.
+        voice.prewarm(voice.COMMON_LINES[:1], verbose=False)
         r.check("prewarmed lines are on disk", voice.cache_size() > 0,
                 f"{voice.cache_size()} clips")
+        r.check("and the self-test phrase is not among them",
+                not (path or "").startswith(voice._stock_dir()), os.path.dirname(path or ""))
+        voice._release([path], "played")
 
     with guard(r, "empty text does not crash"):
         for bad in ("", "   ", "\n"):

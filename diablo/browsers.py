@@ -27,13 +27,9 @@ _cached: Optional[str] = None
 
 def installed() -> List[str]:
     """Every browser-looking application present, in preference order."""
-    found = []
-    for name in PREFERRED:
-        for root in ("/Applications", os.path.expanduser("~/Applications")):
-            if os.path.isdir(os.path.join(root, f"{name}.app")):
-                found.append(name)
-                break
-    return found
+    from skills import apps
+    present = {app.name for app in apps.registry()}
+    return [name for name in PREFERRED if name in present]
 
 
 def default() -> str:
@@ -46,24 +42,26 @@ def default() -> str:
     if _cached:
         return _cached
 
-    chosen = (os.getenv("DIABLO_BROWSER") or "").strip()
-    if chosen and _exists(chosen):
-        _cached = chosen
-        return _cached
-
-    system = _system_default()
-    if system and _exists(system):
-        _cached = system
-        return _cached
+    for wanted in ((os.getenv("DIABLO_BROWSER") or "").strip(), _system_default()):
+        name = _installed_name(wanted) if wanted else ""
+        if name:
+            _cached = name
+            return _cached
 
     here = installed()
     _cached = here[0] if here else "Safari"
     return _cached
 
 
+def _installed_name(name: str) -> str:
+    """The installed application a name means ("chrome" -> "Google Chrome"), or ""."""
+    from skills import apps
+    found = apps.resolve(name)
+    return found.app.name if found.status == apps.RESOLVED else ""
+
+
 def _exists(name: str) -> bool:
-    return any(os.path.isdir(os.path.join(root, f"{name}.app"))
-               for root in ("/Applications", os.path.expanduser("~/Applications")))
+    return bool(_installed_name(name))
 
 
 def _system_default() -> Optional[str]:

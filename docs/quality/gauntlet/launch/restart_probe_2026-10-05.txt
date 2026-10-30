@@ -1,0 +1,6 @@
+before the kill, on disk: [('first job', 'running'), ('second, still queued', 'queued')]
+child killed with SIGKILL, exit -9
+store in the temp folder: True
+after restart, in memory: [('second, still queued', 'interrupted'), ('first job', 'interrupted')]
+after restart, on disk:   [('first job', 'interrupted'), ('second, still queued', 'interrupted')]
+after a second restart:   [('second, still queued', 'interrupted'), ('first job', 'interrupted')]

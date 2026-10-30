@@ -115,17 +115,24 @@ def _score(query: str, fragment_text: str) -> float:
         # Shorter fragments are better targets — matching "Save" inside a
         # paragraph that mentions saving is not a place to point.
         return 0.93 - min(0.2, 0.02 * max(0, len(f_words) - len(q_words)))
-    if f_words and all(w in q_words for w in f_words):
-        return 0.85
 
     # Partial overlap only counts if it covers most of what was asked for. One
     # shared word out of four is not a match: "zzqqxxvv not a real thing at all"
     # and "clinic. All additional losses and gains" share nothing but "all", and
     # that was enough to put a marker on a paragraph of someone's notes.
+    #
+    # A fragment made only of the request's words is held to the same rule.
+    # It used to score 0.85 however little of the request it covered, so the
+    # same nonsense request put a marker on a lone "not" on a web page — the
+    # paragraph case fixed above, arriving by the other door.
     overlap = len(set(q_words) & set(f_words))
     if overlap:
         coverage = overlap / len(set(q_words))
-        return 0.55 + 0.35 * coverage if coverage >= 0.5 else 0.0
+        if coverage < 0.5:
+            return 0.0
+        if all(w in q_words for w in f_words):
+            return 0.85
+        return 0.55 + 0.35 * coverage
 
     # Character similarity is the last resort and the most dangerous, because
     # "view" and "review" are 80% identical and mean different things. Only a
@@ -363,6 +370,12 @@ def _record(intent: str, reading, window: Optional[Dict[str, Any]]) -> None:
     Uses the trace that already exists rather than a new channel: it is
     production-wired, it rotates, it swallows its own failures, and it is
     already where every other gate in Diablo records what it decided.
+
+    Measurements only, never what the screen says. The control's text, the
+    evidence quoting it and the window's title are screen content — a title is
+    an email subject or a document name — and used to be written here. How
+    sure, from which source, where, and how big still answer "how sure was
+    it?" without them.
     """
     try:
         from skills import trace
@@ -376,7 +389,6 @@ def _record(intent: str, reading, window: Optional[Dict[str, Any]]) -> None:
             "required": round(getattr(reading, "required", 0.0), 3),
             "candidates": len(reading.candidates),
             "app": (window or {}).get("app", ""),
-            "window": ((window or {}).get("title") or "")[:60],
             "window_id": (window or {}).get("id", 0),
         }
         if reading.unreadable:
@@ -386,7 +398,7 @@ def _record(intent: str, reading, window: Optional[Dict[str, Any]]) -> None:
             note["why_unreadable"] = str(first.get("problem", ""))[:100]
         if best is not None:
             note.update({
-                "label": (best.label or "")[:60],
+                "labelled": bool(best.label),
                 "role": best.role,
                 "confidence": round(best.confidence, 3),
                 "sources": "+".join(sorted(set(best.sources))),
@@ -394,7 +406,7 @@ def _record(intent: str, reading, window: Optional[Dict[str, Any]]) -> None:
                     f"{k}={v:.3f}" for k, v in
                     sorted((best.source_confidence or {}).items())),
                 "corroborated": best.corroborated,
-                "evidence": "; ".join(best.evidence)[:180],
+                "evidence_items": len(best.evidence or []),
                 "enabled": best.enabled,
                 "x": round(best.x, 1), "y": round(best.y, 1),
                 "width": round(best.width, 1), "height": round(best.height, 1),

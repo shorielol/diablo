@@ -152,8 +152,11 @@ def main() -> int:
         r.check("_run_inline passes a working list",
                 "working=working" in body)
         r.check("  and records the task", "record_task" in body)
+        # Whitespace removed first: the call was wrapped across two lines and
+        # a literal match on one line reported a formatting change as a
+        # behaviour change.
         r.check("  against Diablo, not an agent",
-                'record_task("diablo"' in body)
+                'record_task("diablo"' in "".join(body.split()))
 
     # ── staleness ───────────────────────────────────────────────────────────
     r.head("Stale perception cannot pass as current")
@@ -282,8 +285,11 @@ def main() -> int:
                 "description" in spec["parameters"]["properties"])
         r.check("  and still returns text",
                 isinstance(agent_tools.point_at("zzqqxx nothing"), str))
-        r.check("the tool count is unchanged at 48",
-                len(agent_tools.TOOLS) == 48, str(len(agent_tools.TOOLS)))
+        # 48, plus find_in_menus and choose_menu, reviewed 2026-10-06.
+        r.check("the tool count is 48 plus the reviewed menu pair",
+                len(agent_tools.TOOLS) == 50
+                and {"find_in_menus", "choose_menu"} <= set(agent_tools.TOOLS),
+                str(len(agent_tools.TOOLS)))
         r.check("a caller that wants no structure still gets prose",
                 isinstance(pointing.point_at("zzqqxx nothing", seconds=0.1), str))
 

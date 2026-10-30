@@ -243,6 +243,13 @@ class VoiceSubsystem(Subsystem):
             from skills import voice
             self.module = voice
             self._register(voice)
+            # Spoken answers left by a crash, a kill or a failed playback past
+            # its retry window, and the old unbounded cache. Never the reason
+            # the voice fails to start.
+            try:
+                voice.sweep_transient()
+            except Exception:
+                pass
             self.ready = True            # always usable; `say` is the floor
             self.error = None if voice.available() else "Voicebox unreachable, using macOS voice"
             return True
@@ -470,6 +477,12 @@ class ScreenSubsystem(Subsystem):
         try:
             from skills import screen_context
             self.module = screen_context
+            # Captures orphaned by a crash or a kill last time. Never the
+            # reason the screen fails to start.
+            try:
+                screen_context.sweep_stale_captures()
+            except Exception:
+                pass
             self.ready = screen_context.ocr_available()
             self.error = None if self.ready else "on-device OCR is not installed"
             return self.ready

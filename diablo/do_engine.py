@@ -34,12 +34,13 @@ checked against a screen rather than a sentence in a plan.
 """
 
 import os
+import re
 import sys
 import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -78,6 +79,7 @@ class ActionState(Enum):
     EXECUTING = "executing"
     VERIFYING = "verifying"
     SUCCEEDED = "succeeded"
+    UNVERIFIED = "unverified"      # sent, and nothing proves what it did
     FAILED = "failed"
     CANCELLED = "cancelled"
     STALE = "stale"
@@ -95,6 +97,31 @@ AMBIGUITY = "ambiguity"
 PERMISSION_FAILURE = "permission_failure"
 TIMED_OUT = "timeout"
 UNKNOWN = "unknown"
+# The next step would press a control already pressed without effect.
+REPEATED = "would_repeat_an_unproven_action"
+
+def _refusal_class(code: str) -> Optional[str]:
+    """
+    computer_use's refusal code, read as a fact, or None for codes with no
+    special handling.
+
+    Matching the spoken sentence was the only way to tell these apart before,
+    and anything it missed fell through to UNEXPECTED_STATE — which re-plans,
+    so a "no" from the user, an absent confirmation or a password manager was
+    answered by asking again. Built from computer_use's own constants so the
+    codes have one definition.
+    """
+    from skills import computer_use as cu
+    return {
+        cu.SWITCHED_OFF: PERMISSION_FAILURE,
+        cu.NO_CONFIRMATION: PERMISSION_FAILURE,
+        cu.DECLINED: PERMISSION_FAILURE,
+        cu.SENSITIVE_WINDOW: PERMISSION_FAILURE,
+        cu.INPUT_UNAVAILABLE: PERMISSION_FAILURE,
+        cu.TARGET_UNCERTAIN: AMBIGUITY,
+        cu.TARGET_GONE: TARGET_GONE,
+        cu.ALREADY_TRIED: REPEATED,
+    }.get(code)
 
 # Every retry re-observes. A second attempt from the same stale picture is
 # just the first mistake again.
@@ -174,6 +201,10 @@ class Goal:
                                       # | window_exists | file_exists
     value: str = ""
     where: str = ""                   # window or folder, depending on kind
+    # More text that must be on screen too. A two-part request with a goal
+    # naming only its last part was reported done with the first part never
+    # carried out: the engine checked exactly what it was given.
+    also: Tuple[str, ...] = ()
 
     def describe(self) -> str:
         if self.kind == "file_exists":
@@ -182,6 +213,9 @@ class Goal:
             return f"a window for {self.value} is open"
         if self.kind == "text_absent":
             return f"“{self.value}” is gone from the screen"
+        if self.also:
+            texts = " and ".join(f"“{t}”" for t in (self.value, *self.also))
+            return f"{texts} are on the screen"
         return f"“{self.value}” is on the screen"
 
     def verified(self, window: Optional[Dict[str, Any]] = None) -> bool:
@@ -202,8 +236,15 @@ class Goal:
                 # same interpreter are both "Python" — the goal was being
                 # checked against the wrong one.
                 text = _read_window_text(target)
-                present = self.value.lower() in text.lower()
-                return present if self.kind == "text_on_screen" else not present
+                # Whole words on one line, and not a line saying it failed:
+                # a substring check found "on" inside "Notifications" and
+                # completed the goal on "Dark mode could not be enabled".
+                from skills import computer_use as _cu
+                lines = text.splitlines() or [text]
+                if self.kind == "text_on_screen":
+                    return all(any(_cu._evidence(line, want) for line in lines)
+                               for want in (self.value, *self.also))
+                return not any(_cu._says(line, self.value) for line in lines)
         except Exception:
             return False
         return False
@@ -326,16 +367,24 @@ class Task:
 #
 # Repeated three times over the whole corpus: 46.9% against 74.0%. The 4B was
 # not the bottleneck. Its schema was.
+#
+# `why` comes first. A constrained reply is written in the schema's order, so
+# with `verb` first the model chose the action before it had said anything
+# about the screen. Measured on qwen3.5:4b, 2026-10-05: on "Open Safari" with
+# Safari already in front it answered verb "wait" with the reason "the goal
+# is already satisfied. No further action is needed" — the reasoning was right
+# and the verb, committed before it, was not. Nine decisions in 118 went that
+# way.
 PLAN_SCHEMA = {
     "type": "object",
     "properties": {
+        "why": {"type": "string"},
         "verb": {"type": "string", "enum": ["click", "type", "press", "wait", "done"]},
         "target": {"type": "string"},
         "value": {"type": "string"},
         "expect": {"type": "string"},
-        "why": {"type": "string"},
     },
-    "required": ["verb", "target", "value", "why"],
+    "required": ["why", "verb", "target", "value"],
 }
 
 PLAN_SYSTEM = """You decide the single next action in someone else's application.
@@ -344,23 +393,57 @@ You are given a goal and a description of what is on screen right now. Reply
 with ONE action, never a sequence — you will be asked again after it has been
 carried out and the screen has been looked at afresh.
 
-- `target` names a control the way a person would say it: "the Save button",
-  "the search field". Never a coordinate; you cannot see coordinates and
-  something else resolves them.
-- `expect` is the text you would expect to appear if the action worked. Leave
-  it empty if you do not know.
-- Use "done" when what is on screen already satisfies the goal.
-- Use "wait" if the screen looks like it is still loading.
+- First check whether what is on screen already satisfies the goal. If it
+  does, the action is "done", even if nothing has been done yet.
+- `target` is a control's name copied from the Controls list, as written there:
+  Search, Save, Reload. Not a description of it, and never a coordinate. A
+  click with an empty target cannot be carried out by anything.
+- `type` sends text to whichever control already has keyboard focus. To type
+  into a field that is not focused, click it first; type on the next turn.
+  `type` and `press` put the text or the key in `value`.
+- Use "wait" only when the screen says it is loading or busy.
 - If the screen shows something you did not expect, deal with that first. An
   unexpected dialog is usually the next thing to handle, not an obstacle to
   push past.
+- `expect` is the text you would expect to appear if the action worked, or an
+  empty string if you do not know.
 
-Fill in every field, using an empty string where one does not apply.
+Fill in every field, using an empty string where one does not apply."""
 
-- `click` MUST name a control in `target`, copied from the list of controls on
-  screen. A click with an empty target cannot be carried out by anything.
-- `type` MUST put the text in `value`, and `press` MUST put the key in `value`.
-- `target` is a name, never a coordinate."""
+
+# The notes _control_line adds after a control's name. The planner copies
+# whole lines, so `CheckBox "Priority" (off)` came back as the target and
+# matched nothing; then it grew "(failed) (on) (expected)". Only these exact
+# notes are removed, so a control really called "Export (PDF)" keeps its name.
+_NOTES = re.compile(r"(\s*\((?:on|off|empty|contains “[^”]*”|confirmed|failed|"
+                    r"sent, not confirmed)\))+\s*$")
+
+
+def _bare_target(target: str) -> str:
+    return _NOTES.sub("", target).strip()
+
+
+def _control_line(element: Any) -> str:
+    """
+    A control as the planner sees it, with its state when it has one.
+
+    Without it a filled field and an empty one read the same, so the planner
+    typed "3" into a field that already said 3, and "33" was saved.
+    """
+    from skills import ax
+    line = element.describe()
+    if element.role in ax.EDITABLE_ROLES and element.value and element.value != element.label:
+        return f"{line} (contains “{element.value[:30]}”)"
+    if element.role in ax.EDITABLE_ROLES:
+        return f"{line} (empty)" if not element.value else line
+    if element.role in ax.TOGGLE_ROLES and element.state is not None:
+        return f"{line} ({'on' if element.state else 'off'})"
+    return line
+
+
+# How a step ended, as the planner is told it.
+_ENDED = {ActionState.SUCCEEDED: "confirmed", ActionState.UNVERIFIED: "sent, not confirmed",
+          ActionState.FAILED: "failed"}
 
 
 def _screen_summary(window: Optional[Dict[str, Any]], limit: int = 900) -> str:
@@ -386,7 +469,7 @@ def _screen_summary(window: Optional[Dict[str, Any]], limit: int = 900) -> str:
         pass
     try:
         from skills import ax
-        controls = [e.describe() for e in ax.elements_for_window(window)[:24]]
+        controls = [_control_line(e) for e in ax.elements_for_window(window)[:24]]
         if controls:
             parts.append("Controls: " + "; ".join(controls))
     except Exception:
@@ -473,7 +556,8 @@ def model_planner(task: "Task", window: Optional[Dict[str, Any]]) -> Step:
     depends on what a 4B felt like saying is measuring the 4B.
     """
     from skills import local_brain
-    done = "; ".join(s.describe() for s in task.steps[-4:]) or "nothing yet"
+    done = "; ".join(f"{s.describe()} ({_ENDED[s.state]})" if s.state in _ENDED
+                     else s.describe() for s in task.steps[-4:]) or "nothing yet"
     # NOT wired to perception_brief. Measured on the target fixture with a goal
     # a click can actually satisfy ("FINISHED" on screen, reached by pressing
     # Mark Done), six planner calls per arm:
@@ -498,7 +582,7 @@ def model_planner(task: "Task", window: Optional[Dict[str, Any]]) -> Step:
     except Exception:
         return Step(verb="wait", why="the planner did not answer")
     return Step(verb=str(reply.get("verb", "wait")),
-                target=str(reply.get("target", ""))[:80],
+                target=_bare_target(str(reply.get("target", "")))[:80],
                 value=str(reply.get("value", ""))[:200],
                 expect=str(reply.get("expect", ""))[:80],
                 why=str(reply.get("why", ""))[:160])
@@ -517,7 +601,13 @@ def classify(record, before_window, after_window, step: Step) -> str:
 
     if record is None:
         return UNKNOWN
-    if record.verdict == "ask":
+    named = _refusal_class(getattr(record, "refusal", ""))
+    if named:
+        return named
+    # "ask" is a question only while nothing was sent. An approved uncertain
+    # click that then changed nothing used to be put to the user as a
+    # question with a statement for its text.
+    if record.verdict == "ask" and getattr(record, "outcome", "") in ("", "refused"):
         return AMBIGUITY
     if record.verdict == "refuse":
         if "not allowed" in (record.spoken or "").lower():
@@ -538,7 +628,9 @@ def classify(record, before_window, after_window, step: Step) -> str:
     if before_window and _sc.has_moved(before_window) is not None:
         return WINDOW_CHANGED
 
-    if record.verified is False:
+    # Unverifiable reaches here only when something specific was expected and
+    # not seen: judged from what was observed, as a failed check always was.
+    if record.verified is False or getattr(record, "outcome", "") == "unverifiable":
         observed = (record.observed or "").lower()
         if "nothing" in observed or not observed:
             return NO_EFFECT
@@ -576,6 +668,8 @@ def cancel(reason: str = "the user asked me to stop") -> bool:
     task.generation += 1
     task.to(TaskState.CANCELLED, reason)
     task.spoken = "Stopped."
+    from skills import computer_use
+    computer_use.revoke()           # a stopped task leaves nothing clickable
     return True
 
 
@@ -609,6 +703,9 @@ def run(intent: str, goal: Goal, window: Optional[Dict[str, Any]] = None,
     mine = task.generation
     plan = planner or model_planner
     waits = 0
+    # Controls (description, x, y) pressed in this task without being shown to
+    # work. computer_use refuses to press one of them again.
+    tried: List[Tuple[str, float, float]] = []
     speak = say or (lambda _line: None)
 
     task.to(TaskState.UNDERSTANDING, intent)
@@ -683,6 +780,15 @@ def run(intent: str, goal: Goal, window: Optional[Dict[str, Any]] = None,
                 task.spoken = "I am not sure what to enter there."
                 return task
 
+            if step.verb == "press":
+                # There is no key-press action. A press used to go to
+                # type_text, which typed the key's NAME — "Return" as six
+                # letters, once per step until the step ceiling.
+                task.to(TaskState.BLOCKED, "key presses are not supported")
+                task.spoken = (f"I can't press keys yet, so I stopped there. "
+                               f"You'll need to press {step.value} yourself.")
+                return task
+
             speak(_progress(step))
 
             # ── Act. Everything below here is the existing DO 1.0 loop. ──
@@ -693,13 +799,48 @@ def run(intent: str, goal: Goal, window: Optional[Dict[str, Any]] = None,
             if step.verb == "click":
                 record = computer_use.act_on(
                     step.target or intent, task=task.id, expect=step.expect,
-                    window=here, confirm=confirm)
+                    window=here, confirm=confirm, avoid=tried)
             else:
-                record = computer_use.type_text(step.value, task=task.id,
-                                                confirm=confirm)
-                record = _as_record(record, step, task)
+                # "type 3" with the target "Quantity": the planner names the
+                # field and, measured, often forgets to click it first. When
+                # the name is one editable field, focus it through the same
+                # gated click as any other, then type.
+                focus = None
+                field_name = _field_named(here, step.target)
+                if field_name:
+                    focus = computer_use.act_on(
+                        field_name, task=task.id, expect="", window=here,
+                        confirm=confirm, avoid=tried)
+                    task.note("focus", f"click {field_name} -> "
+                                       f"{getattr(focus, 'outcome', '') or 'done'}")
+                if focus is not None and getattr(focus, "outcome", "") == computer_use.REFUSED:
+                    record = focus
+                else:
+                    if focus is not None:
+                        task.actions.append(focus)
+                    record = computer_use.type_text(step.value, task=task.id,
+                                                    confirm=confirm)
+                    record = _as_record(record, step, task)
             task.actions.append(record)
-            task.note("action", f"{step.describe()} -> {record.verdict or 'done'}")
+            outcome = getattr(record, "outcome", "")
+            task.note("action", f"{step.describe()} -> "
+                                f"{outcome or record.verdict or 'done'}")
+            # A click that moved the screen on starts a new state, and what was
+            # pressed in the old one may need pressing again: Save for the
+            # second order, after Save for the first. Measured: without this
+            # the second Save was refused and the task stopped half done.
+            observed = getattr(record, "observed", "") or ""
+            if getattr(record, "action", "") == "click" and (
+                    outcome == computer_use.CONFIRMED
+                    or (outcome == computer_use.UNVERIFIABLE and observed
+                        and observed != computer_use.UNREAD)):
+                tried.clear()
+            # Pressed, and not shown to have worked: that control is not pressed
+            # again until something else moves the screen on, whatever the
+            # planner calls it next time.
+            if (getattr(record, "action", "") == "click"
+                    and outcome not in ("", computer_use.CONFIRMED, computer_use.REFUSED)):
+                tried.append((record.target, record.x, record.y))
 
             if task.generation != mine:
                 step.state = ActionState.STALE
@@ -712,9 +853,27 @@ def run(intent: str, goal: Goal, window: Optional[Dict[str, Any]] = None,
                 step.state = ActionState.SUCCEEDED
                 task.note("verified", (record.observed or "")[:80])
                 continue
+            if outcome == computer_use.PARTIAL:
+                # Half a click or half the text: the screen is in a state
+                # nobody chose. Stop and say so; do not build on it.
+                step.state = ActionState.FAILED
+                task.to(TaskState.BLOCKED, "partly sent")
+                task.spoken = record.spoken
+                return task
+            if outcome == computer_use.UNVERIFIABLE:
+                # Sent, and not proven either way: never a success. With
+                # nothing specific expected, the next turn re-observes and the
+                # goal check at the top of the loop decides. With something
+                # expected and not seen, it is accounted for below as it
+                # always was, so it counts towards the recovery ceiling.
+                step.state = ActionState.UNVERIFIED
+                task.note("unverified", (record.observed or "")[:80])
+                if not step.expect:
+                    continue
+            else:
+                step.state = ActionState.FAILED
 
             # ── It did not. Work out why before doing anything else. ──
-            step.state = ActionState.FAILED
             after = _sc.window_by_id(before.get("id", 0))
             why = classify(record, before, after, step)
             task.note("failure", why)
@@ -723,7 +882,7 @@ def run(intent: str, goal: Goal, window: Optional[Dict[str, Any]] = None,
                 task.to(TaskState.WAITING_FOR_USER, why)
                 task.question = record.spoken
                 return task
-            if why == PERMISSION_FAILURE:
+            if why in (PERMISSION_FAILURE, REPEATED):
                 task.to(TaskState.BLOCKED, why)
                 task.spoken = record.spoken
                 return task
@@ -744,9 +903,40 @@ def run(intent: str, goal: Goal, window: Optional[Dict[str, Any]] = None,
                 time.sleep(0.5)
                 continue
             continue
+    except Exception as e:
+        # Whatever broke, the task is over and says so. It used to escape
+        # with the task still "running", so the next request was told one
+        # was already in progress for up to five minutes.
+        task.note("error", type(e).__name__)
+        task.to(TaskState.FAILED, f"stopped on {type(e).__name__}")
+        task.spoken = ("Something went wrong part-way through that, so I have "
+                       "stopped. Please check the screen before asking again.")
+        return task
     finally:
+        # The task's permission ends with the task, however it ended.
+        computer_use.revoke()
         if _active is task and task.over:
             pass          # keep it for "what happened", until the next task
+
+
+def _field_named(window: Optional[Dict[str, Any]], target: str) -> str:
+    """
+    The label of the one enabled, unfocused text field this target names
+    exactly, or "" when there is none, more than one, or it already has focus.
+    Never a guess: a name that matches a button is not a field to type into.
+    """
+    if not window or not target:
+        return ""
+    from skills import ax, grounding_gate
+    asked, _roles = grounding_gate.wanted_name(target)
+    if not asked:
+        return ""
+    fields = [e for e in ax.elements_for_window(window)
+              if e.role in ax.EDITABLE_ROLES and e.enabled is not False
+              and grounding_gate.published_name(e) == asked]
+    if len(fields) != 1 or fields[0].focused:
+        return ""
+    return fields[0].label
 
 
 def _as_record(result, step: Step, task: Task):
@@ -755,9 +945,16 @@ def _as_record(result, step: Step, task: Task):
     record = computer_use.ActionRecord(
         task=task.id, at=time.time(), app=task.app, intent=step.describe(),
         action=step.verb, expected=step.expect,
-        verdict="" if getattr(result, "ok", False) else "refuse",
-        spoken=getattr(result, "spoken", ""))
-    record.verified = bool(getattr(result, "ok", False))
+        verdict="" if getattr(result, "ok", False) else "refuse")
+    outcome = getattr(result, "outcome", "")
+    if outcome:
+        # One outcome, and everything else follows from it: a refused step
+        # did not act, and `verified` is derived, never `ok`. It used to be
+        # `ok`, so every keystroke posted counted as verified.
+        record.settle(outcome, getattr(result, "spoken", ""), getattr(result, "refusal", ""))
+    else:
+        record.spoken = getattr(result, "spoken", "")
+        record.verified = getattr(result, "verified", None)
     return record
 
 
